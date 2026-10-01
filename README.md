@@ -1,0 +1,111 @@
+# VasulBook
+
+VasulBook helps any business that gives credit (shops, tuition centres, milk and water vendors, tailors, wholesalers, clinics) collect money faster. Owners record dues, send WhatsApp reminders with UPI or Razorpay payment links, and get an evening summary.
+
+It is an installable mobile app (PWA) backed by a Node.js server and PostgreSQL.
+
+## What's included
+
+| Area | Details |
+| --- | --- |
+| Accounts | Register, log in, forgot password by email, delete account. Passwords are hashed with bcrypt; sessions use a secure httpOnly cookie. |
+| Registration emails | Every new sign-up gets a welcome email, and each address in `ADMIN_EMAIL` gets a "New registration" alert with the business name, owner, email, phone, type and time (IST). Sent through Resend. |
+| Ledger | Customers, credit and payments, due dates, running balance, overdue status, and a "pays late" risk flag. Each business sees only its own data. |
+| Quick entry | Type `Ravi 500 rice` to add credit or `Ravi paid 300` to record a payment. New names become new customers. |
+| Reminders | English, Tamil and Hindi, with a tone that changes by due date. "Open in WhatsApp" works for everyone. Automatic sending is available when the WhatsApp Cloud API is set up. |
+| Payments | Optional Razorpay payment links for each business, using its own Razorpay account. A webhook records the payment by itself. |
+| Evening summary | Emailed at 9 pm IST to owners who have it switched on, and shown on the Home screen. |
+| PWA | Installs to the home screen on Android and iPhone, opens full screen, and works offline for viewing the last loaded ledger. |
+| Business types | Retail, tuition, delivery, services, wholesale, rental and clinic. Labels adapt, for example "Students" for tuition. |
+
+## Deploy on Railway
+
+1. Push this folder to a GitHub repository.
+2. In Railway, create a project, choose **Deploy from GitHub repo**, and pick the repository.
+3. In the same project, add **Database → PostgreSQL**.
+4. Open the VasulBook service, go to **Variables**, and add:
+   - `DATABASE_URL` = `${{Postgres.DATABASE_URL}}`
+   - `SESSION_SECRET` = a random 64-character string (see `.env.example` for how to generate one)
+   - `NODE_ENV` = `production`
+   - `RESEND_API_KEY`, `EMAIL_FROM`, `ADMIN_EMAIL` (see "Set up Resend" below)
+5. Go to **Settings → Networking → Generate Domain**. Then set `APP_URL` to that address, for example `https://vasulbook-production.up.railway.app`.
+6. Railway builds and starts the app. The database tables are created on first start. `/healthz` shows `{"ok":true}` when it's running.
+
+The `railway.json` file already sets the start command and health check.
+
+## Set up Resend (registration and summary emails)
+
+1. Create an account at resend.com.
+2. **Domains → Add domain.** Add your domain (for example `vasulbook.in`) and create the DNS records Resend shows you. Wait until it says **Verified**.
+3. **API Keys → Create API key** with "Sending access". Copy it into `RESEND_API_KEY`.
+4. Set `EMAIL_FROM` to an address on the verified domain, for example `VasulBook <hello@vasulbook.in>`.
+5. Set `ADMIN_EMAIL` to the address that should hear about every new registration.
+
+Without a verified domain, Resend only delivers to your own Resend account email, so welcome emails to other people won't arrive. If the Resend variables are missing, the app still works and logs "email skipped" instead of sending.
+
+Resend works over HTTPS, so it isn't affected by Railway blocking SMTP email ports on its Trial and Hobby plans.
+
+## Optional: automatic WhatsApp reminders
+
+Without this, owners send reminders with "Open in WhatsApp", which needs nothing extra.
+
+To send automatically from one VasulBook business number:
+
+1. Set up the WhatsApp Cloud API in Meta Business Manager and get a permanent access token and phone number ID.
+2. Create and get approval for a **Utility** message template with four body variables, for example:
+   `Hello {{1}}, your balance of {{2}} at {{3}} is pending. {{4}} Thank you.`
+3. Set `WHATSAPP_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID`, `WHATSAPP_TEMPLATE` (the template name) and `WHATSAPP_TEMPLATE_LANG`.
+
+Owners then see a **Send automatically** button, plus a setting that sends reminders every morning at 10:30 IST to customers who are due or overdue. Each customer gets at most one reminder every 3 days. Meta charges for each business-initiated conversation.
+
+## Optional: Razorpay (per business)
+
+Each owner connects their own Razorpay account in **Settings → Razorpay payment links**. They add their Key ID, Key secret and a webhook secret. Then in Razorpay they add the webhook URL that the Settings page shows, with the event `payment_link.paid`. The keys are encrypted in the database with `SESSION_SECRET`, so don't change that value once owners have connected Razorpay.
+
+## Test on your own computer (no setup)
+
+You only need **Node.js** (LTS version from nodejs.org). No database install and no email account are needed.
+
+**Windows:** unzip the folder, then double-click `start-windows.bat`.
+**Mac or Linux:** open a terminal in the folder and run `./start-mac-linux.sh`.
+**Or by hand:** `npm install`, then `npm run local`.
+
+The first start installs everything (about a minute), then your browser opens at http://localhost:3000. Keep the black window open while testing; close it to stop.
+
+What happens in local mode:
+
+- **Database:** a built-in PostgreSQL stores everything in the `local-data` folder. Your test data stays between restarts. Delete `local-data` to start fresh.
+- **Emails are saved, not sent.** Open http://localhost:3000/dev/emails to see every email the app would send, including the welcome email and the **new registration alert**.
+- **Evening summary now:** open http://localhost:3000/dev/run-summary to create today's summary email at once instead of waiting until 9 pm.
+- **On your phone:** the window prints a "phone" address like `http://192.168.1.5:3000`. Open it on a phone on the same Wi-Fi to see the mobile layout. Installing as an app and offline mode need HTTPS, so try those after deploying (they work on `localhost` on the computer itself).
+- **Send real emails while testing:** create a file named `.env` with `RESEND_API_KEY`, `EMAIL_FROM` and `ADMIN_EMAIL`, then restart.
+
+If Windows asks whether to allow Node.js through the firewall, allow it on private networks so your phone can connect.
+
+The `/dev` pages exist only in local mode. They are switched off when `NODE_ENV=production`, as on Railway.
+
+## Project layout
+
+```
+server.js              Express app: auth, API, webhooks, static files
+src/db.js              PostgreSQL pool and table setup (runs on start)
+src/email.js           Resend emails: welcome, admin alert, password reset, evening summary
+src/integrations.js    Razorpay payment links, WhatsApp Cloud API, key encryption
+src/jobs.js            Scheduled jobs (IST): 9 pm summary, 10:30 am reminders, token cleanup
+public/                The PWA: index.html, app.js, app.css, ledger.js (shared maths), sw.js, manifest, icons
+```
+
+## API summary
+
+| Method and path | What it does |
+| --- | --- |
+| `POST /api/auth/register` | Create account and send the registration emails |
+| `POST /api/auth/login`, `/logout`, `/forgot`, `/reset` | Session and password reset |
+| `GET /api/me`, `PUT /api/settings` | Account and business settings |
+| `GET /api/data` | All customers and entries for the logged-in business |
+| `POST/PUT/DELETE /api/customers[/:id]` | Manage customers |
+| `POST /api/entries`, `DELETE /api/entries/:id` | Add or remove credit and payments |
+| `POST /api/customers/:id/paylink` | Create a Razorpay payment link for the balance |
+| `POST /api/customers/:id/send-reminder` | Send a WhatsApp template message (Cloud API) |
+| `POST /api/webhooks/razorpay/:userId` | Razorpay webhook that records payments |
+| `GET /healthz` | Health check |

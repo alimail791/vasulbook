@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>VasulBook</title>
+<meta name="description" content="Collect customer dues faster with WhatsApp reminders and UPI.">
+<meta name="theme-color" content="#2445B5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0D1412" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="VasulBook">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600&family=IBM+Plex+Mono:wght@500&family=Noto+Sans+Tamil:wght@400;500&family=Noto+Sans+Devanagari:wght@400;500&display=swap">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+
+<!-- ============ AUTH ============ -->
+<section class="auth" id="authScreen" hidden>
+  <div class="auth-box">
+    <div>
+      <div class="brand">Vasul<b>Book</b></div>
+      <p class="auth-lede">Get your money back from customers faster, with WhatsApp reminders and UPI.</p>
+    </div>
+
+    <div class="tabs" role="tablist" id="authTabs">
+      <button type="button" role="tab" data-tab="login" aria-selected="true">Log in</button>
+      <button type="button" role="tab" data-tab="register" aria-selected="false">Create account</button>
+    </div>
+
+    <form class="card stack" id="loginForm" autocomplete="on">
+      <label class="field">Email<input id="lEmail" type="email" autocomplete="email" required></label>
+      <label class="field">Password<input id="lPass" type="password" autocomplete="current-password" required></label>
+      <p class="err" id="lErr" role="alert"></p>
+      <button class="btn primary block" type="submit">Log in</button>
+      <button class="linkbtn" type="button" id="toForgot">Forgot password?</button>
+    </form>
+
+    <form class="card stack" id="registerForm" autocomplete="on" hidden>
+      <label class="field">Your name<input id="rOwner" autocomplete="name" required></label>
+      <label class="field">Business name<input id="rShop" autocomplete="organization" required placeholder="Sri Lakshmi Stores"></label>
+      <label class="field">Type of business
+        <select id="rType">
+          <option value="retail">Retail shop (kirana, medical, hardware)</option>
+          <option value="tuition">Tuition or coaching centre</option>
+          <option value="delivery">Daily delivery (milk, water, paper)</option>
+          <option value="services">Services (tailor, repair, salon)</option>
+          <option value="wholesale">Wholesale or distribution</option>
+          <option value="rental">Rent, hostel or membership</option>
+          <option value="clinic">Clinic or professional</option>
+        </select>
+      </label>
+      <label class="field">Mobile number<input id="rPhone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="10-digit mobile"></label>
+      <label class="field">Email<input id="rEmail" type="email" autocomplete="email" required></label>
+      <label class="field">Password<input id="rPass" type="password" autocomplete="new-password" minlength="8" required><span class="hint">At least 8 characters</span></label>
+      <p class="err" id="rErr" role="alert"></p>
+      <button class="btn primary block" type="submit">Create account</button>
+    </form>
+
+    <form class="card stack" id="forgotForm" hidden>
+      <h2>Reset your password</h2>
+      <p class="muted small">Enter your account email. We'll send you a link to set a new password.</p>
+      <label class="field">Email<input id="fEmail" type="email" autocomplete="email" required></label>
+      <p class="err" id="fErr" role="alert"></p>
+      <button class="btn primary block" type="submit">Send reset link</button>
+      <button class="linkbtn" type="button" data-back-login>Back to log in</button>
+    </form>
+
+    <form class="card stack" id="resetForm" hidden>
+      <h2>Set a new password</h2>
+      <label class="field">New password<input id="nPass" type="password" autocomplete="new-password" minlength="8" required><span class="hint">At least 8 characters</span></label>
+      <p class="err" id="nErr" role="alert"></p>
+      <button class="btn primary block" type="submit">Save password</button>
+      <button class="linkbtn" type="button" data-back-login>Back to log in</button>
+    </form>
+  </div>
+</section>
+
+<!-- ============ APP ============ -->
+<div id="appScreen" hidden>
+  <header class="top">
+    <div class="top-l"><span class="brand">Vasul<b>Book</b></span><span class="shop" id="topShop"></span></div>
+    <nav class="top-nav" aria-label="Main">
+      <a href="#/home" data-nav="home">Home</a>
+      <a href="#/customers" data-nav="customers">Customers</a>
+      <a href="#/settings" data-nav="settings">Settings</a>
+    </nav>
+  </header>
+  <div class="offline" id="offlineBar" hidden>You're offline. You can look at your ledger, but changes need internet.</div>
+
+  <main>
+    <!-- HOME -->
+    <section class="view" id="view-home" hidden>
+      <div class="install" id="installCard" hidden>
+        <p id="installText">Install VasulBook on your phone for one-tap access.</p>
+        <div class="row"><button class="btn primary sm" type="button" id="installBtn">Install app</button><button class="btn ghost sm" type="button" id="installDismiss">Not now</button></div>
+      </div>
+
+      <div class="card quick stack">
+        <span class="eyebrow">Quick entry</span>
+        <form id="quickForm" autocomplete="off">
+          <input id="quickInput" placeholder="Ravi 500 rice oil" aria-label="Quick entry" enterkeyhint="done">
+          <button class="btn primary" type="submit">Save</button>
+        </form>
+        <p class="preview" id="quickPreview" aria-live="polite"></p>
+        <p class="hint small muted">Name and amount adds credit: <code>Ravi 500 rice</code>. Add "paid" for a payment: <code>Ravi paid 300</code>.</p>
+      </div>
+
+      <div class="tiles" aria-label="Today at a glance">
+        <div class="tile"><span class="eyebrow">Total pending</span><span class="amt" id="tPending">₹0</span><span class="sub" id="tPendingSub"></span></div>
+        <div class="tile good"><span class="eyebrow">Collected today</span><span class="amt" id="tCollected">₹0</span><span class="sub" id="tCollectedSub"></span></div>
+        <div class="tile"><span class="eyebrow">Credit today</span><span class="amt" id="tCredit">₹0</span><span class="sub" id="tCreditSub"></span></div>
+        <div class="tile hot"><span class="eyebrow">Overdue</span><span class="amt" id="tOverdue">₹0</span><span class="sub" id="tOverdueSub"></span></div>
+      </div>
+
+      <div class="home-cols">
+        <div class="card stack">
+          <div class="sec-head"><h2>Chase today</h2><a href="#/customers" class="small">See all</a></div>
+          <ul class="cust-list" id="chaseList"></ul>
+        </div>
+        <div class="card stack">
+          <div class="sec-head"><h2>Today's summary</h2></div>
+          <pre class="summary-text" id="sumText"></pre>
+          <div class="row">
+            <a class="btn wa sm" id="sumWa" href="#" target="_blank" rel="noopener">Send to my WhatsApp</a>
+            <button class="btn sm" type="button" id="sumCopy">Copy</button>
+          </div>
+          <p class="small muted" id="sumNote"></p>
+        </div>
+      </div>
+    </section>
+
+    <!-- CUSTOMERS -->
+    <section class="view" id="view-customers" hidden>
+      <div class="split" id="split">
+        <div class="card list-card">
+          <div class="list-head">
+            <div class="sec-head"><h2 id="listTitle">Customers</h2><span class="small muted" id="listCount"></span></div>
+            <input id="search" type="search" placeholder="Search name or phone" aria-label="Search">
+            <div class="filters" role="group" aria-label="Filter">
+              <button class="chip" type="button" data-f="all" aria-pressed="true">All</button>
+              <button class="chip" type="button" data-f="overdue" aria-pressed="false">Overdue</button>
+              <button class="chip" type="button" data-f="due" aria-pressed="false">Due soon</button>
+              <button class="chip" type="button" data-f="open" aria-pressed="false">Not due yet</button>
+              <button class="chip" type="button" data-f="clear" aria-pressed="false">Cleared</button>
+            </div>
+          </div>
+          <ul class="cust-list" id="custList"></ul>
+          <form class="add-inline" id="addInline" autocomplete="off">
+            <label class="field">Name<input id="aiName" required></label>
+            <label class="field">WhatsApp number<input id="aiPhone" type="tel" inputmode="tel" placeholder="10-digit mobile"></label>
+            <button class="btn" type="submit">Add</button>
+          </form>
+        </div>
+
+        <div class="card empty detail-empty" id="detailEmpty"><strong>Select a customer</strong><span>Their ledger, reminders and payments appear here.</span></div>
+
+        <div class="detail" id="detail">
+          <a class="btn ghost sm back" href="#/customers" id="backLink">← All customers</a>
+          <div class="card stack">
+            <div class="d-head">
+              <div>
+                <h2 id="dName"></h2>
+                <div class="d-phone" id="dPhone"></div>
+                <div class="d-pills" id="dPills"></div>
+              </div>
+              <div class="bal"><span class="amt" id="dBal"></span><span class="lbl" id="dBalLbl">balance due</span></div>
+            </div>
+            <div class="row"><button class="btn sm" type="button" id="editCust">Edit details</button></div>
+          </div>
+
+          <div class="card remind stack">
+            <div class="sec-head"><h3>WhatsApp reminder</h3><span class="small muted" id="lastRem"></span></div>
+            <div class="opts">
+              <label class="field">Language
+                <select id="remLang"><option value="en">English</option><option value="ta">தமிழ் Tamil</option><option value="hi">हिन्दी Hindi</option></select>
+              </label>
+              <label class="field">Tone
+                <select id="remTone"><option value="auto">Automatic</option><option value="gentle">Friendly</option><option value="due">Due today</option><option value="firm">Firm</option></select>
+              </label>
+            </div>
+            <textarea id="remText" aria-label="Reminder message"></textarea>
+            <div class="row">
+              <a class="btn wa" id="waLink" href="#" target="_blank" rel="noopener">Open in WhatsApp</a>
+              <button class="btn" type="button" id="apiSend" hidden>Send automatically</button>
+              <button class="btn" type="button" id="copyRem">Copy</button>
+              <button class="btn" type="button" id="payLinkBtn" hidden>Add payment link</button>
+            </div>
+            <p class="small muted" id="remNote"></p>
+          </div>
+
+          <form class="card stack" id="entryForm" autocomplete="off">
+            <div class="seg" role="tablist">
+              <button type="button" role="tab" data-k="credit" aria-selected="true">Give credit</button>
+              <button type="button" role="tab" data-k="payment" aria-selected="false">Got payment</button>
+            </div>
+            <div class="grid2">
+              <label class="field">Amount (₹)<input id="eAmt" inputmode="decimal" required></label>
+              <label class="field" id="eDueWrap">Due date<input id="eDue" type="date"></label>
+              <label class="field" id="eModeWrap" hidden>Paid by<select id="eMode"><option>UPI</option><option>Cash</option><option>Bank transfer</option><option>Cheque</option></select></label>
+            </div>
+            <label class="field" id="eNoteWrap">Items or note<input id="eNote" placeholder="Rice 5kg, oil"></label>
+            <div class="row">
+              <button class="btn primary" type="submit" id="eSubmit">Add credit</button>
+              <button class="btn sm" type="button" id="eFull" hidden>Fill full balance</button>
+            </div>
+          </form>
+
+          <div class="stack">
+            <div class="sec-head"><h3>Ledger</h3><span class="small muted">Newest first</span></div>
+            <ul class="ledger" id="ledger"></ul>
+          </div>
+        </div>
+      </div>
+      <button class="btn primary fab" type="button" id="fabAdd">+ Add customer</button>
+    </section>
+
+    <!-- SETTINGS -->
+    <section class="view settings" id="view-settings" hidden>
+      <form class="card" id="bizForm" autocomplete="off">
+        <h2>Business</h2>
+        <label class="field">Business name<input id="sShop" required></label>
+        <label class="field">Your name<input id="sOwner" required></label>
+        <label class="field">Type of business
+          <select id="sType">
+            <option value="retail">Retail shop (kirana, medical, hardware)</option>
+            <option value="tuition">Tuition or coaching centre</option>
+            <option value="delivery">Daily delivery (milk, water, paper)</option>
+            <option value="services">Services (tailor, repair, salon)</option>
+            <option value="wholesale">Wholesale or distribution</option>
+            <option value="rental">Rent, hostel or membership</option>
+            <option value="clinic">Clinic or professional</option>
+          </select>
+        </label>
+        <label class="field">Your WhatsApp number<input id="sPhone" type="tel" inputmode="tel"><span class="hint">Used for "Send to my WhatsApp"</span></label>
+        <label class="field">UPI ID<input id="sUpi" placeholder="yourshop@okaxis"><span class="hint">Goes into every reminder so customers can pay at once</span></label>
+        <div class="grid2">
+          <label class="field">Days to pay<input id="sDays" type="number" min="0" max="120" inputmode="numeric"></label>
+          <label class="field">Reminder language<select id="sLang"><option value="en">English</option><option value="ta">Tamil</option><option value="hi">Hindi</option></select></label>
+        </div>
+        <label class="check"><input type="checkbox" id="sSummary"><span>Email me a summary every evening at 9 pm</span></label>
+        <label class="check" id="sAutoWrap" hidden><input type="checkbox" id="sAuto"><span>Send WhatsApp reminders automatically at 10:30 am to customers who are due or overdue (once every 3 days each)</span></label>
+        <p class="err" id="bizErr" role="alert"></p>
+        <button class="btn primary" type="submit">Save</button>
+      </form>
+
+      <form class="card" id="rzpForm" autocomplete="off">
+        <h2>Razorpay payment links</h2>
+        <p class="small muted">Optional. Connect your own Razorpay account to put a pay-now link in reminders. When a customer pays, VasulBook records the payment by itself.</p>
+        <p class="small" id="rzpStatus"></p>
+        <label class="field">Key ID<input id="rzpId" placeholder="rzp_live_..."></label>
+        <label class="field">Key secret<input id="rzpSecret" type="password" placeholder="Leave blank to keep the saved one"></label>
+        <label class="field">Webhook secret<input id="rzpHook" type="password" placeholder="Leave blank to keep the saved one"></label>
+        <div class="field">Webhook URL (add in Razorpay → Webhooks, event "payment_link.paid")
+          <div class="copybox"><input id="rzpUrl" readonly><button class="btn sm" type="button" id="rzpCopy">Copy</button></div>
+        </div>
+        <p class="err" id="rzpErr" role="alert"></p>
+        <div class="row"><button class="btn primary" type="submit">Save Razorpay</button><button class="btn danger sm" type="button" id="rzpDisconnect">Disconnect</button></div>
+      </form>
+
+      <div class="card">
+        <h2>Account</h2>
+        <p class="small muted" id="accEmail"></p>
+        <div class="row">
+          <button class="btn" type="button" id="logoutBtn">Log out</button>
+          <button class="btn danger" type="button" id="deleteAccBtn">Delete account</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <nav class="nav" aria-label="Main">
+    <a href="#/home" data-nav="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>Home</a>
+    <a href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 010 7M18.5 14.8c1.6.8 2.6 2.5 3 5.2"/></svg>Customers</a>
+    <a href="#/settings" data-nav="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>Settings</a>
+  </nav>
+</div>
+
+<!-- sheet for add/edit customer and confirmations -->
+<div class="sheet-wrap" id="sheet" hidden>
+  <form class="sheet" id="sheetForm" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" autocomplete="off">
+    <h2 id="sheetTitle"></h2>
+    <div class="stack" id="sheetBody"></div>
+    <p class="err" id="sheetErr" role="alert"></p>
+    <div class="row">
+      <button class="btn primary" type="submit" id="sheetOk">Save</button>
+      <button class="btn" type="button" id="sheetCancel">Cancel</button>
+      <button class="btn danger sm" type="button" id="sheetExtra" hidden></button>
+    </div>
+  </form>
+</div>
+
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script src="/ledger.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
