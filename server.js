@@ -10,6 +10,7 @@ const email = require("./src/email");
 const ix = require("./src/integrations");
 const Ledger = require("./public/ledger");
 const jobs = require("./src/jobs");
+const billing = require("./src/billing");
 
 const PORT = Number(process.env.PORT || 3000);
 const PROD = process.env.NODE_ENV === "production";
@@ -41,7 +42,9 @@ app.use((req, res, next) => {
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Permissions-Policy", "camera=(), geolocation=()");
   res.setHeader("Content-Security-Policy",
-    "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+    "default-src 'self'; script-src 'self' https://checkout.razorpay.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; " +
+    "img-src 'self' data: https://*.razorpay.com; connect-src 'self' https://api.razorpay.com https://lumberjack.razorpay.com; " +
+    "frame-src https://api.razorpay.com https://checkout.razorpay.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://api.razorpay.com");
   if (PROD) res.setHeader("Strict-Transport-Security", "max-age=31536000");
   next();
 });
@@ -64,6 +67,23 @@ app.post("/api/webhooks/razorpay/:userId", express.raw({ type: "*/*", limit: "1m
                VALUES ($1,$2,'payment',$3,$4,'UPI (Razorpay)','Paid online',$5) ON CONFLICT (external_ref) DO NOTHING`,
         [userId, lr[0].customer_id, amount, Ledger.todayIST(), pay ? pay.id : link.id]);
       await q("UPDATE payment_links SET status='paid' WHERE id=$1", [link.id]);
+    }
+  }
+  res.json({ ok: true });
+}));
+
+// Razorpay webhook for VasulBook plan purchases (the platform's own Razorpay account).
+// Backup for the in-app confirmation: if the phone closes mid-payment, this still activates the plan.
+app.post("/api/webhooks/razorpay-billing", express.raw({ type: "*/*", limit: "1mb" }), wrap(async (req, res) => {
+  if (!billing.webhookSignatureOk(req.body, req.get("x-razorpay-signature"))) return res.status(400).json({ error: "Invalid signature" });
+  const evt = JSON.parse(req.body.toString("utf8"));
+  const pay = evt.payload && evt.payload.payment && evt.payload.payment.entity;
+  const orderId = (evt.payload && evt.payload.order && evt.payload.order.entity.id) || (pay && pay.order_id);
+  if ((evt.event === "order.paid" || evt.event === "payment.captured") && orderId && pay) {
+    const done = await billing.applyPayment(orderId, pay.id);
+    if (done) {
+      console.log(`[billing] webhook activated plan for user #${done.user.id}`);
+      email.planPurchaseEmails(done.user, done.payment, process.env.APP_URL || "").catch((e) => console.error("[plan email]", e));
     }
   }
   res.json({ ok: true });
@@ -124,7 +144,14 @@ function publicUser(u) {
     summaryEmail: u.summary_email, autoRemind: u.auto_remind,
     razorpay: { keyId: u.rzp_key_id, connected: Boolean(u.rzp_key_id && u.rzp_key_secret), webhookSet: Boolean(u.rzp_webhook_secret) },
     createdAt: u.created_at,
+    plan: billing.status(u),
   };
+}
+
+// Blocks changes once the trial or plan has ended. Viewing, settings and paying still work.
+function requireActive(req, res, next) {
+  if (billing.status(req.user).active) return next();
+  return res.status(402).json({ error: "Your plan has ended. Subscribe to keep adding entries and sending reminders. Your data is safe.", code: "plan_expired" });
 }
 const toEntry = (r) => ({
   id: r.id, customerId: r.customer_id, kind: r.kind, amount: r.amount, date: r.entry_date, due: r.due_date,
@@ -134,7 +161,10 @@ const toCustomer = (r) => ({ id: r.id, name: r.name, phone: r.phone, lastReminde
 
 // ---------- health & config ----------
 app.get("/healthz", wrap(async (req, res) => { await q("SELECT 1"); res.json({ ok: true }); }));
-app.get("/api/config", (req, res) => res.json({ whatsappApi: ix.whatsappConfigured(), email: email.configured() }));
+app.get("/api/config", (req, res) => res.json({
+  whatsappApi: ix.whatsappConfigured(), email: email.configured(),
+  billing: { ready: billing.ready(), testMode: !PROD && !billing.ready(), ...billing.PLAN },
+}));
 
 // ---------- auth ----------
 app.post("/api/auth/register", limit(10, 15 * 60e3), wrap(async (req, res) => {
@@ -151,8 +181,9 @@ app.post("/api/auth/register", limit(10, 15 * 60e3), wrap(async (req, res) => {
   if (exists.rowCount) return bad(res, "An account with this email already exists. Try logging in.", 409);
   const hash = await bcrypt.hash(pw, 10);
   const { rows } = await q(
-    `INSERT INTO users (email, password_hash, owner_name, shop_name, phone, business_type) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-    [e, hash, ownerName, shopName, phone, type]);
+    `INSERT INTO users (email, password_hash, owner_name, shop_name, phone, business_type, trial_ends_at)
+     VALUES ($1,$2,$3,$4,$5,$6, now() + make_interval(months => $7)) RETURNING *`,
+    [e, hash, ownerName, shopName, phone, type, billing.PLAN.trialMonths]);
   const user = rows[0];
   setSession(res, user.id);
   // Emails go out in the background so signup stays fast.
@@ -255,7 +286,7 @@ async function ownCustomer(userId, id) {
   return rows[0];
 }
 
-app.post("/api/customers", auth, wrap(async (req, res) => {
+app.post("/api/customers", auth, requireActive, wrap(async (req, res) => {
   const name = clean(req.body.name, 120), phone = digits(req.body.phone).slice(-10);
   if (!name) return bad(res, "Enter a name.");
   if (phone && phone.length !== 10) return bad(res, "Enter a 10-digit mobile number.");
@@ -265,7 +296,7 @@ app.post("/api/customers", auth, wrap(async (req, res) => {
   res.status(201).json({ customer: toCustomer(rows[0]) });
 }));
 
-app.put("/api/customers/:id", auth, wrap(async (req, res) => {
+app.put("/api/customers/:id", auth, requireActive, wrap(async (req, res) => {
   const c = await ownCustomer(req.user.id, req.params.id);
   if (!c) return bad(res, "Customer not found.", 404);
   const name = req.body.name !== undefined ? clean(req.body.name, 120) : c.name;
@@ -276,19 +307,19 @@ app.put("/api/customers/:id", auth, wrap(async (req, res) => {
   res.json({ customer: toCustomer(rows[0]) });
 }));
 
-app.delete("/api/customers/:id", auth, wrap(async (req, res) => {
+app.delete("/api/customers/:id", auth, requireActive, wrap(async (req, res) => {
   const r = await q("DELETE FROM customers WHERE id=$1 AND user_id=$2", [Number(req.params.id), req.user.id]);
   if (!r.rowCount) return bad(res, "Customer not found.", 404);
   res.json({ ok: true });
 }));
 
-app.post("/api/customers/:id/reminded", auth, wrap(async (req, res) => {
+app.post("/api/customers/:id/reminded", auth, requireActive, wrap(async (req, res) => {
   const { rows } = await q("UPDATE customers SET last_reminder_at=now() WHERE id=$1 AND user_id=$2 RETURNING *", [Number(req.params.id), req.user.id]);
   if (!rows[0]) return bad(res, "Customer not found.", 404);
   res.json({ customer: toCustomer(rows[0]) });
 }));
 
-app.post("/api/entries", auth, wrap(async (req, res) => {
+app.post("/api/entries", auth, requireActive, wrap(async (req, res) => {
   const b = req.body || {};
   const c = await ownCustomer(req.user.id, b.customerId);
   if (!c) return bad(res, "Customer not found.", 404);
@@ -305,7 +336,7 @@ app.post("/api/entries", auth, wrap(async (req, res) => {
   res.status(201).json({ entry: toEntry(rows[0]) });
 }));
 
-app.delete("/api/entries/:id", auth, wrap(async (req, res) => {
+app.delete("/api/entries/:id", auth, requireActive, wrap(async (req, res) => {
   const r = await q("DELETE FROM entries WHERE id=$1 AND user_id=$2", [Number(req.params.id), req.user.id]);
   if (!r.rowCount) return bad(res, "Entry not found.", 404);
   res.json({ ok: true });
@@ -317,7 +348,7 @@ async function customerLedger(userId, customerId) {
 }
 
 // Razorpay payment link for the customer's current balance
-app.post("/api/customers/:id/paylink", auth, wrap(async (req, res) => {
+app.post("/api/customers/:id/paylink", auth, requireActive, wrap(async (req, res) => {
   const u = req.user;
   if (!u.rzp_key_id || !u.rzp_key_secret) return bad(res, "Connect Razorpay in Settings first.");
   const c = await ownCustomer(u.id, req.params.id);
@@ -333,7 +364,7 @@ app.post("/api/customers/:id/paylink", auth, wrap(async (req, res) => {
 }));
 
 // Send a reminder through the WhatsApp Business API (when the platform has it configured)
-app.post("/api/customers/:id/send-reminder", auth, wrap(async (req, res) => {
+app.post("/api/customers/:id/send-reminder", auth, requireActive, wrap(async (req, res) => {
   if (!ix.whatsappConfigured()) return bad(res, "Automatic WhatsApp sending isn't set up on this server.");
   const u = req.user;
   const c = await ownCustomer(u.id, req.params.id);
@@ -347,6 +378,35 @@ app.post("/api/customers/:id/send-reminder", auth, wrap(async (req, res) => {
   });
   const { rows } = await q("UPDATE customers SET last_reminder_at=now() WHERE id=$1 RETURNING *", [c.id]);
   res.json({ customer: toCustomer(rows[0]) });
+}));
+
+// ---------- subscription ----------
+app.get("/api/subscription", auth, wrap(async (req, res) => {
+  res.json({ plan: billing.status(req.user), payments: await billing.history(req.user.id) });
+}));
+
+app.post("/api/subscription/order", auth, limit(10, 15 * 60e3), wrap(async (req, res) => {
+  if (!billing.ready()) return bad(res, "Online payment isn't set up yet. Please try again later.", 503);
+  const order = await billing.createOrder(req.user);
+  res.json({ ...order, name: req.user.owner_name, email: req.user.email, phone: req.user.phone, shop: req.user.shop_name, months: billing.PLAN.months });
+}));
+
+app.post("/api/subscription/verify", auth, wrap(async (req, res) => {
+  const b = req.body || {};
+  const orderId = String(b.razorpay_order_id || ""), paymentId = String(b.razorpay_payment_id || "");
+  const { rows } = await q("SELECT * FROM subscription_payments WHERE order_id=$1 AND user_id=$2", [orderId, req.user.id]);
+  if (!rows[0]) return bad(res, "Payment not found.", 404);
+  if (!billing.checkoutSignatureOk(orderId, paymentId, b.razorpay_signature)) return bad(res, "We couldn't confirm this payment. If money was taken, it will be confirmed automatically within a few minutes.");
+  const done = await billing.applyPayment(orderId, paymentId);
+  let user = req.user;
+  if (done) {
+    user = done.user;
+    console.log(`[billing] user #${user.id} paid order ${orderId}`);
+    email.planPurchaseEmails(user, done.payment, appUrl(req)).catch((e) => console.error("[plan email]", e));
+  } else {
+    user = (await q("SELECT * FROM users WHERE id=$1", [req.user.id])).rows[0];
+  }
+  res.json({ user: publicUser(user) });
 }));
 
 // ---------- local testing helpers (never active in production) ----------
@@ -371,6 +431,21 @@ if (!PROD) {
     res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src data:");
     res.send(fs.readFileSync(file, "utf8"));
   });
+  // Local only, when no Razorpay keys are set: pretend a plan payment went through.
+  app.post("/api/subscription/test-pay", auth, wrap(async (req, res) => {
+    if (billing.ready()) return bad(res, "Razorpay keys are set, so use the real checkout.");
+    const orderId = "order_test_" + Date.now();
+    await q("INSERT INTO subscription_payments (order_id, user_id, amount, months) VALUES ($1,$2,$3,$4)", [orderId, req.user.id, billing.PLAN.priceInr, billing.PLAN.months]);
+    const done = await billing.applyPayment(orderId, "pay_test_" + Date.now());
+    email.planPurchaseEmails(done.user, done.payment, appUrl(req)).catch(() => {});
+    res.json({ user: publicUser(done.user) });
+  }));
+  // Local only: jump this account's trial to "ended" to see the locked state.
+  app.post("/api/subscription/test-expire", auth, wrap(async (req, res) => {
+    const { rows } = await q("UPDATE users SET trial_ends_at = now() - interval '1 day', paid_until = NULL, plan_notice='' WHERE id=$1 RETURNING *", [req.user.id]);
+    res.json({ user: publicUser(rows[0]) });
+  }));
+  app.get("/dev/run-plan-notices", wrap(async (req, res) => { await jobs.planNotices(); res.redirect("/dev/emails"); }));
   app.get("/dev/run-summary", wrap(async (req, res) => {
     await q("UPDATE users SET last_summary_on = NULL");
     await jobs.eveningSummaries();

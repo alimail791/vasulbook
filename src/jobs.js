@@ -3,6 +3,7 @@ const { q } = require("./db");
 const email = require("./email");
 const ix = require("./integrations");
 const Ledger = require("../public/ledger");
+const billing = require("./billing");
 
 const toEntry = (r) => ({ kind: r.kind, amount: r.amount, date: r.entry_date, due: r.due_date, createdAt: new Date(r.created_at).getTime() });
 
@@ -22,6 +23,7 @@ async function eveningSummaries() {
   const today = Ledger.todayIST();
   const { rows: users } = await q("SELECT * FROM users WHERE summary_email AND (last_summary_on IS NULL OR last_summary_on < $1)", [today]);
   for (const u of users) {
+    if (!billing.status(u).active) continue;
     try {
       const { customers, entries, ledgers } = await userLedgers(u.id);
       const todays = entries.filter((e) => e.entry_date === today);
@@ -44,6 +46,7 @@ async function autoReminders() {
   if (!ix.whatsappConfigured()) return;
   const { rows: users } = await q("SELECT * FROM users WHERE auto_remind");
   for (const u of users) {
+    if (!billing.status(u).active) continue;
     const { customers, ledgers } = await userLedgers(u.id);
     for (const c of customers) {
       const L = ledgers.get(c.id);
@@ -60,12 +63,30 @@ async function autoReminders() {
   }
 }
 
+// 10:00 am IST: tell owners 7 days and 1 day before their trial or plan ends, and on the day it ends.
+async function planNotices() {
+  const { rows: users } = await q(
+    "SELECT * FROM users WHERE GREATEST(COALESCE(trial_ends_at, 'epoch'), COALESCE(paid_until, 'epoch')) BETWEEN now() - interval '3 days' AND now() + interval '7 days'");
+  const appUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
+  for (const u of users) {
+    const st = billing.status(u);
+    const stage = !st.active ? "0" : st.daysLeft <= 1 ? "1" : "7";
+    const key = `${String(st.accessUntil).slice(0, 10)}:${stage}`;
+    if (u.plan_notice === key) continue;
+    try {
+      const r = await email.planNoticeEmail(u, stage, st, appUrl);
+      if (r && r.ok) await q("UPDATE users SET plan_notice=$1 WHERE id=$2", [key, u.id]);
+    } catch (err) { console.error(`[plan notice] user #${u.id}`, err.message); }
+  }
+}
+
 function start() {
   const opts = { timezone: "Asia/Kolkata" };
   cron.schedule("0 21 * * *", () => eveningSummaries().catch((e) => console.error("[summary job]", e)), opts);
   cron.schedule("30 10 * * *", () => autoReminders().catch((e) => console.error("[remind job]", e)), opts);
+  cron.schedule("0 10 * * *", () => planNotices().catch((e) => console.error("[plan notice job]", e)), opts);
   // Clean up used or expired password reset tokens once a day.
   cron.schedule("15 3 * * *", () => q("DELETE FROM password_resets WHERE used OR expires_at < now()").catch(() => {}), opts);
 }
 
-module.exports = { start, eveningSummaries, autoReminders };
+module.exports = { start, eveningSummaries, autoReminders, planNotices };

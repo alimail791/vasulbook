@@ -97,6 +97,22 @@ const MIGRATIONS = [
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS rzp_key_secret TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS rzp_webhook_secret TEXT NOT NULL DEFAULT ''`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS last_summary_on DATE`,
+  // Subscription: everyone starts with a free trial; existing accounts get theirs counted from sign-up.
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMPTZ`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS paid_until TIMESTAMPTZ`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS plan_notice TEXT NOT NULL DEFAULT ''`,
+  `UPDATE users SET trial_ends_at = created_at + interval '3 months' WHERE trial_ends_at IS NULL`,
+  `CREATE TABLE IF NOT EXISTS subscription_payments (
+     order_id TEXT PRIMARY KEY,
+     user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     amount NUMERIC(12,2) NOT NULL,
+     months INT NOT NULL,
+     status TEXT NOT NULL DEFAULT 'created',
+     payment_id TEXT,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+     paid_at TIMESTAMPTZ
+   )`,
+  `CREATE INDEX IF NOT EXISTS subscription_payments_user_idx ON subscription_payments(user_id)`,
 ];
 
 async function migrate() {

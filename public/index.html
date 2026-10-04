@@ -93,6 +93,10 @@
     </nav>
   </header>
   <div class="offline" id="offlineBar" hidden>You're offline. You can look at your ledger, but changes need internet.</div>
+  <div class="plan-bar" id="planBar" hidden>
+    <p id="planBarText"></p>
+    <button class="btn sm" type="button" id="planBarBtn">Subscribe</button>
+  </div>
 
   <main>
     <!-- HOME -->
@@ -223,6 +227,25 @@
 
     <!-- SETTINGS -->
     <section class="view settings" id="view-settings" hidden>
+      <div class="card plan-card" id="planCard">
+        <div class="sec-head"><h2>Your plan</h2><span class="pill" id="planPill"></span></div>
+        <p class="plan-status" id="planStatus"></p>
+        <div class="plan-offer">
+          <div><span class="amt plan-price" id="planPrice">₹1,000</span><span class="muted small" id="planPer"> for 10 months</span></div>
+          <p class="small muted" id="planOfferNote"></p>
+        </div>
+        <div class="row">
+          <button class="btn primary" type="button" id="planBuy">Subscribe with Razorpay</button>
+          <button class="btn sm" type="button" id="planTestPay" hidden>Test payment (local only)</button>
+          <button class="btn ghost sm" type="button" id="planTestExpire" hidden>End my trial now (local only)</button>
+        </div>
+        <p class="err" id="planErr" role="alert"></p>
+        <div class="stack" id="planHistoryWrap" hidden>
+          <span class="eyebrow">Payments</span>
+          <ul class="plan-history" id="planHistory"></ul>
+        </div>
+      </div>
+
       <form class="card" id="bizForm" autocomplete="off">
         <h2>Business</h2>
         <label class="field">Business name<input id="sShop" required></label>

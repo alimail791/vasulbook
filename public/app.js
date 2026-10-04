@@ -29,6 +29,11 @@
     }
     const data = await res.json().catch(() => ({}));
     if (res.status === 401 && !path.startsWith("/api/auth/")) { showAuth("login"); }
+    if (res.status === 402 && state.user) {
+      state.user.plan = { ...state.user.plan, active: false, state: "expired", daysLeft: 0 };
+      renderPlan();
+      if (state.view !== "settings") setTimeout(() => { location.hash = "#/settings"; }, 1200);
+    }
     if (!res.ok) { const err = new Error(data.error || "Something went wrong. Please try again."); err.status = res.status; throw err; }
     return data;
   }
@@ -176,6 +181,7 @@
   // ---------------- render ----------------
   function render() {
     if (!state.user) return;
+    renderPlan();
     $("topShop").textContent = state.user.shopName;
     const n = noun(), nl = n.toLowerCase();
     const ledgers = allLedgers();
@@ -447,7 +453,103 @@
   });
 
   // ---------------- settings ----------------
+  // ---------------- plan & subscription ----------------
+  const fmtDay = (iso) => (iso ? new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" }) : "");
+  const priceText = () => { const b = state.config.billing || {}; return `${L.inr(b.priceInr || 1000)} for ${b.months || 10} months`; };
+  function renderPlan() {
+    const p = state.user && state.user.plan; if (!p) return;
+    const bar = $("planBar"), txt = $("planBarText"), btn = $("planBarBtn");
+    bar.classList.remove("warn", "bad");
+    let show = true;
+    if (p.state === "expired") {
+      bar.classList.add("bad");
+      txt.textContent = (p.paidUntil ? "Your plan has ended." : "Your free trial has ended.") + " Your data is safe. Subscribe to keep adding entries and sending reminders.";
+      btn.textContent = "Subscribe";
+    } else if (p.state === "trial") {
+      if (p.daysLeft <= 14) bar.classList.add("warn");
+      txt.textContent = `Free trial: ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left (until ${fmtDay(p.accessUntil)}). Then ${priceText()}.`;
+      btn.textContent = "Subscribe";
+    } else {
+      show = p.daysLeft <= 14;
+      if (show) bar.classList.add("warn");
+      txt.textContent = `Your plan ends in ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} (${fmtDay(p.accessUntil)}).`;
+      btn.textContent = "Renew";
+    }
+    bar.hidden = !show || state.view === "settings";
+    document.body.classList.toggle("plan-locked", !p.active);
+
+    // Settings card
+    const b = state.config.billing || {};
+    $("planPill").className = "pill " + (p.state === "expired" ? "overdue" : p.state === "paid" ? "clear" : "open");
+    $("planPill").textContent = p.state === "expired" ? "Ended" : p.state === "paid" ? "Active" : "Free trial";
+    $("planStatus").textContent = p.state === "expired" ? `Ended on ${fmtDay(p.accessUntil)}. You can still view your ledger.`
+      : p.state === "paid" ? `Active until ${fmtDay(p.accessUntil)} (${p.daysLeft} days left).`
+      : `Free trial until ${fmtDay(p.accessUntil)} (${p.daysLeft} days left).`;
+    $("planPrice").textContent = L.inr(b.priceInr || 1000);
+    $("planPer").textContent = ` for ${b.months || 10} months`;
+    $("planOfferNote").textContent = p.state === "expired" ? "Starts today. Pay by UPI, card, net banking or wallet."
+      : `Starts after ${fmtDay(p.accessUntil)}, so you don't lose any days. Pay by UPI, card, net banking or wallet.`;
+    $("planBuy").textContent = p.state === "paid" ? "Renew with Razorpay" : "Subscribe with Razorpay";
+    $("planBuy").hidden = !b.ready;
+    $("planTestPay").hidden = !b.testMode;
+    $("planTestExpire").hidden = !b.testMode;
+    if (!b.ready && !b.testMode) $("planErr").textContent = "Online payment is being set up. Please check back soon.";
+  }
+  async function loadPlanHistory() {
+    try {
+      const d = await api("GET", "/api/subscription");
+      state.user.plan = d.plan; renderPlan();
+      $("planHistoryWrap").hidden = !d.payments.length;
+      $("planHistory").innerHTML = d.payments.map((x) => `<li><span>${fmtDay(x.paidAt)}<div class="sub">${esc(x.paymentId || "")}</div></span><span><span class="amt">${L.inr(x.amount)}</span> <span class="muted small">· ${x.months} months</span></span></li>`).join("");
+    } catch { /* offline: keep what we have */ }
+  }
+  let rzpLoading = null;
+  function loadRazorpay() {
+    if (window.Razorpay) return Promise.resolve();
+    if (!rzpLoading) rzpLoading = new Promise((resolve, reject) => {
+      const sc = document.createElement("script");
+      sc.src = "https://checkout.razorpay.com/v1/checkout.js";
+      sc.onload = () => resolve(); sc.onerror = () => { rzpLoading = null; reject(new Error("Couldn't load Razorpay. Check your internet and try again.")); };
+      document.head.appendChild(sc);
+    });
+    return rzpLoading;
+  }
+  async function buyPlan() {
+    const btn = $("planBuy"); btn.disabled = true; $("planErr").textContent = "";
+    try {
+      const [order] = await Promise.all([api("POST", "/api/subscription/order", {}), loadRazorpay()]);
+      const rzp = new window.Razorpay({
+        key: order.keyId, amount: order.amount, currency: order.currency, order_id: order.orderId,
+        name: "VasulBook", description: `${order.months} months plan for ${order.shop}`,
+        prefill: { name: order.name, email: order.email, contact: order.phone ? "+91" + order.phone : "" },
+        notes: { shop: order.shop }, theme: { color: "#2445B5" },
+        handler: async (resp) => {
+          try {
+            const d = await api("POST", "/api/subscription/verify", resp);
+            state.user = d.user; renderPlan(); loadPlanHistory();
+            toast(`Payment received. Plan active till ${fmtDay(d.user.plan.accessUntil)}`);
+          } catch (err) { $("planErr").textContent = err.message; }
+        },
+        modal: { ondismiss: () => { btn.disabled = false; } },
+      });
+      rzp.on("payment.failed", (r) => { $("planErr").textContent = (r && r.error && r.error.description) || "Payment failed. No money was taken. Please try again."; });
+      rzp.open();
+    } catch (err) { $("planErr").textContent = err.message; }
+    finally { setTimeout(() => { btn.disabled = false; }, 1500); }
+  }
+  $("planBuy").addEventListener("click", buyPlan);
+  $("planBarBtn").addEventListener("click", () => { location.hash = "#/settings"; });
+  $("planTestPay").addEventListener("click", async () => {
+    try { const d = await api("POST", "/api/subscription/test-pay", {}); state.user = d.user; renderPlan(); loadPlanHistory(); toast("Test payment done. Plan extended."); }
+    catch (err) { $("planErr").textContent = err.message; }
+  });
+  $("planTestExpire").addEventListener("click", async () => {
+    try { const d = await api("POST", "/api/subscription/test-expire", {}); state.user = d.user; renderPlan(); toast("Trial ended (test). Try adding an entry."); }
+    catch (err) { $("planErr").textContent = err.message; }
+  });
+
   function fillSettings() {
+    loadPlanHistory();
     const u = state.user;
     $("sShop").value = u.shopName; $("sOwner").value = u.ownerName; $("sType").value = u.businessType;
     $("sPhone").value = u.phone; $("sUpi").value = u.upiId; $("sDays").value = u.defaultDays; $("sLang").value = u.reminderLang;

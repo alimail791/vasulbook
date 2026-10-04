@@ -68,6 +68,13 @@ const BTYPE = {
   wholesale: "Wholesale", rental: "Rent or membership", clinic: "Clinic or professional",
 };
 
+function adminList() {
+  const list = String(process.env.ADMIN_EMAIL || "").split(",").map((s) => s.trim()).filter(Boolean);
+  return list.length ? list : LOCAL ? ["admin@localhost (set ADMIN_EMAIL)"] : [];
+}
+const fmtDay = (d) => (d ? new Date(d).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "long", year: "numeric" }) : "");
+const button = (href, label) => `<p><a href="${esc(href)}" style="display:inline-block;background:#2445B5;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;font-weight:600">${esc(label)}</a></p>`;
+
 // Sent when a new business registers: a welcome to the owner, and an alert to the admin.
 async function registrationEmails(user, appUrl) {
   const jobs = [];
@@ -76,6 +83,7 @@ async function registrationEmails(user, appUrl) {
     subject: `Welcome to ${APP_NAME}, ${user.owner_name}`,
     html: layout(`Welcome, ${user.owner_name}`, `
       <p>Your ${APP_NAME} account for <b>${esc(user.shop_name)}</b> is ready.</p>
+      <p>Your <b>free trial runs until ${esc(fmtDay(user.trial_ends_at))}</b>. No card or payment needed until then.</p>
       <p>Three things to do first:</p>
       <ol style="padding-left:20px;line-height:1.6">
         <li>Add your UPI ID in Settings so every reminder carries it.</li>
@@ -87,8 +95,7 @@ async function registrationEmails(user, appUrl) {
     text: `Welcome to ${APP_NAME}! Your account for ${user.shop_name} is ready. Open: ${appUrl}`,
   }));
 
-  let admins = String(process.env.ADMIN_EMAIL || "").split(",").map((s) => s.trim()).filter(Boolean);
-  if (!admins.length && LOCAL) admins = ["admin@localhost (set ADMIN_EMAIL)"];
+  const admins = adminList();
   if (admins.length) {
     const when = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" });
     jobs.push(send({
@@ -138,4 +145,54 @@ async function dailySummaryEmail(user, s, appUrl) {
   });
 }
 
-module.exports = { configured, resendReady, listOutbox, OUTBOX, send, registrationEmails, passwordResetEmail, dailySummaryEmail };
+// After a plan payment: a receipt to the owner and an alert to the admin.
+async function planPurchaseEmails(user, payment, appUrl) {
+  const amount = "₹" + Number(payment.amount).toLocaleString("en-IN");
+  const jobs = [send({
+    to: user.email,
+    subject: `Payment received: ${APP_NAME} plan active till ${fmtDay(user.paid_until)}`,
+    html: layout("Thank you! Your plan is active", `
+      <table style="border-collapse:collapse;font-size:14px;width:100%">
+        ${[["Business", user.shop_name], ["Plan", `${payment.months} months`], ["Amount paid", amount],
+           ["Active until", fmtDay(user.paid_until)], ["Payment ID", payment.payment_id || ""], ["Order ID", payment.order_id]]
+          .map(([k, v]) => `<tr><td style="padding:6px 0;color:#56665F;width:120px">${k}</td><td style="padding:6px 0;font-weight:600">${esc(v)}</td></tr>`).join("")}
+      </table>
+      ${button(appUrl, "Open " + APP_NAME)}`),
+    text: `Payment of ${amount} received. Your ${APP_NAME} plan is active until ${fmtDay(user.paid_until)}. Payment ID ${payment.payment_id}.`,
+  })];
+  const admins = adminList();
+  if (admins.length) jobs.push(send({
+    to: admins,
+    subject: `${APP_NAME} plan purchased: ${user.shop_name} (${amount})`,
+    html: layout("New plan purchase", `
+      <table style="border-collapse:collapse;font-size:14px;width:100%">
+        ${[["Business", user.shop_name], ["Owner", user.owner_name], ["Email", user.email], ["Phone", user.phone || "Not given"],
+           ["Amount", amount], ["Plan", `${payment.months} months`], ["Active until", fmtDay(user.paid_until)], ["Payment ID", payment.payment_id || ""], ["User ID", "#" + user.id]]
+          .map(([k, v]) => `<tr><td style="padding:6px 0;color:#56665F;width:120px">${k}</td><td style="padding:6px 0;font-weight:600">${esc(v)}</td></tr>`).join("")}
+      </table>`),
+    text: `Plan purchased: ${user.shop_name} (${user.email}) paid ${amount}. Payment ${payment.payment_id}.`,
+    replyTo: user.email,
+  }));
+  const results = await Promise.allSettled(jobs);
+  results.forEach((r) => { if (r.status === "rejected") console.error("[email error]", r.reason); });
+}
+
+// Trial or plan ending soon (stage "7" or "1"), or just ended ("0").
+async function planNoticeEmail(user, stage, st, appUrl) {
+  const price = `₹${Number(st.priceInr).toLocaleString("en-IN")} for ${st.months} months`;
+  const what = st.state === "trial" || (!user.paid_until) ? "free trial" : "plan";
+  const subject = stage === "0" ? `Your ${APP_NAME} ${what} has ended`
+    : `Your ${APP_NAME} ${what} ends ${stage === "1" ? "tomorrow" : "in " + st.daysLeft + " days"}`;
+  const body = stage === "0"
+    ? `<p>Your ${what} for <b>${esc(user.shop_name)}</b> ended on ${esc(fmtDay(st.accessUntil))}. Your customers and ledger are safe, and you can still view them.</p>
+       <p>To keep adding entries and sending reminders, subscribe for <b>${esc(price)}</b>.</p>`
+    : `<p>Your ${what} for <b>${esc(user.shop_name)}</b> ends on <b>${esc(fmtDay(st.accessUntil))}</b>.</p>
+       <p>Subscribe now for <b>${esc(price)}</b>. Your paid months start after the current period ends, so you don't lose any days.</p>`;
+  return send({
+    to: user.email, subject,
+    html: layout(subject, body + button(appUrl + "/#/settings", "Subscribe in the app")),
+    text: `${subject}. Subscribe for ${price}: ${appUrl}/#/settings`,
+  });
+}
+
+module.exports = { configured, resendReady, listOutbox, OUTBOX, send, registrationEmails, passwordResetEmail, dailySummaryEmail, planPurchaseEmails, planNoticeEmail };

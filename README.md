@@ -18,6 +18,23 @@ It is an installable mobile app (PWA) backed by a Node.js server and PostgreSQL.
 | PWA | Installs to the home screen on Android and iPhone, opens full screen, and works offline for viewing the last loaded ledger. |
 | Business types | Retail, tuition, delivery, services, wholesale, rental and clinic. Labels adapt, for example "Students" for tuition. |
 
+## Subscription (free trial, then paid)
+
+Every new account gets a **3-month free trial**. After that the plan is **₹1,000 for 10 months**, bought inside the app (Settings → Your plan, or the banner at the top) through Razorpay Checkout: UPI, cards, net banking and wallets.
+
+- Paying early never loses days: the 10 months start when the current trial or plan ends.
+- When the trial or plan ends, the owner can still log in and see everything, but adding entries, customers and reminders is paused until they pay.
+- Emails: a receipt to the owner and a "plan purchased" alert to `ADMIN_EMAIL`. Owners also get a reminder 7 days and 1 day before the end, and one on the day it ends.
+- Accounts that existed before the subscription was added get their 3 months counted from their sign-up date.
+
+Set up, in your own Razorpay account:
+
+1. **Account & Settings → API Keys**: generate keys. Put them in `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET`. Use test keys (`rzp_test_...`) first, then live keys.
+2. **Account & Settings → Webhooks → Add**: URL `https://<your-app>/api/webhooks/razorpay-billing`, event **order.paid**, and a secret you choose. Put that secret in `RAZORPAY_WEBHOOK_SECRET`. This activates the plan even if the customer's phone closes before the app hears back.
+3. Price and lengths can be changed with `PLAN_PRICE_INR`, `PLAN_MONTHS` and `TRIAL_MONTHS`.
+
+Without Razorpay keys the Subscribe button is hidden in production. In local mode you get **Test payment** and **End my trial now** buttons instead, so you can try the whole flow without paying.
+
 ## Deploy on Railway
 
 1. Push this folder to a GitHub repository.
