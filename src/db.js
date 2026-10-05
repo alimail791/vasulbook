@@ -144,6 +144,18 @@ const MIGRATIONS = [
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMPTZ`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS inactive_notice_at TIMESTAMPTZ`,
   `UPDATE users SET last_active_at = created_at WHERE last_active_at IS NULL`,
+  // Languages and states
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS state TEXT NOT NULL DEFAULT ''`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS ui_lang TEXT NOT NULL DEFAULT 'en'`,
+  // Admin audit log
+  `CREATE TABLE IF NOT EXISTS admin_actions (
+     id SERIAL PRIMARY KEY,
+     admin_email TEXT NOT NULL,
+     user_id INT REFERENCES users(id) ON DELETE SET NULL,
+     action TEXT NOT NULL,
+     detail TEXT NOT NULL DEFAULT '',
+     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
 ];
 
 async function migrate() {

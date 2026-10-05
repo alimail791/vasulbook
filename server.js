@@ -12,6 +12,7 @@ const Ledger = require("./public/ledger");
 const jobs = require("./src/jobs");
 const billing = require("./src/billing");
 const otp = require("./src/otp");
+const VBLang = require("./public/i18n/meta");
 
 const PORT = Number(process.env.PORT || 3000);
 const PROD = process.env.NODE_ENV === "production";
@@ -30,7 +31,7 @@ if (!SECRET || SECRET.length < 32) {
 }
 const COOKIE = "vb_session";
 const BTYPES = ["retail", "tuition", "delivery", "services", "wholesale", "rental", "clinic"];
-const LANGS = ["en", "ta", "hi"];
+const LANGS = VBLang.CODES;
 
 const app = express();
 app.set("trust proxy", 1);
@@ -177,6 +178,8 @@ function publicUser(u) {
     emailVerified: u.email_verified,
     referralCode: u.referral_code,
     referralPopupDue: u.referral_popup_on !== Ledger.todayIST(),
+    uiLang: u.ui_lang || "en",
+    state: u.state || "",
   };
 }
 
@@ -223,6 +226,8 @@ app.post("/api/auth/register", limit(10, 15 * 60e3), wrap(async (req, res) => {
   const e = clean(b.email, 200).toLowerCase(), pw = String(b.password || "");
   const ownerName = clean(b.ownerName, 100), shopName = clean(b.shopName, 120), phone = digits(b.phone).slice(-10);
   const type = BTYPES.includes(b.businessType) ? b.businessType : "retail";
+  const st = VBLang.STATES[b.state] ? b.state : "";
+  const uiLang = VBLang.isLang(b.uiLang) ? b.uiLang : st ? VBLang.STATES[st] : "en";
   if (!ownerName) return bad(res, "Enter your name.");
   if (!shopName) return bad(res, "Enter your business name.");
   if (!isEmail(e)) return bad(res, "Enter a valid email address.");
@@ -244,9 +249,9 @@ app.post("/api/auth/register", limit(10, 15 * 60e3), wrap(async (req, res) => {
   for (let i = 0; i < 4 && !user; i++) {
     try {
       const { rows } = await q(
-        `INSERT INTO users (email, password_hash, owner_name, shop_name, phone, business_type, trial_ends_at, email_verified, referral_code, referred_by, last_active_at)
-         VALUES ($1,$2,$3,$4,$5,$6, now() + make_interval(months => $7), $8, $9, $10, now()) RETURNING *`,
-        [e, hash, ownerName, shopName, phone, type, trialMonths, verified, newReferralCode(), referrerId]);
+        `INSERT INTO users (email, password_hash, owner_name, shop_name, phone, business_type, trial_ends_at, email_verified, referral_code, referred_by, last_active_at, state, ui_lang, reminder_lang)
+         VALUES ($1,$2,$3,$4,$5,$6, now() + make_interval(months => $7), $8, $9, $10, now(), $11, $12, $13) RETURNING *`,
+        [e, hash, ownerName, shopName, phone, type, trialMonths, verified, newReferralCode(), referrerId, st, uiLang, st ? VBLang.STATES[st] : uiLang]);
       user = rows[0];
     } catch (err) {
       if (err.code === "23505" && String(err.message).includes("email")) return bad(res, "An account with this email already exists. Try logging in.", 409);
@@ -353,6 +358,8 @@ app.put("/api/settings", auth, wrap(async (req, res) => {
   const lang = LANGS.includes(b.reminderLang) ? b.reminderLang : u.reminder_lang;
   const summary = typeof b.summaryEmail === "boolean" ? b.summaryEmail : u.summary_email;
   const autoRemind = typeof b.autoRemind === "boolean" ? b.autoRemind : u.auto_remind;
+  const uiLang = VBLang.isLang(b.uiLang) ? b.uiLang : u.ui_lang;
+  const stateName = b.state !== undefined ? (VBLang.STATES[b.state] ? b.state : "") : u.state;
   let rzpId = u.rzp_key_id, rzpSecret = u.rzp_key_secret, rzpHook = u.rzp_webhook_secret;
   if (b.razorpay) {
     if (b.razorpay.disconnect) { rzpId = ""; rzpSecret = ""; rzpHook = ""; }
@@ -364,8 +371,8 @@ app.put("/api/settings", auth, wrap(async (req, res) => {
   }
   const { rows } = await q(
     `UPDATE users SET shop_name=$1, owner_name=$2, phone=$3, upi_id=$4, business_type=$5, default_days=$6, reminder_lang=$7,
-       summary_email=$8, auto_remind=$9, rzp_key_id=$10, rzp_key_secret=$11, rzp_webhook_secret=$12 WHERE id=$13 RETURNING *`,
-    [shopName, ownerName, phone, upi, type, days, lang, summary, autoRemind, rzpId, rzpSecret, rzpHook, u.id]);
+       summary_email=$8, auto_remind=$9, rzp_key_id=$10, rzp_key_secret=$11, rzp_webhook_secret=$12, ui_lang=$14, state=$15 WHERE id=$13 RETURNING *`,
+    [shopName, ownerName, phone, upi, type, days, lang, summary, autoRemind, rzpId, rzpSecret, rzpHook, u.id, uiLang, stateName]);
   res.json({ user: publicUser(rows[0]) });
 }));
 
@@ -535,6 +542,9 @@ app.post("/api/subscription/verify", auth, wrap(async (req, res) => {
   res.json({ user: publicUser(user) });
 }));
 
+// ---------- admin dashboard ----------
+require("./src/admin")(app, { wrap, bad, limit, PROD, secret: SECRET });
+
 // ---------- local testing helpers (never active in production) ----------
 if (!PROD) {
   const fs = require("fs");
@@ -581,8 +591,9 @@ if (!PROD) {
 }
 
 // ---------- static PWA ----------
-app.get("/", (req, res) => { res.setHeader("Cache-Control", "no-cache"); res.sendFile(path.join(__dirname, "public", "landing.html")); });
-app.get(["/app", "/app/*"], (req, res) => { res.setHeader("Cache-Control", "no-cache"); res.sendFile(path.join(__dirname, "public", "index.html")); });
+require("./src/seo")(app, { baseUrl: (req) => appUrl(req).replace(/\/+$/, "") });
+app.get("/admin", (req, res) => { res.setHeader("Cache-Control", "no-cache"); res.setHeader("X-Robots-Tag", "noindex, nofollow"); res.sendFile(path.join(__dirname, "public", "admin.html")); });
+app.get(["/app", "/app/*"], (req, res) => { res.setHeader("Cache-Control", "no-cache"); res.setHeader("X-Robots-Tag", "noindex"); res.sendFile(path.join(__dirname, "public", "index.html")); });
 app.use(express.static(path.join(__dirname, "public"), {
   index: false,
   setHeaders(res, file) {

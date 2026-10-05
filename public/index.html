@@ -26,80 +26,82 @@
   <div class="auth-box">
     <div>
       <div class="brand">Vasul<b>Book</b></div>
-      <p class="auth-lede">Get your money back from customers faster, with WhatsApp reminders and UPI.</p>
+      <p class="auth-lede" data-i18n="auth_lede">Get your money back from customers faster, with WhatsApp reminders and UPI.</p>
     </div>
 
+    <label class="field lang-pick"><span data-i18n="f_app_lang">App language</span><select id="authLang" aria-label="App language"></select></label>
+
     <div class="tabs" role="tablist" id="authTabs">
-      <button type="button" role="tab" data-tab="login" aria-selected="true">Log in</button>
-      <button type="button" role="tab" data-tab="register" aria-selected="false">Create account</button>
+      <button type="button" role="tab" data-tab="login" aria-selected="true" data-i18n="tab_login">Log in</button>
+      <button type="button" role="tab" data-tab="register" aria-selected="false" data-i18n="tab_register">Create account</button>
     </div>
 
     <form class="card stack" id="loginForm" autocomplete="on">
-      <label class="field">Email<input id="lEmail" type="email" autocomplete="email" required></label>
-      <label class="field">Password<input id="lPass" type="password" autocomplete="current-password" required></label>
+      <label class="field"><span data-i18n="f_email">Email</span><input id="lEmail" type="email" autocomplete="email" required></label>
+      <label class="field"><span data-i18n="f_password">Password</span><input id="lPass" type="password" autocomplete="current-password" required></label>
       <p class="err" id="lErr" role="alert"></p>
-      <button class="btn primary block" type="submit">Log in</button>
-      <button class="linkbtn" type="button" id="toForgot">Forgot password?</button>
+      <button class="btn primary block" type="submit" data-i18n="tab_login">Log in</button>
+      <button class="linkbtn" type="button" id="toForgot" data-i18n="forgot">Forgot password?</button>
     </form>
 
     <form class="card stack" id="registerForm" autocomplete="on" hidden>
-      <label class="field">Your name<input id="rOwner" autocomplete="name" required></label>
-      <label class="field">Business name<input id="rShop" autocomplete="organization" required placeholder="Sri Lakshmi Stores"></label>
-      <label class="field">Type of business
-        <select id="rType">
-          <option value="retail">Retail shop (kirana, medical, hardware)</option>
-          <option value="tuition">Tuition or coaching centre</option>
-          <option value="delivery">Daily delivery (milk, water, paper)</option>
-          <option value="services">Services (tailor, repair, salon)</option>
-          <option value="wholesale">Wholesale or distribution</option>
-          <option value="rental">Rent, hostel or membership</option>
-          <option value="clinic">Clinic or professional</option>
+      <label class="field"><span data-i18n="f_your_name">Your name</span><input id="rOwner" autocomplete="name" required></label>
+      <label class="field"><span data-i18n="f_business_name">Business name</span><input id="rShop" autocomplete="organization" required placeholder="Sri Lakshmi Stores"></label>
+      <label class="field"><span data-i18n="f_business_type">Type of business</span><select id="rType">
+          <option value="retail" data-i18n="bt_retail">Retail shop (kirana, medical, hardware)</option>
+          <option value="tuition" data-i18n="bt_tuition">Tuition or coaching centre</option>
+          <option value="delivery" data-i18n="bt_delivery">Daily delivery (milk, water, paper)</option>
+          <option value="services" data-i18n="bt_services">Services (tailor, repair, salon)</option>
+          <option value="wholesale" data-i18n="bt_wholesale">Wholesale or distribution</option>
+          <option value="rental" data-i18n="bt_rental">Rent, hostel or membership</option>
+          <option value="clinic" data-i18n="bt_clinic">Clinic or professional</option>
         </select>
       </label>
-      <label class="field">Mobile number<input id="rPhone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="10-digit mobile"></label>
-      <label class="field">Email<input id="rEmail" type="email" autocomplete="email" required></label>
-      <label class="field">Password<input id="rPass" type="password" autocomplete="new-password" minlength="8" required><span class="hint">At least 8 characters</span></label>
-      <label class="field">Referral code (optional)<input id="rRef" autocomplete="off" autocapitalize="characters" placeholder="VB1A2B3C"><span class="hint" id="rRefHint">Got a code from a friend? You get an extra month free.</span></label>
+      <label class="field"><span data-i18n="f_state">State</span><select id="rState" required><option value="" data-i18n="choose_state">Choose your state</option></select></label>
+      <label class="field"><span data-i18n="f_mobile">Mobile number</span><input id="rPhone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="10-digit mobile" data-i18n-ph="ph_mobile"></label>
+      <label class="field"><span data-i18n="f_email">Email</span><input id="rEmail" type="email" autocomplete="email" required></label>
+      <label class="field"><span data-i18n="f_password">Password</span><input id="rPass" type="password" autocomplete="new-password" minlength="8" required><span class="hint" data-i18n="pw_hint">At least 8 characters</span></label>
+      <label class="field"><span data-i18n="f_refcode">Referral code (optional)</span><input id="rRef" autocomplete="off" autocapitalize="characters" placeholder="VB1A2B3C"><span class="hint" id="rRefHint" data-i18n="ref_hint">Got a code from a friend? You get an extra month free.</span></label>
       <p class="err" id="rErr" role="alert"></p>
-      <button class="btn primary block" type="submit">Create account</button>
+      <button class="btn primary block" type="submit" data-i18n="tab_register">Create account</button>
     </form>
 
     <form class="card stack" id="verifyForm" autocomplete="off" hidden>
-      <h2>Confirm your email</h2>
-      <p class="small">We sent a 6-digit code to <b id="vEmail"></b>. Enter it below. Check your spam folder if you don't see it.</p>
-      <label class="field">Code<input id="vCode" class="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required placeholder="••••••"></label>
+      <h2 data-i18n="verify_title">Confirm your email</h2>
+      <p class="small" id="vText"></p>
+      <label class="field"><span data-i18n="f_code">Code</span><input id="vCode" class="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required placeholder="••••••"></label>
       <p class="err" id="vErr" role="alert"></p>
-      <button class="btn primary block" type="submit">Confirm</button>
+      <button class="btn primary block" type="submit" data-i18n="btn_confirm">Confirm</button>
       <div class="row between">
-        <button class="linkbtn" type="button" id="vResend">Send a new code</button>
-        <button class="linkbtn" type="button" id="vChange">Wrong email?</button>
+        <button class="linkbtn" type="button" id="vResend" data-i18n="send_new_code">Send a new code</button>
+        <button class="linkbtn" type="button" id="vChange" data-i18n="wrong_email">Wrong email?</button>
       </div>
       <div class="stack" id="vChangeBox" hidden>
-        <label class="field">Correct email<input id="vNewEmail" type="email" autocomplete="email"></label>
-        <button class="btn" type="button" id="vChangeSave">Update email and send code</button>
+        <label class="field"><span data-i18n="f_correct_email">Correct email</span><input id="vNewEmail" type="email" autocomplete="email"></label>
+        <button class="btn" type="button" id="vChangeSave" data-i18n="btn_update_email">Update email and send code</button>
       </div>
-      <button class="linkbtn" type="button" id="vLogout">Log out</button>
+      <button class="linkbtn" type="button" id="vLogout" data-i18n="logout">Log out</button>
     </form>
 
     <form class="card stack" id="forgotForm" hidden>
-      <h2>Reset your password</h2>
-      <p class="muted small">Enter your account email. We'll email you a 6-digit code.</p>
-      <label class="field">Email<input id="fEmail" type="email" autocomplete="email" required></label>
+      <h2 data-i18n="reset_title">Reset your password</h2>
+      <p class="muted small" data-i18n="reset_intro">Enter your account email. We'll email you a 6-digit code.</p>
+      <label class="field"><span data-i18n="f_email">Email</span><input id="fEmail" type="email" autocomplete="email" required></label>
       <p class="err" id="fErr" role="alert"></p>
-      <button class="btn primary block" type="submit">Send code</button>
-      <button class="linkbtn" type="button" data-back-login>Back to log in</button>
+      <button class="btn primary block" type="submit" data-i18n="btn_send_code">Send code</button>
+      <button class="linkbtn" type="button" data-back-login data-i18n="back_login">Back to log in</button>
     </form>
 
     <form class="card stack" id="resetForm" autocomplete="off" hidden>
-      <h2>Set a new password</h2>
-      <p class="small">If <b id="nEmail"></b> has an account, a 6-digit code is on its way. It works for 10 minutes.</p>
-      <label class="field">Code<input id="nCode" class="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required placeholder="••••••"></label>
-      <label class="field">New password<input id="nPass" type="password" autocomplete="new-password" minlength="8" required><span class="hint">At least 8 characters</span></label>
+      <h2 data-i18n="newpw_title">Set a new password</h2>
+      <p class="small" id="nText"></p>
+      <label class="field"><span data-i18n="f_code">Code</span><input id="nCode" class="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required placeholder="••••••"></label>
+      <label class="field"><span data-i18n="f_new_password">New password</span><input id="nPass" type="password" autocomplete="new-password" minlength="8" required><span class="hint" data-i18n="pw_hint">At least 8 characters</span></label>
       <p class="err" id="nErr" role="alert"></p>
-      <button class="btn primary block" type="submit">Save password</button>
+      <button class="btn primary block" type="submit" data-i18n="btn_save_password">Save password</button>
       <div class="row between">
-        <button class="linkbtn" type="button" id="nResend">Send a new code</button>
-        <button class="linkbtn" type="button" data-back-login>Back to log in</button>
+        <button class="linkbtn" type="button" id="nResend" data-i18n="send_new_code">Send a new code</button>
+        <button class="linkbtn" type="button" data-back-login data-i18n="back_login">Back to log in</button>
       </div>
     </form>
   </div>
@@ -109,14 +111,14 @@
 <div id="appScreen" hidden>
   <header class="top">
     <div class="top-l"><a class="brand" href="/">Vasul<b>Book</b></a><span class="shop" id="topShop"></span></div>
-    <button class="btn primary sm top-up" type="button" id="topUpgrade" hidden>Upgrade</button>
+    <button class="btn primary sm top-up" type="button" id="topUpgrade" hidden data-i18n="upgrade">Upgrade</button>
     <nav class="top-nav" aria-label="Main">
-      <a href="#/home" data-nav="home">Home</a>
-      <a href="#/customers" data-nav="customers">Customers</a>
-      <a href="#/settings" data-nav="settings">Settings</a>
+      <a href="#/home" data-nav="home" data-i18n="nav_home">Home</a>
+      <a href="#/customers" data-nav="customers" data-i18n="nav_customers">Customers</a>
+      <a href="#/settings" data-nav="settings" data-i18n="nav_settings">Settings</a>
     </nav>
   </header>
-  <div class="offline" id="offlineBar" hidden>You're offline. You can look at your ledger, but changes need internet.</div>
+  <div class="offline" id="offlineBar" hidden data-i18n="offline">You're offline. You can look at your ledger, but changes need internet.</div>
   <div class="plan-bar" id="planBar" hidden>
     <p id="planBarText"></p>
     <button class="btn sm" type="button" id="planBarBtn">Subscribe</button>
@@ -126,34 +128,34 @@
     <!-- HOME -->
     <section class="view" id="view-home" hidden>
       <div class="install" id="installCard" hidden>
-        <p id="installText">Install VasulBook on your phone for one-tap access.</p>
-        <div class="row"><button class="btn primary sm" type="button" id="installBtn">Install app</button><button class="btn ghost sm" type="button" id="installDismiss">Not now</button></div>
+        <p id="installText" data-i18n="install_text">Install VasulBook on your phone for one-tap access.</p>
+        <div class="row"><button class="btn primary sm" type="button" id="installBtn" data-i18n="install_app">Install app</button><button class="btn ghost sm" type="button" id="installDismiss" data-i18n="not_now">Not now</button></div>
       </div>
 
       <div class="card quick stack">
-        <span class="eyebrow">Quick entry</span>
+        <span class="eyebrow" data-i18n="quick_entry">Quick entry</span>
         <form id="quickForm" autocomplete="off">
           <input id="quickInput" placeholder="Ravi 500 rice oil" aria-label="Quick entry" enterkeyhint="done">
-          <button class="btn primary" type="submit">Save</button>
+          <button class="btn primary" type="submit" data-i18n="save">Save</button>
         </form>
         <p class="preview" id="quickPreview" aria-live="polite"></p>
-        <p class="hint small muted">Name and amount adds credit: <code>Ravi 500 rice</code>. Add "paid" for a payment: <code>Ravi paid 300</code>.</p>
+        <p class="hint small muted" id="quickHint"></p>
       </div>
 
       <div class="tiles" aria-label="Today at a glance">
-        <div class="tile"><span class="eyebrow">Total pending</span><span class="amt" id="tPending">₹0</span><span class="sub" id="tPendingSub"></span></div>
-        <div class="tile good"><span class="eyebrow">Collected today</span><span class="amt" id="tCollected">₹0</span><span class="sub" id="tCollectedSub"></span></div>
-        <div class="tile"><span class="eyebrow">Credit today</span><span class="amt" id="tCredit">₹0</span><span class="sub" id="tCreditSub"></span></div>
-        <div class="tile hot"><span class="eyebrow">Overdue</span><span class="amt" id="tOverdue">₹0</span><span class="sub" id="tOverdueSub"></span></div>
+        <div class="tile"><span class="eyebrow" data-i18n="tile_pending">Total pending</span><span class="amt" id="tPending">₹0</span><span class="sub" id="tPendingSub"></span></div>
+        <div class="tile good"><span class="eyebrow" data-i18n="tile_collected">Collected today</span><span class="amt" id="tCollected">₹0</span><span class="sub" id="tCollectedSub"></span></div>
+        <div class="tile"><span class="eyebrow" data-i18n="tile_credit">Credit today</span><span class="amt" id="tCredit">₹0</span><span class="sub" id="tCreditSub"></span></div>
+        <div class="tile hot"><span class="eyebrow" data-i18n="tile_overdue">Overdue</span><span class="amt" id="tOverdue">₹0</span><span class="sub" id="tOverdueSub"></span></div>
       </div>
 
       <div class="upgrade-card" id="upgradeCard" hidden>
         <div class="up-text">
-          <span class="eyebrow" id="upEyebrow">Free trial</span>
-          <h2 id="upTitle">Upgrade</h2>
+          <span class="eyebrow" id="upEyebrow" data-i18n="plan_trial">Free trial</span>
+          <h2 id="upTitle" data-i18n="upgrade">Upgrade</h2>
           <p class="small" id="upSub"></p>
         </div>
-        <button class="btn primary" type="button" id="upBtn">Upgrade now</button>
+        <button class="btn primary" type="button" id="upBtn" data-i18n="upgrade_now">Upgrade now</button>
       </div>
 
       <button class="refer-card" type="button" id="referCard">
@@ -164,15 +166,15 @@
 
       <div class="home-cols">
         <div class="card stack">
-          <div class="sec-head"><h2>Chase today</h2><a href="#/customers" class="small">See all</a></div>
+          <div class="sec-head"><h2 data-i18n="chase_today">Chase today</h2><a href="#/customers" class="small" data-i18n="see_all">See all</a></div>
           <ul class="cust-list" id="chaseList"></ul>
         </div>
         <div class="card stack">
-          <div class="sec-head"><h2>Today's summary</h2></div>
+          <div class="sec-head"><h2 data-i18n="todays_summary">Today's summary</h2></div>
           <pre class="summary-text" id="sumText"></pre>
           <div class="row">
-            <a class="btn wa sm" id="sumWa" href="#" target="_blank" rel="noopener">Send to my WhatsApp</a>
-            <button class="btn sm" type="button" id="sumCopy">Copy</button>
+            <a class="btn wa sm" id="sumWa" href="#" target="_blank" rel="noopener" data-i18n="send_my_wa">Send to my WhatsApp</a>
+            <button class="btn sm" type="button" id="sumCopy" data-i18n="copy">Copy</button>
           </div>
           <p class="small muted" id="sumNote"></p>
         </div>
@@ -184,21 +186,21 @@
       <div class="split" id="split">
         <div class="card list-card">
           <div class="list-head">
-            <div class="sec-head"><h2 id="listTitle">Customers</h2><span class="small muted" id="listCount"></span></div>
-            <input id="search" type="search" placeholder="Search name or phone" aria-label="Search">
+            <div class="sec-head"><h2 id="listTitle" data-i18n="nav_customers">Customers</h2><span class="small muted" id="listCount"></span></div>
+            <input id="search" type="search" placeholder="Search name or phone" data-i18n-ph="search_ph" aria-label="Search">
             <div class="filters" role="group" aria-label="Filter">
-              <button class="chip" type="button" data-f="all" aria-pressed="true">All</button>
-              <button class="chip" type="button" data-f="overdue" aria-pressed="false">Overdue</button>
-              <button class="chip" type="button" data-f="due" aria-pressed="false">Due soon</button>
-              <button class="chip" type="button" data-f="open" aria-pressed="false">Not due yet</button>
-              <button class="chip" type="button" data-f="clear" aria-pressed="false">Cleared</button>
+              <button class="chip" type="button" data-f="all" aria-pressed="true" data-i18n="f_all">All</button>
+              <button class="chip" type="button" data-f="overdue" aria-pressed="false" data-i18n="tile_overdue">Overdue</button>
+              <button class="chip" type="button" data-f="due" aria-pressed="false" data-i18n="f_due">Due soon</button>
+              <button class="chip" type="button" data-f="open" aria-pressed="false" data-i18n="f_open">Not due yet</button>
+              <button class="chip" type="button" data-f="clear" aria-pressed="false" data-i18n="f_cleared">Cleared</button>
             </div>
           </div>
           <ul class="cust-list" id="custList"></ul>
           <form class="add-inline" id="addInline" autocomplete="off">
-            <label class="field">Name<input id="aiName" required></label>
-            <label class="field">WhatsApp number<input id="aiPhone" type="tel" inputmode="tel" placeholder="10-digit mobile"></label>
-            <button class="btn" type="submit">Add</button>
+            <label class="field"><span data-i18n="f_name">Name</span><input id="aiName" required></label>
+            <label class="field"><span data-i18n="f_whatsapp">WhatsApp number</span><input id="aiPhone" type="tel" inputmode="tel" placeholder="10-digit mobile" data-i18n-ph="ph_mobile"></label>
+            <button class="btn" type="submit" data-i18n="add">Add</button>
           </form>
         </div>
 
@@ -213,50 +215,48 @@
                 <div class="d-phone" id="dPhone"></div>
                 <div class="d-pills" id="dPills"></div>
               </div>
-              <div class="bal"><span class="amt" id="dBal"></span><span class="lbl" id="dBalLbl">balance due</span></div>
+              <div class="bal"><span class="amt" id="dBal"></span><span class="lbl" id="dBalLbl" data-i18n="balance_due">balance due</span></div>
             </div>
-            <div class="row"><button class="btn sm" type="button" id="editCust">Edit details</button></div>
+            <div class="row"><button class="btn sm" type="button" id="editCust" data-i18n="edit_details">Edit details</button></div>
           </div>
 
           <div class="card remind stack">
-            <div class="sec-head"><h3>WhatsApp reminder</h3><span class="small muted" id="lastRem"></span></div>
+            <div class="sec-head"><h3 data-i18n="wa_reminder">WhatsApp reminder</h3><span class="small muted" id="lastRem"></span></div>
             <div class="opts">
-              <label class="field">Language
-                <select id="remLang"><option value="en">English</option><option value="ta">தமிழ் Tamil</option><option value="hi">हिन्दी Hindi</option></select>
+              <label class="field"><span data-i18n="f_rem_lang">Language</span><select id="remLang"></select>
               </label>
-              <label class="field">Tone
-                <select id="remTone"><option value="auto">Automatic</option><option value="gentle">Friendly</option><option value="due">Due today</option><option value="firm">Firm</option></select>
+              <label class="field"><span data-i18n="f_tone">Tone</span><select id="remTone"><option value="auto" data-i18n="tone_auto">Automatic</option><option value="gentle" data-i18n="tone_gentle">Friendly</option><option value="due" data-i18n="tone_due">Due today</option><option value="firm" data-i18n="tone_firm">Firm</option></select>
               </label>
             </div>
             <textarea id="remText" aria-label="Reminder message"></textarea>
             <div class="row">
-              <a class="btn wa" id="waLink" href="#" target="_blank" rel="noopener">Open in WhatsApp</a>
-              <button class="btn" type="button" id="apiSend" hidden>Send automatically</button>
-              <button class="btn" type="button" id="copyRem">Copy</button>
-              <button class="btn" type="button" id="payLinkBtn" hidden>Add payment link</button>
+              <a class="btn wa" id="waLink" href="#" target="_blank" rel="noopener" data-i18n="open_wa">Open in WhatsApp</a>
+              <button class="btn" type="button" id="apiSend" hidden data-i18n="send_auto">Send automatically</button>
+              <button class="btn" type="button" id="copyRem" data-i18n="copy">Copy</button>
+              <button class="btn" type="button" id="payLinkBtn" hidden data-i18n="add_paylink">Add payment link</button>
             </div>
             <p class="small muted" id="remNote"></p>
           </div>
 
           <form class="card stack" id="entryForm" autocomplete="off">
             <div class="seg" role="tablist">
-              <button type="button" role="tab" data-k="credit" aria-selected="true">Give credit</button>
-              <button type="button" role="tab" data-k="payment" aria-selected="false">Got payment</button>
+              <button type="button" role="tab" data-k="credit" aria-selected="true" data-i18n="give_credit">Give credit</button>
+              <button type="button" role="tab" data-k="payment" aria-selected="false" data-i18n="got_payment">Got payment</button>
             </div>
             <div class="grid2">
-              <label class="field">Amount (₹)<input id="eAmt" inputmode="decimal" required></label>
-              <label class="field" id="eDueWrap">Due date<input id="eDue" type="date"></label>
-              <label class="field" id="eModeWrap" hidden>Paid by<select id="eMode"><option>UPI</option><option>Cash</option><option>Bank transfer</option><option>Cheque</option></select></label>
+              <label class="field"><span data-i18n="f_amount">Amount (₹)</span><input id="eAmt" inputmode="decimal" required></label>
+              <label class="field" id="eDueWrap"><span data-i18n="f_due_date">Due date</span><input id="eDue" type="date"></label>
+              <label class="field" id="eModeWrap" hidden><span data-i18n="f_paid_by">Paid by</span><select id="eMode"><option>UPI</option><option value="Cash" data-i18n="pm_cash">Cash</option><option value="Bank transfer" data-i18n="pm_bank">Bank transfer</option><option value="Cheque" data-i18n="pm_cheque">Cheque</option></select></label>
             </div>
-            <label class="field" id="eNoteWrap">Items or note<input id="eNote" placeholder="Rice 5kg, oil"></label>
+            <label class="field" id="eNoteWrap"><span data-i18n="f_items">Items or note</span><input id="eNote" placeholder="Rice 5kg, oil" data-i18n-ph="ph_items"></label>
             <div class="row">
-              <button class="btn primary" type="submit" id="eSubmit">Add credit</button>
-              <button class="btn sm" type="button" id="eFull" hidden>Fill full balance</button>
+              <button class="btn primary" type="submit" id="eSubmit" data-i18n="btn_add_credit">Add credit</button>
+              <button class="btn sm" type="button" id="eFull" hidden data-i18n="fill_full">Fill full balance</button>
             </div>
           </form>
 
           <div class="stack">
-            <div class="sec-head"><h3>Ledger</h3><span class="small muted">Newest first</span></div>
+            <div class="sec-head"><h3 data-i18n="ledger">Ledger</h3><span class="small muted" data-i18n="newest_first">Newest first</span></div>
             <ul class="ledger" id="ledger"></ul>
           </div>
         </div>
@@ -267,49 +267,50 @@
     <!-- SETTINGS -->
     <section class="view settings" id="view-settings" hidden>
       <div class="card plan-card" id="planCard">
-        <div class="sec-head"><h2>Your plan</h2><span class="pill" id="planPill"></span></div>
+        <div class="sec-head"><h2 data-i18n="your_plan">Your plan</h2><span class="pill" id="planPill"></span></div>
         <p class="plan-status" id="planStatus"></p>
         <div class="plan-offer">
           <div><span class="amt plan-price" id="planPrice">₹1,000</span><span class="muted small" id="planPer"> for 10 months</span></div>
           <p class="small muted" id="planOfferNote"></p>
         </div>
         <div class="row">
-          <button class="btn primary" type="button" id="planBuy">Subscribe with Razorpay</button>
+          <button class="btn primary" type="button" id="planBuy" data-i18n="subscribe_rzp">Subscribe with Razorpay</button>
           <button class="btn sm" type="button" id="planTestPay" hidden>Test payment (local only)</button>
           <button class="btn ghost sm" type="button" id="planTestExpire" hidden>End my trial now (local only)</button>
         </div>
         <p class="err" id="planErr" role="alert"></p>
         <div class="stack" id="planHistoryWrap" hidden>
-          <span class="eyebrow">Payments</span>
+          <span class="eyebrow" data-i18n="payments">Payments</span>
           <ul class="plan-history" id="planHistory"></ul>
         </div>
       </div>
 
       <form class="card" id="bizForm" autocomplete="off">
-        <h2>Business</h2>
-        <label class="field">Business name<input id="sShop" required></label>
-        <label class="field">Your name<input id="sOwner" required></label>
-        <label class="field">Type of business
-          <select id="sType">
-            <option value="retail">Retail shop (kirana, medical, hardware)</option>
-            <option value="tuition">Tuition or coaching centre</option>
-            <option value="delivery">Daily delivery (milk, water, paper)</option>
-            <option value="services">Services (tailor, repair, salon)</option>
-            <option value="wholesale">Wholesale or distribution</option>
-            <option value="rental">Rent, hostel or membership</option>
-            <option value="clinic">Clinic or professional</option>
+        <h2 data-i18n="business">Business</h2>
+        <label class="field"><span data-i18n="f_app_lang">App language</span><select id="sUiLang"></select><span class="hint" data-i18n="lang_hint">Changes the app screens. Reminders can use any language.</span></label>
+        <label class="field"><span data-i18n="f_state">State</span><select id="sState"><option value="" data-i18n="choose_state">Choose your state</option></select></label>
+        <label class="field"><span data-i18n="f_business_name">Business name</span><input id="sShop" required></label>
+        <label class="field"><span data-i18n="f_your_name">Your name</span><input id="sOwner" required></label>
+        <label class="field"><span data-i18n="f_business_type">Type of business</span><select id="sType">
+            <option value="retail" data-i18n="bt_retail">Retail shop (kirana, medical, hardware)</option>
+            <option value="tuition" data-i18n="bt_tuition">Tuition or coaching centre</option>
+            <option value="delivery" data-i18n="bt_delivery">Daily delivery (milk, water, paper)</option>
+            <option value="services" data-i18n="bt_services">Services (tailor, repair, salon)</option>
+            <option value="wholesale" data-i18n="bt_wholesale">Wholesale or distribution</option>
+            <option value="rental" data-i18n="bt_rental">Rent, hostel or membership</option>
+            <option value="clinic" data-i18n="bt_clinic">Clinic or professional</option>
           </select>
         </label>
-        <label class="field">Your WhatsApp number<input id="sPhone" type="tel" inputmode="tel"><span class="hint">Used for "Send to my WhatsApp"</span></label>
-        <label class="field">UPI ID<input id="sUpi" placeholder="yourshop@okaxis"><span class="hint">Goes into every reminder so customers can pay at once</span></label>
+        <label class="field"><span data-i18n="f_my_wa">Your WhatsApp number</span><input id="sPhone" type="tel" inputmode="tel"><span class="hint" data-i18n="my_wa_hint">Used for "Send to my WhatsApp"</span></label>
+        <label class="field"><span data-i18n="f_upi">UPI ID</span><input id="sUpi" placeholder="yourshop@okaxis"><span class="hint" data-i18n="upi_hint">Goes into every reminder so customers can pay at once</span></label>
         <div class="grid2">
-          <label class="field">Days to pay<input id="sDays" type="number" min="0" max="120" inputmode="numeric"></label>
-          <label class="field">Reminder language<select id="sLang"><option value="en">English</option><option value="ta">Tamil</option><option value="hi">Hindi</option></select></label>
+          <label class="field"><span data-i18n="f_days">Days to pay</span><input id="sDays" type="number" min="0" max="120" inputmode="numeric"></label>
+          <label class="field"><span data-i18n="f_rem_default">Reminder language</span><select id="sLang"></select></label>
         </div>
-        <label class="check"><input type="checkbox" id="sSummary"><span>Email me a summary every evening at 9 pm</span></label>
+        <label class="check"><input type="checkbox" id="sSummary"><span data-i18n="summary_opt">Email me a summary every evening at 9 pm</span></label>
         <label class="check" id="sAutoWrap" hidden><input type="checkbox" id="sAuto"><span>Send WhatsApp reminders automatically at 10:30 am to customers who are due or overdue (once every 3 days each)</span></label>
         <p class="err" id="bizErr" role="alert"></p>
-        <button class="btn primary" type="submit">Save</button>
+        <button class="btn primary" type="submit" data-i18n="save">Save</button>
       </form>
 
       <form class="card" id="rzpForm" autocomplete="off">
@@ -320,18 +321,18 @@
         <label class="field">Key secret<input id="rzpSecret" type="password" placeholder="Leave blank to keep the saved one"></label>
         <label class="field">Webhook secret<input id="rzpHook" type="password" placeholder="Leave blank to keep the saved one"></label>
         <div class="field">Webhook URL (add in Razorpay → Webhooks, event "payment_link.paid")
-          <div class="copybox"><input id="rzpUrl" readonly><button class="btn sm" type="button" id="rzpCopy">Copy</button></div>
+          <div class="copybox"><input id="rzpUrl" readonly><button class="btn sm" type="button" id="rzpCopy" data-i18n="copy">Copy</button></div>
         </div>
         <p class="err" id="rzpErr" role="alert"></p>
         <div class="row"><button class="btn primary" type="submit">Save Razorpay</button><button class="btn danger sm" type="button" id="rzpDisconnect">Disconnect</button></div>
       </form>
 
       <div class="card">
-        <h2>Account</h2>
+        <h2 data-i18n="account">Account</h2>
         <p class="small muted" id="accEmail"></p>
         <div class="row">
-          <button class="btn" type="button" id="logoutBtn">Log out</button>
-          <button class="btn danger" type="button" id="deleteAccBtn">Delete account</button>
+          <button class="btn" type="button" id="logoutBtn" data-i18n="logout">Log out</button>
+          <button class="btn danger" type="button" id="deleteAccBtn" data-i18n="delete_account">Delete account</button>
         </div>
       </div>
     </section>
@@ -348,25 +349,25 @@
 <div class="sheet-wrap" id="referSheet" hidden>
   <div class="sheet refer-sheet" role="dialog" aria-modal="true" aria-labelledby="referTitle">
     <div class="refer-hero">
-      <span class="eyebrow">Refer &amp; earn</span>
+      <span class="eyebrow" data-i18n="refer_eyebrow">Refer &amp; earn</span>
       <h2 id="referTitle">Get <span id="rsMonths">5</span> months of VasulBook free</h2>
       <p class="small" id="rsBody">Share VasulBook with another shop or business owner. When they join with your link, you get 5 months free. They get 1 extra month of free trial.</p>
     </div>
     <div class="refer-code">
-      <span class="eyebrow">Your code</span>
-      <div class="row between"><span class="amt code" id="rsCode">VB••••••</span><button class="btn sm" type="button" id="rsCopyCode">Copy code</button></div>
-      <div class="copybox"><input id="rsLink" readonly aria-label="Your referral link"><button class="btn sm" type="button" id="rsCopyLink">Copy link</button></div>
+      <span class="eyebrow" data-i18n="your_code">Your code</span>
+      <div class="row between"><span class="amt code" id="rsCode">VB••••••</span><button class="btn sm" type="button" id="rsCopyCode" data-i18n="copy_code">Copy code</button></div>
+      <div class="copybox"><input id="rsLink" readonly aria-label="Your referral link"><button class="btn sm" type="button" id="rsCopyLink" data-i18n="copy_link">Copy link</button></div>
     </div>
     <div class="row">
-      <a class="btn wa" id="rsWa" href="#" target="_blank" rel="noopener">Share on WhatsApp</a>
-      <button class="btn" type="button" id="rsShare" hidden>More ways to share</button>
+      <a class="btn wa" id="rsWa" href="#" target="_blank" rel="noopener" data-i18n="share_wa">Share on WhatsApp</a>
+      <button class="btn" type="button" id="rsShare" hidden data-i18n="more_share">More ways to share</button>
     </div>
     <div class="refer-stats" id="rsStats">
-      <div><span class="amt" id="rsJoined">0</span><span class="small muted">friends joined</span></div>
-      <div><span class="amt" id="rsEarned">0</span><span class="small muted">months earned</span></div>
+      <div><span class="amt" id="rsJoined">0</span><span class="small muted" data-i18n="friends_joined">friends joined</span></div>
+      <div><span class="amt" id="rsEarned">0</span><span class="small muted" data-i18n="months_earned">months earned</span></div>
     </div>
     <ul class="plan-history" id="rsFriends" hidden></ul>
-    <button class="btn ghost block" type="button" id="rsClose">Maybe later</button>
+    <button class="btn ghost block" type="button" id="rsClose" data-i18n="maybe_later">Maybe later</button>
   </div>
 </div>
 
@@ -377,7 +378,7 @@
     <div class="stack" id="sheetBody"></div>
     <p class="err" id="sheetErr" role="alert"></p>
     <div class="row">
-      <button class="btn primary" type="submit" id="sheetOk">Save</button>
+      <button class="btn primary" type="submit" id="sheetOk" data-i18n="save">Save</button>
       <button class="btn" type="button" id="sheetCancel">Cancel</button>
       <button class="btn danger sm" type="button" id="sheetExtra" hidden></button>
     </div>
@@ -386,6 +387,7 @@
 
 <div class="toast" id="toast" role="status" hidden></div>
 
+<script src="/i18n/meta.js"></script>
 <script src="/ledger.js"></script>
 <script src="/app.js"></script>
 </body>

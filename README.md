@@ -53,6 +53,24 @@ Local testing pages: `/dev/run-inactive?days=0` sends the absent email now; sign
 - **Demo video:** `public/media/demo.mp4` (and `.webm`) is a 48-second captioned walkthrough recorded from the app. To add YouTube videos as well, set `DEMO_VIDEOS`, comma separated, optionally with a title: `Tamil demo|https://youtu.be/XXXXXXXXXXX, https://youtu.be/YYYYYYYYYYY`.
 - **Upgrade:** trial and expired owners see an Upgrade card on their dashboard and an Upgrade button in the top bar; both open Razorpay checkout.
 
+## Admin dashboard
+
+- Open `/admin` and log in with any address listed in `ADMIN_EMAIL` and `ADMIN_PASSWORD` (at least 10 characters). Without `ADMIN_PASSWORD` the admin panel stays locked in production. Locally it is `admin@localhost` / `admin12345`.
+- Shows: businesses, new sign-ups, paid / trial / expired counts, revenue this month and all time, a 30-day sign-up chart, and breakdowns by business type, state and app language.
+- Businesses table: search, filters (trial, paid, expired, email not confirmed, away 5+ days), CSV export, and a detail panel where you can gift free months or mark an email as confirmed. Every admin action is logged in `admin_actions`.
+
+## Languages
+
+- The app, the landing page and the WhatsApp reminders work in English, Hindi, Tamil, Telugu, Kannada, Malayalam, Marathi, Bengali, Gujarati and Punjabi.
+- At sign-up the owner picks their state; the app switches to that state's language (Tamil Nadu: Tamil, Kerala: Malayalam, and so on). They can change the app language and the reminder language any time in Settings.
+- Texts live in `public/i18n/<code>.json` (an `app` section and a `landing` section). The state-to-language map is in `public/i18n/meta.js`. A missing text falls back to English.
+
+## SEO
+
+- The landing page is rendered on the server in every language: `/` (English), `/hi`, `/ta`, `/te`, `/kn`, `/ml`, `/mr`, `/bn`, `/gu`, `/pa`. Each page has its own title and description, `hreflang` links to the others, a canonical URL, Open Graph and Twitter tags with `public/og-image.png`, and JSON-LD (SoftwareApplication with the INR price, Organization, FAQ).
+- `/sitemap.xml` lists all language pages; `/robots.txt` points to it and keeps `/app`, `/admin` and `/api` out of search.
+- Set `APP_URL` to your real domain (e.g. `https://vasulbook.in`) so canonical and sitemap links use it. Then add the site in Google Search Console and submit `https://your-domain/sitemap.xml`.
+
 ## Deploy on Railway
 
 1. Push this folder to a GitHub repository.
@@ -127,7 +145,10 @@ src/db.js              PostgreSQL pool and table setup (runs on start)
 src/email.js           Resend emails: welcome, admin alert, password reset, evening summary
 src/integrations.js    Razorpay payment links, WhatsApp Cloud API, key encryption
 src/jobs.js            Scheduled jobs (IST): 9 pm summary, 10:30 am reminders, token cleanup
-public/                The PWA: index.html, app.js, app.css, ledger.js (shared maths), sw.js, manifest, icons
+src/admin.js           Admin login and dashboard API (/api/admin/*)
+src/seo.js             Landing page per language, sitemap.xml, robots.txt
+views/landing.html     Landing page template ({{key}} texts come from public/i18n)
+public/                The PWA and admin.html: index.html, app.js, app.css, ledger.js (shared maths), sw.js, manifest, icons
 ```
 
 ## API summary

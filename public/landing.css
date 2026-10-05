@@ -118,3 +118,13 @@ details p{margin-top:8px;color:var(--muted)}
 .l-wa:hover{background:#18924A}
 @media (max-width:420px){.l-wa{padding:14px}.l-wa-label{display:none}}
 @media (prefers-reduced-motion:no-preference){.l-wa{transition:transform .15s}.l-wa:hover{transform:translateY(-2px)}}
+
+/* language picker */
+.l-lang{appearance:none;-webkit-appearance:none;border:1px solid var(--line);background:var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M6 9l6 6 6-6' fill='none' stroke='%23888' stroke-width='2'/%3E%3C/svg%3E") no-repeat right 8px center/14px;color:var(--ink);font:inherit;font-size:14px;font-weight:600;padding:7px 28px 7px 10px;border-radius:999px;max-width:118px;width:auto;min-height:36px;cursor:pointer}
+.l-foot-langs div{display:flex;flex-wrap:wrap;gap:6px 14px;max-width:260px}
+.l-foot-langs a[aria-current]{color:var(--accent)}
+@media (max-width:520px){.l-top .l-login{display:none}.l-lang{max-width:96px;padding-left:8px}}
+/* long words in Indian languages must wrap on small phones */
+.l-hero-in>*{min-width:0}
+.landing h1,.landing h2,.landing h3{overflow-wrap:anywhere}
+.l-cta .btn{white-space:normal;text-align:center;max-width:100%}

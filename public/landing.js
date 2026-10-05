@@ -1,7 +1,6 @@
 (function () {
   "use strict";
   const $ = (id) => document.getElementById(id);
-  const inr = (n) => "₹" + Math.round(Number(n) || 0).toLocaleString("en-IN");
   const standalone = () => window.matchMedia("(display-mode: standalone)").matches || navigator.standalone === true;
 
   // The installed app, and old app links like /#/home, go straight into the app.
@@ -11,42 +10,45 @@
   }
 
   window.addEventListener("hashchange", () => { if (location.hash.startsWith("#/")) location.replace("/app" + location.hash); });
-  $("year").textContent = new Date().getFullYear();
+
+  const lang = document.body.dataset.lang || "en";
+  const pagePath = (c) => (c === "en" ? "/" : "/" + c);
+  const remember = (c) => { try { localStorage.setItem("vb_lang", c); } catch { /* ignore */ } };
+
+  // A visitor who picked a language before lands on that language's page.
+  try {
+    const saved = localStorage.getItem("vb_lang");
+    if (lang === "en" && location.pathname === "/" && saved && saved !== "en" && document.querySelector(`#langPick option[value="${saved}"]`)) {
+      location.replace(pagePath(saved) + location.search + location.hash);
+      return;
+    }
+  } catch { /* storage blocked */ }
+  $("langPick").addEventListener("change", (e) => { remember(e.target.value); location.href = pagePath(e.target.value) + location.hash; });
+  document.querySelectorAll(".l-foot-langs a").forEach((a) => a.addEventListener("click", () => remember(a.getAttribute("hreflang"))));
 
   // Referral links: /?ref=CODE. Remember the code and carry it into sign-up.
   let ref = "";
   try {
     const q = new URLSearchParams(location.search).get("ref");
-    if (q) { ref = q.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12); localStorage.setItem("vb_ref", ref); history.replaceState(null, "", "/"); }
+    if (q) { ref = q.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12); localStorage.setItem("vb_ref", ref); history.replaceState(null, "", location.pathname); }
     else ref = localStorage.getItem("vb_ref") || "";
   } catch { /* storage blocked: still works without it */ }
-  const startHref = "/app" + (ref ? "?ref=" + encodeURIComponent(ref) : "") + "#register";
+  const startHref = "/app?lang=" + lang + (ref ? "&ref=" + encodeURIComponent(ref) : "") + "#register";
   document.querySelectorAll("[data-start]").forEach((a) => { a.href = startHref; });
+  if (ref) { $("refCode").textContent = ref; $("refBanner").hidden = false; }
 
-  // Fill prices and months from the server so they always match the app.
+  // Prices and text are rendered by the server; only optional extras come from config.
   fetch("/api/config", { credentials: "same-origin" }).then((r) => r.json()).then((c) => {
-    const b = c.billing || {}, rf = c.referral || {};
-    const trial = b.trialMonths || 3, price = b.priceInr || 1000, months = b.months || 10;
-    document.querySelectorAll("[data-trial]").forEach((el) => { el.textContent = trial; });
-    document.querySelectorAll("[data-price]").forEach((el) => { el.textContent = inr(price); });
-    document.querySelectorAll("[data-months]").forEach((el) => { el.textContent = months; });
-    document.querySelectorAll("[data-permonth]").forEach((el) => { el.textContent = `${inr(price / months)} a month`; });
-    document.querySelectorAll("[data-reward]").forEach((el) => { el.textContent = rf.rewardMonths || 5; });
-    document.querySelectorAll(".price-line").forEach((el) => { el.textContent = `${inr(price)} for ${months} months`; });
-    if (ref) {
-      $("refCode").textContent = ref;
-      $("refMonths").textContent = trial + (rf.friendBonusMonths || 0);
-      $("refBanner").hidden = false;
-    }
     if (!c.whatsappChat) document.querySelectorAll("[data-wa]").forEach((el) => { el.hidden = true; });
     addYouTube(c.demoVideos || []);
   }).catch(() => {});
 
-  // Already logged in? Offer "Open app" instead of "Log in".
+  // Already logged in? Header buttons go straight into the app.
   fetch("/api/me", { credentials: "same-origin" }).then((r) => {
     if (!r.ok) return;
-    $("loginLink").textContent = "Open app";
-    document.querySelectorAll(".l-top [data-start]").forEach((a) => { a.textContent = "Open app"; a.href = "/app#/home"; });
+    const label = $("loginLink").textContent;
+    $("loginLink").hidden = true;
+    document.querySelectorAll(".l-top [data-start]").forEach((a) => { a.removeAttribute("data-start"); a.href = "/app#/home"; a.textContent = label; });
   }).catch(() => {});
 
   // YouTube demos (set DEMO_VIDEOS on the server). Load the player only when tapped.

@@ -6,6 +6,59 @@
   const digits = (s) => String(s || "").replace(/\D/g, "");
   const waNumber = (p) => { const d = digits(p); return d.length === 10 ? "91" + d : d; };
   const NOUN = { retail: "Customer", tuition: "Student", delivery: "Household", services: "Customer", wholesale: "Shop", rental: "Tenant", clinic: "Client" };
+  // ---------------- languages ----------------
+  const LANG = window.VBLang;
+  const i18n = { lang: "en", d: {}, en: {} };
+  const t = (k, v) => LANG.fill(i18n.d[k] ?? i18n.en[k] ?? k, v);
+  const NOUN_KEY = { retail: "n_customer", tuition: "n_student", delivery: "n_household", services: "n_customer", wholesale: "n_shop", rental: "n_tenant", clinic: "n_client" };
+  const nounPl = () => t(NOUN_KEY[state.user && state.user.businessType] || "n_customer");
+  const loc = () => (LANG.LANGS.find((l) => l.code === i18n.lang) || {}).locale || "en-IN";
+  const fd = (s) => (s ? new Date(String(s).slice(0, 10) + "T00:00:00Z").toLocaleDateString(loc(), { day: "numeric", month: "short", timeZone: "UTC" }) : "");
+  async function fetchDict(code) { const r = await fetch(`/i18n/${code}.json`); if (!r.ok) throw new Error("lang"); return (await r.json()).app; }
+  function initialLang() {
+    const q = new URLSearchParams(location.search).get("lang");
+    if (LANG.isLang(q)) return q;
+    try { const s = localStorage.getItem("vb_lang"); if (LANG.isLang(s)) return s; } catch { /* ignore */ }
+    return LANG.fromBrowser(navigator.languages || [navigator.language]);
+  }
+  async function setLang(code) {
+    code = LANG.isLang(code) ? code : "en";
+    if (!Object.keys(i18n.en).length) i18n.en = await fetchDict("en").catch(() => ({}));
+    i18n.d = code === "en" ? i18n.en : await fetchDict(code).catch(() => i18n.en);
+    i18n.lang = code;
+    try { localStorage.setItem("vb_lang", code); } catch { /* ignore */ }
+    document.documentElement.lang = code;
+    applyI18n();
+    if (state.user && !$("appScreen").hidden) { render(); if (state.view === "settings") fillSettings(); }
+  }
+  function applyI18n() {
+    document.querySelectorAll("[data-i18n]").forEach((el) => { el.textContent = t(el.dataset.i18n); });
+    document.querySelectorAll("[data-i18n-ph]").forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
+    $("quickHint").innerHTML = esc(t("quick_hint")).replace("{ex1}", "<code>Ravi 500 rice</code>").replace("{ex2}", "<code>Ravi paid 300</code>");
+    if (state.user) $("vText").innerHTML = esc(t("verify_text")).replace("{email}", `<b>${esc(state.user.email)}</b>`);
+    if (state.resetEmail) $("nText").innerHTML = esc(t("reset_sent")).replace("{email}", `<b>${esc(state.resetEmail)}</b>`);
+    ["authLang", "sUiLang"].forEach((id) => { $(id).value = i18n.lang; });
+  }
+  (function fillLangSelects() {
+    const ui = LANG.LANGS.map((l) => `<option value="${l.code}">${l.native}${l.code === "en" ? "" : " · " + l.name}</option>`).join("");
+    $("authLang").innerHTML = ui; $("sUiLang").innerHTML = ui;
+    $("remLang").innerHTML = ui; $("sLang").innerHTML = ui;
+    const st = Object.keys(LANG.STATES).sort().map((n) => `<option value="${esc(n)}">${esc(n)}</option>`).join("");
+    $("rState").insertAdjacentHTML("beforeend", st); $("sState").insertAdjacentHTML("beforeend", st);
+  })();
+  $("authLang").addEventListener("change", (e) => setLang(e.target.value));
+  // Picking a state at sign-up switches the form to that state's language.
+  $("rState").addEventListener("change", (e) => {
+    const l = LANG.STATES[e.target.value];
+    if (l && l !== i18n.lang) setLang(l);
+  });
+  function statusText(Lg) {
+    if (Lg.status === "overdue") return Lg.daysOver === 1 ? t("st_overdue1") : t("st_overdue", { n: Lg.daysOver });
+    if (Lg.status === "due") return Lg.daysOver === 0 ? t("st_due_today") : Lg.daysOver === -1 ? t("st_due_in1") : t("st_due_in", { n: -Lg.daysOver });
+    if (Lg.status === "open") return t("st_due_on", { date: fd(Lg.oldestDue) });
+    return Lg.bal < -0.001 ? t("st_advance", { amt: L.inr(Lg.bal) }) : t("st_all_paid");
+  }
+  const MODE_KEY = { Cash: "pm_cash", "Bank transfer": "pm_bank", Cheque: "pm_cheque" };
   const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
 
   const state = {
@@ -45,7 +98,7 @@
     clearTimeout(toast._t); toast._t = setTimeout(() => { t.hidden = true; }, 2800);
   }
   async function copyText(text, el) {
-    try { await navigator.clipboard.writeText(text); toast("Copied"); }
+    try { await navigator.clipboard.writeText(text); toast(t("t_copied")); }
     catch { if (el && el.select) { el.focus(); el.select(); } toast("Select the text and copy it."); }
   }
   let sheetState = null;
@@ -100,7 +153,7 @@
 
   // A countdown on "Send a new code" so people don't hammer it.
   function cooldown(btn, secs = 60) {
-    const label = "Send a new code"; let left = secs; btn.disabled = true;
+    const label = t("send_new_code"); let left = secs; btn.disabled = true;
     const t = setInterval(() => {
       left--; btn.textContent = left > 0 ? `${label} (${left}s)` : label;
       if (left <= 0) { clearInterval(t); btn.disabled = false; }
@@ -131,10 +184,11 @@
       const d = await api("POST", "/api/auth/register", {
         ownerName: $("rOwner").value, shopName: $("rShop").value, businessType: $("rType").value,
         phone: $("rPhone").value, email: $("rEmail").value, password: $("rPass").value, referralCode: $("rRef").value,
+        state: $("rState").value, uiLang: i18n.lang,
       });
       $("rPass").value = "";
       try { localStorage.removeItem("vb_ref"); } catch { /* ignore */ }
-      if (d.user.emailVerified) { await enterApp(d.user); toast("Welcome! Add your UPI ID in Settings."); }
+      if (d.user.emailVerified) { await enterApp(d.user); }
       else { state.user = d.user; showVerify(true); }
     } catch (err) { $("rErr").textContent = err.message; }
     finally { busy(e.target, false); }
@@ -143,14 +197,14 @@
   // ----- email confirmation with a 6-digit code -----
   function showVerify(justSent) {
     showAuth("verify");
-    $("vEmail").textContent = state.user ? state.user.email : "";
+    $("vText").innerHTML = esc(t("verify_text")).replace("{email}", `<b>${esc(state.user ? state.user.email : "")}</b>`);
     $("vCode").value = ""; $("vErr").textContent = ""; $("vChangeBox").hidden = true;
     if (justSent) cooldown($("vResend"));
     setTimeout(() => $("vCode").focus(), 50);
   }
   $("verifyForm").addEventListener("submit", async (e) => {
     e.preventDefault(); busy(e.target, true); $("vErr").textContent = "";
-    try { const d = await api("POST", "/api/auth/verify-email", { code: $("vCode").value }); await enterApp(d.user); toast("Email confirmed. Welcome to VasulBook!"); }
+    try { const d = await api("POST", "/api/auth/verify-email", { code: $("vCode").value }); await enterApp(d.user); toast(t("t_welcome")); }
     catch (err) { $("vErr").textContent = err.message; $("vCode").select(); }
     finally { busy(e.target, false); }
   });
@@ -177,7 +231,7 @@
     e.preventDefault(); busy(e.target, true); $("fErr").textContent = "";
     try {
       await requestReset($("fEmail").value.trim());
-      showAuth("reset"); $("nEmail").textContent = state.resetEmail; $("nCode").value = ""; $("nPass").value = "";
+      showAuth("reset"); $("nText").innerHTML = esc(t("reset_sent")).replace("{email}", `<b>${esc(state.resetEmail)}</b>`); $("nCode").value = ""; $("nPass").value = "";
       cooldown($("nResend")); setTimeout(() => $("nCode").focus(), 50);
     } catch (err) { $("fErr").textContent = err.message; }
     finally { busy(e.target, false); }
@@ -200,6 +254,7 @@
 
   async function enterApp(user) {
     state.user = user;
+    if (user.uiLang && user.uiLang !== i18n.lang) await setLang(user.uiLang);
     if (!user.emailVerified) { showVerify(false); return; }
     $("authScreen").hidden = true; $("appScreen").hidden = false;
     if (!location.hash.startsWith("#/")) history.replaceState(null, "", "#/home");
@@ -219,14 +274,14 @@
   // ---------------- ledger helpers ----------------
   function ledgerFor(cid) { return L.compute([...state.entries.values()].filter((e) => e.customerId === cid)); }
   function allLedgers() { const m = new Map(); for (const c of state.customers.values()) m.set(c.id, ledgerFor(c.id)); return m; }
-  const riskLabel = (r) => (r === "high" ? "Often pays late" : r === "watch" ? "Paid late before" : "Pays on time");
-  function ago(ms) { const d = Math.floor((Date.now() - ms) / 864e5); return d <= 0 ? "today" : d === 1 ? "yesterday" : `${d} days ago`; }
+  const riskLabel = (r) => (r === "high" ? t("risk_high") : r === "watch" ? t("risk_watch") : t("risk_good"));
+  function ago(ms) { const d = Math.floor((Date.now() - ms) / 864e5); return d <= 0 ? t("today") : d === 1 ? t("yesterday") : t("days_ago", { n: d }); }
 
   function custRow(c, Lg, current) {
     return `<li><a class="cust" href="#/c/${c.id}" aria-current="${current}">
       <span class="nm">${esc(c.name)}</span><span class="amt">${Lg.bal > 0.001 ? L.inr(Lg.bal) : "₹0"}</span>
-      <span class="meta"><span class="pill ${Lg.status}">${esc(L.statusLabel(Lg))}</span>${Lg.risk === "high" ? `<span class="pill risk-high">Often late</span>` : ""}</span>
-      <span class="meta r">${c.lastReminderAt ? "Reminded " + esc(ago(c.lastReminderAt)) : ""}</span>
+      <span class="meta"><span class="pill ${Lg.status}">${esc(statusText(Lg))}</span>${Lg.risk === "high" ? `<span class="pill risk-high">${esc(t("often_late"))}</span>` : ""}</span>
+      <span class="meta r">${c.lastReminderAt ? esc(t("reminded_ago", { when: ago(c.lastReminderAt) })) : ""}</span>
     </a></li>`;
   }
 
@@ -263,57 +318,56 @@
   }
 
   function renderHome(ledgers, n, nl) {
-    const t = L.todayIST();
+    const today = L.todayIST();
     let pending = 0, owe = 0, od = 0, odCount = 0;
     for (const Lg of ledgers.values()) {
       if (Lg.bal > 0.001) { pending += Lg.bal; owe++; }
       if (Lg.overdueAmt > 0.001) { od += Lg.overdueAmt; odCount++; }
     }
-    const todays = [...state.entries.values()].filter((e) => e.date === t);
+    const todays = [...state.entries.values()].filter((e) => e.date === today);
     const col = todays.filter((e) => e.kind === "payment"), cr = todays.filter((e) => e.kind === "credit");
     const sum = (a) => a.reduce((s, e) => s + (Number(e.amount) || 0), 0);
-    $("tPending").textContent = L.inr(pending); $("tPendingSub").textContent = `${plural(owe, nl)} owe`;
-    $("tCollected").textContent = L.inr(sum(col)); $("tCollectedSub").textContent = plural(col.length, "payment");
-    $("tCredit").textContent = L.inr(sum(cr)); $("tCreditSub").textContent = cr.length === 1 ? "1 entry" : `${cr.length} entries`;
-    $("tOverdue").textContent = L.inr(od); $("tOverdueSub").textContent = plural(odCount, nl);
+    $("tPending").textContent = L.inr(pending); $("tPendingSub").textContent = t("sub_owe", { n: owe });
+    $("tCollected").textContent = L.inr(sum(col)); $("tCollectedSub").textContent = t("sub_payments", { n: col.length });
+    $("tCredit").textContent = L.inr(sum(cr)); $("tCreditSub").textContent = t("sub_entries", { n: cr.length });
+    $("tOverdue").textContent = L.inr(od); $("tOverdueSub").textContent = t("sub_people", { n: odCount });
 
     const chase = [...state.customers.values()].map((c) => ({ c, Lg: ledgers.get(c.id) }))
       .filter((x) => x.Lg.status === "overdue" || x.Lg.status === "due")
       .sort((a, b) => (a.Lg.status === b.Lg.status ? b.Lg.bal - a.Lg.bal : a.Lg.status === "overdue" ? -1 : 1)).slice(0, 6);
     $("chaseList").innerHTML = chase.length ? chase.map(({ c, Lg }) => custRow(c, Lg, false)).join("")
-      : state.customers.size ? `<li class="empty"><strong>Nobody to chase today</strong><span>No ${nl}s are due or overdue.</span></li>`
-      : `<li class="empty"><strong>Add your first ${nl}</strong><span>Use quick entry above, or go to ${n}s.</span></li>`;
+      : state.customers.size ? `<li class="empty"><strong>${esc(t("nobody_chase"))}</strong><span>${esc(t("nobody_chase_sub"))}</span></li>`
+      : `<li class="empty"><strong>${esc(t("add_first"))}</strong><span>${esc(t("add_first_sub"))}</span></li>`;
 
     const top = [...state.customers.values()].map((c) => ({ c, Lg: ledgers.get(c.id) })).filter((x) => x.Lg.status === "overdue")
       .sort((a, b) => b.Lg.overdueAmt - a.Lg.overdueAmt).slice(0, 5);
     const text = [
-      `${state.user.shopName} · ${L.fmtDate(t)}`, "",
-      `Collected today: ${L.inr(sum(col))}`, `New credit today: ${L.inr(sum(cr))}`, `Total pending: ${L.inr(pending)}`, "",
-      top.length ? `Overdue ${nl}s:` : `No overdue ${nl}s. Well done!`,
-      ...top.map(({ c, Lg }) => `• ${c.name}: ${L.inr(Lg.overdueAmt)} (${plural(Lg.daysOver, "day")})`),
+      `${state.user.shopName} · ${fd(today)}`, "",
+      `${t("sum_collected")}: ${L.inr(sum(col))}`, `${t("sum_credit")}: ${L.inr(sum(cr))}`, `${t("sum_pending")}: ${L.inr(pending)}`, "",
+      top.length ? `${t("sum_overdue")}:` : t("sum_none"),
+      ...top.map(({ c, Lg }) => `• ${c.name}: ${L.inr(Lg.overdueAmt)} (${Lg.daysOver === 1 ? t("st_overdue1") : t("st_overdue", { n: Lg.daysOver })})`),
     ].join("\n");
     $("sumText").textContent = text;
     const num = waNumber(state.user.phone);
     $("sumWa").href = num ? `https://wa.me/${num}?text=${encodeURIComponent(text)}` : `https://wa.me/?text=${encodeURIComponent(text)}`;
-    $("sumNote").textContent = state.user.summaryEmail && state.config.email ? `This is also emailed to ${state.user.email} at 9 pm.` : "";
+    $("sumNote").textContent = state.user.summaryEmail && state.config.email ? t("sum_email_note", { email: state.user.email }) : "";
   }
 
   function renderCustomers(ledgers, n, nl) {
-    $("listTitle").textContent = n + "s";
-    $("aiName").placeholder = n + " name";
-    $("fabAdd").textContent = "+ Add " + nl;
+    $("listTitle").textContent = nounPl();
+    $("fabAdd").textContent = t("add_fab");
     $("fabAdd").classList.toggle("hide", !!state.sel);
-    $("backLink").textContent = "← All " + nl + "s";
+    $("backLink").textContent = `${t("back_all")} ${nounPl()}`;
     $("split").classList.toggle("has-sel", !!state.sel);
     const q = state.q.trim().toLowerCase(), qd = digits(q);
     const order = { overdue: 0, due: 1, open: 2, clear: 3 };
     const rows = [...state.customers.values()].map((c) => ({ c, Lg: ledgers.get(c.id) }))
       .filter(({ c, Lg }) => (!q || c.name.toLowerCase().includes(q) || (qd && digits(c.phone).includes(qd))) && (state.filter === "all" || Lg.status === state.filter))
       .sort((a, b) => order[a.Lg.status] - order[b.Lg.status] || b.Lg.bal - a.Lg.bal || a.c.name.localeCompare(b.c.name));
-    $("listCount").textContent = `${state.customers.size} total`;
+    $("listCount").textContent = t("total_count", { n: state.customers.size });
     const ul = $("custList");
-    if (!state.customers.size) ul.innerHTML = `<li class="empty"><strong>No ${nl}s yet</strong><span>Add the people who owe you money, with their WhatsApp numbers.</span></li>`;
-    else if (!rows.length) ul.innerHTML = `<li class="empty">No matches.</li>`;
+    if (!state.customers.size) ul.innerHTML = `<li class="empty"><strong>${esc(t("no_people"))}</strong><span>${esc(t("no_people_sub"))}</span></li>`;
+    else if (!rows.length) ul.innerHTML = `<li class="empty">${esc(t("no_match"))}</li>`;
     else ul.innerHTML = rows.map(({ c, Lg }) => custRow(c, Lg, c.id === state.sel)).join("");
     $("detailEmpty").hidden = !!state.sel;
     renderDetail(ledgers);
@@ -324,12 +378,12 @@
     if (!c) return;
     const Lg = ledgers.get(c.id);
     $("dName").textContent = c.name;
-    $("dPhone").textContent = c.phone ? "+91 " + c.phone.replace(/(\d{5})(\d{5})/, "$1 $2") : "No WhatsApp number";
-    $("dPills").innerHTML = `<span class="pill ${Lg.status}">${esc(L.statusLabel(Lg))}</span>` + (Lg.count ? `<span class="pill risk-${Lg.risk}">${riskLabel(Lg.risk)}</span>` : "");
+    $("dPhone").textContent = c.phone ? "+91 " + c.phone.replace(/(\d{5})(\d{5})/, "$1 $2") : t("no_wa_number");
+    $("dPills").innerHTML = `<span class="pill ${Lg.status}">${esc(statusText(Lg))}</span>` + (Lg.count ? `<span class="pill risk-${Lg.risk}">${riskLabel(Lg.risk)}</span>` : "");
     $("dBal").textContent = L.inr(Lg.bal);
     $("dBal").style.color = Lg.bal > 0.001 ? (Lg.status === "overdue" ? "var(--bad)" : "var(--ink)") : "var(--good)";
-    $("dBalLbl").textContent = Lg.bal < -0.001 ? "paid in advance" : "balance due";
-    $("lastRem").textContent = c.lastReminderAt ? `Last reminded ${ago(c.lastReminderAt)}` : "Not reminded yet";
+    $("dBalLbl").textContent = Lg.bal < -0.001 ? t("paid_advance") : t("balance_due");
+    $("lastRem").textContent = c.lastReminderAt ? t("last_reminded", { when: ago(c.lastReminderAt) }) : t("not_reminded");
 
     // Reminder text: keep the owner's own edits unless they switch customer, language or tone.
     const ta = $("remText");
@@ -346,36 +400,37 @@
 
     const rows = Lg.rows.slice().reverse();
     $("ledger").innerHTML = rows.length ? rows.map(({ e, bal }) => `<li>
-      <span class="dt">${L.fmtDate(e.date)}</span>
-      <span class="what">${e.kind === "credit" ? esc(e.note || "Credit") + (e.due ? `<div class="sub">Due ${L.fmtDate(e.due)}</div>` : "") : "Payment" + (e.mode ? `<div class="sub">${esc(e.mode)}</div>` : "")}</span>
-      <span class="fig"><span class="amt ${e.kind === "credit" ? "cr" : "pd"}">${e.kind === "credit" ? "+" : "−"}${L.inr(e.amount)}</span><span class="run">Bal ${bal < -0.001 ? "−" : ""}${L.inr(bal)}</span></span>
-      <button class="btn ghost sm del" type="button" data-del="${e.id}">Delete</button>
-    </li>`).join("") : `<li><span class="dt"></span><span class="what muted">No entries yet. Add credit or a payment above.</span><span></span></li>`;
+      <span class="dt">${fd(e.date)}</span>
+      <span class="what">${e.kind === "credit" ? esc(e.note || t("entry_credit")) + (e.due ? `<div class="sub">${esc(t("due_on", { date: fd(e.due) }))}</div>` : "") : esc(t("entry_payment")) + (e.mode ? `<div class="sub">${esc(MODE_KEY[e.mode] ? t(MODE_KEY[e.mode]) : e.mode)}</div>` : "")}</span>
+      <span class="fig"><span class="amt ${e.kind === "credit" ? "cr" : "pd"}">${e.kind === "credit" ? "+" : "−"}${L.inr(e.amount)}</span><span class="run">${esc(t("bal_short", { amt: (bal < -0.001 ? "−" : "") + L.inr(bal) }))}</span></span>
+      <button class="btn ghost sm del" type="button" data-del="${e.id}">${esc(t("delete"))}</button>
+    </li>`).join("") : `<li><span class="dt"></span><span class="what muted">${esc(t("no_entries"))}</span><span></span></li>`;
   }
 
   function updateWa(c, Lg) {
     const a = $("waLink"), note = $("remNote"), num = waNumber(c.phone);
-    if (!num) { a.removeAttribute("href"); a.setAttribute("aria-disabled", "true"); note.textContent = "Add a WhatsApp number to send reminders."; return; }
+    if (!num) { a.removeAttribute("href"); a.setAttribute("aria-disabled", "true"); note.textContent = t("need_wa"); return; }
     a.href = `https://wa.me/${num}?text=${encodeURIComponent($("remText").value)}`;
     a.removeAttribute("aria-disabled");
-    note.textContent = Lg.bal > 0.001 ? (state.user.upiId || state.payLinks[c.id] ? "" : "Tip: add your UPI ID in Settings so customers can pay at once.") : "Nothing is due right now.";
+    note.textContent = Lg.bal > 0.001 ? (state.user.upiId || state.payLinks[c.id] ? "" : t("upi_tip")) : t("nothing_due");
   }
 
   // ---------------- quick entry ----------------
-  const PAY = ["paid", "pay", "payment", "received", "got", "jama", "vasul", "gave"];
+  const PAY = ["paid", "pay", "payment", "received", "got", "jama", "vasul", "gave",
+    "जमा", "दिया", "मिला", "भुगतान", "வரவு", "கொடுத்தார்", "செலுத்தினார்", "చెల్లించారు", "జమ", "ಪಾವತಿ", "ಜಮಾ", "അടച്ചു", "നൽകി", "भरले", "দিল", "জমা", "ચૂકવ્યા", "જમા", "ਜਮ੍ਹਾ", "ਦਿੱਤੇ"];
   const CREDIT = ["credit", "udhaar", "udhar", "baki", "kadan", "due"];
   function parseQuick(text) {
     const words = text.trim().split(/\s+/).filter(Boolean);
     if (!words.length) return null;
     const idx = words.findIndex((w) => /^₹?\d+(\.\d+)?$/.test(w.replace(/,/g, "")));
-    if (idx < 0) return { error: "Add an amount, like 500." };
+    if (idx < 0) return { error: t("err_amount") };
     const amount = Number(words[idx].replace(/[₹,]/g, ""));
     if (!(amount > 0)) return { error: "Amount must be above zero." };
     const skip = (w) => PAY.includes(w.toLowerCase()) || CREDIT.includes(w.toLowerCase());
     const kind = words.some((w) => PAY.includes(w.toLowerCase())) ? "payment" : "credit";
     const nameWords = words.slice(0, idx).filter((w) => !skip(w));
     const note = words.slice(idx + 1).filter((w) => !skip(w)).join(" ");
-    if (!nameWords.length) return { error: "Start with the name." };
+    if (!nameWords.length) return { error: t("err_name") };
     const typed = nameWords.join(" ").toLowerCase();
     const all = [...state.customers.values()];
     const match = all.find((c) => c.name.toLowerCase() === typed) || all.find((c) => c.name.toLowerCase().startsWith(typed))
@@ -387,9 +442,9 @@
     el.className = "preview";
     if (!p) { el.textContent = ""; return; }
     if (p.error) { el.textContent = p.error; el.classList.add("err"); return; }
-    const who = p.match ? p.match.name : `${p.newName} (new ${noun().toLowerCase()})`;
-    el.textContent = (p.kind === "credit" ? `Credit ${L.inr(p.amount)} to ${who}` : `Payment ${L.inr(p.amount)} from ${who}`) + (p.note ? ` · ${p.note}` : "")
-      + (p.kind === "credit" ? ` · due ${L.fmtDate(L.addDays(L.todayIST(), state.user.defaultDays))}` : "");
+    const who = p.match ? p.match.name : t("new_person", { name: p.newName });
+    el.textContent = (p.kind === "credit" ? t("credit_to", { amt: L.inr(p.amount), who }) : t("payment_from", { amt: L.inr(p.amount), who })) + (p.note ? ` · ${p.note}` : "")
+      + (p.kind === "credit" ? ` · ${t("due_word", { date: fd(L.addDays(L.todayIST(), state.user.defaultDays)) })}` : "");
     el.classList.add("ok");
   }
   $("quickInput").addEventListener("input", showQuick);
@@ -404,7 +459,7 @@
       const d = await api("POST", "/api/entries", { customerId: cid, kind: p.kind, amount: p.amount, note: p.kind === "credit" ? p.note : "", mode: "UPI" });
       state.entries.set(d.entry.id, d.entry);
       $("quickInput").value = ""; showQuick(); render();
-      toast(p.kind === "credit" ? "Credit saved" : "Payment saved");
+      toast(p.kind === "credit" ? t("t_credit_saved") : t("t_payment_saved"));
     } catch (err) { toast(err.message); }
     finally { busy(e.target, false); }
   });
@@ -431,10 +486,10 @@
   $("fabAdd").addEventListener("click", () => {
     const n = noun();
     openSheet({
-      title: `Add ${n.toLowerCase()}`,
-      body: `<label class="field">Name<input id="shName" required autocomplete="off"></label>
-             <label class="field">WhatsApp number<input id="shPhone" type="tel" inputmode="tel" placeholder="10-digit mobile" autocomplete="off"></label>`,
-      ok: "Add",
+      title: t("add_person"),
+      body: `<label class="field">${esc(t("f_name"))}<input id="shName" required autocomplete="off"></label>
+             <label class="field">${esc(t("f_whatsapp"))}<input id="shPhone" type="tel" inputmode="tel" placeholder="${esc(t("ph_mobile"))}" autocomplete="off"></label>`,
+      ok: t("add"),
       onSubmit: () => addCustomer($("shName").value, $("shPhone").value),
     });
   });
@@ -443,12 +498,12 @@
   $("editCust").addEventListener("click", () => {
     const c = state.customers.get(state.sel); if (!c) return;
     openSheet({
-      title: "Edit details",
+      title: t("edit_details"),
       body: `<label class="field">Name<input id="shName" required value="${esc(c.name)}"></label>
              <label class="field">WhatsApp number<input id="shPhone" type="tel" inputmode="tel" value="${esc(c.phone)}" placeholder="10-digit mobile"></label>`,
       onSubmit: async () => {
         const d = await api("PUT", "/api/customers/" + c.id, { name: $("shName").value, phone: $("shPhone").value });
-        state.customers.set(c.id, d.customer); $("remText").dataset.for = ""; render(); toast("Saved");
+        state.customers.set(c.id, d.customer); $("remText").dataset.for = ""; render(); toast(t("t_saved"));
       },
       extra: {
         text: "Delete " + noun().toLowerCase(), confirm: "Delete with all entries?",
@@ -495,7 +550,7 @@
     $("entryForm").querySelectorAll(".seg button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.k === k)));
     $("eDueWrap").hidden = k !== "credit"; $("eNoteWrap").hidden = k !== "credit";
     $("eModeWrap").hidden = k !== "payment"; $("eFull").hidden = k !== "payment";
-    $("eSubmit").textContent = k === "credit" ? "Add credit" : "Record payment";
+    $("eSubmit").textContent = k === "credit" ? t("btn_add_credit") : t("btn_record_payment");
   }
   $("entryForm").querySelector(".seg").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) setKind(b.dataset.k); });
   $("eFull").addEventListener("click", () => { const Lg = ledgerFor(state.sel); $("eAmt").value = Lg.bal > 0 ? String(Math.round(Lg.bal)) : ""; });
@@ -517,8 +572,8 @@
   $("ledger").addEventListener("click", async (e) => {
     const b = e.target.closest("[data-del]"); if (!b) return;
     if (b.dataset.armed !== "1") {
-      b.dataset.armed = "1"; b.textContent = "Confirm delete"; b.style.color = "var(--bad)";
-      setTimeout(() => { if (b.isConnected) { b.dataset.armed = ""; b.textContent = "Delete"; b.style.color = ""; } }, 3000);
+      b.dataset.armed = "1"; b.textContent = t("confirm_delete"); b.style.color = "var(--bad)";
+      setTimeout(() => { if (b.isConnected) { b.dataset.armed = ""; b.textContent = t("delete"); b.style.color = ""; } }, 3000);
       return;
     }
     try { await api("DELETE", "/api/entries/" + b.dataset.del); state.entries.delete(Number(b.dataset.del)); $("remText").dataset.for = ""; render(); toast("Entry deleted"); }
@@ -527,18 +582,18 @@
 
   // ---------------- settings ----------------
   // ---------------- refer & earn ----------------
-  function referLink() { return `${location.origin}/?ref=${encodeURIComponent(state.user.referralCode || "")}`; }
+  function referLink() { const l = i18n.lang === "en" ? "/" : "/" + i18n.lang; return `${location.origin}${l}?ref=${encodeURIComponent(state.user.referralCode || "")}`; }
   function referMessage() {
     const r = state.config.referral || {};
-    return `I use VasulBook to collect money from customers with WhatsApp reminders and UPI. Try it free for ${((state.config.billing || {}).trialMonths || 3) + (r.friendBonusMonths || 0)} months with my link: ${referLink()} (code ${state.user.referralCode})`;
+    return t("refer_msg", { months: ((state.config.billing || {}).trialMonths || 3) + (r.friendBonusMonths || 0), link: referLink(), code: state.user.referralCode });
   }
   function fillReferTexts() {
     const r = state.config.referral || {}; const m = r.rewardMonths || 5, fb = r.friendBonusMonths || 0;
     const when = r.trigger === "payment" ? "subscribes" : "joins";
-    $("rsMonths").textContent = m;
-    $("rsBody").textContent = `Share VasulBook with another shop or business owner. When they ${r.trigger === "payment" ? "subscribe" : "join"} with your link, you get ${m} months free.` + (fb ? ` They get ${fb} extra month${fb === 1 ? "" : "s"} of free trial.` : "");
-    $("referCardTitle").textContent = `Refer a business, get ${m} months free`;
-    $("referCardSub").textContent = `Each friend who ${when} with your link earns you ${m} free months.`;
+    $("rsBody").textContent = t("refer_body", { m, f: fb });
+    $("referTitle").textContent = t("refer_title", { m });
+    $("referCardTitle").textContent = t("refer_card_title", { m });
+    $("referCardSub").textContent = t("refer_card_sub", { m });
     $("rsCode").textContent = state.user.referralCode || "";
     $("rsLink").value = referLink();
     $("rsWa").href = `https://wa.me/?text=${encodeURIComponent(referMessage())}`;
@@ -552,7 +607,7 @@
       const d = await api("GET", "/api/referrals");
       $("rsJoined").textContent = d.joined; $("rsEarned").textContent = d.monthsEarned;
       $("rsFriends").hidden = !d.friends.length;
-      $("rsFriends").innerHTML = d.friends.slice(0, 10).map((f) => `<li><span>${esc(f.shop)}<div class="sub">${new Date(f.joinedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</div></span><span class="small ${f.rewardMonths ? "" : "muted"}">${f.rewardMonths ? `+${f.rewardMonths} months` : f.confirmed ? "Joined" : "Confirming email"}</span></li>`).join("");
+      $("rsFriends").innerHTML = d.friends.slice(0, 10).map((f) => `<li><span>${esc(f.shop)}<div class="sub">${new Date(f.joinedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</div></span><span class="small ${f.rewardMonths ? "" : "muted"}">${f.rewardMonths ? `+${f.rewardMonths}` : "…"}</span></li>`).join("");
     } catch { /* stats are optional */ }
   }
   function closeRefer() { $("referSheet").hidden = true; if (location.hash === "#/refer") history.replaceState(null, "", "#/home"); }
@@ -576,7 +631,7 @@
   $("rsShare").addEventListener("click", () => { navigator.share({ title: "VasulBook", text: referMessage() }).catch(() => {}); });
 
   // ---------------- plan & subscription ----------------
-  const fmtDay = (iso) => (iso ? new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" }) : "");
+  const fmtDay = (iso) => (iso ? new Date(iso).toLocaleDateString(loc(), { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" }) : "");
   const priceText = () => { const b = state.config.billing || {}; return `${L.inr(b.priceInr || 1000)} for ${b.months || 10} months`; };
   function renderPlan() {
     const p = state.user && state.user.plan; if (!p) return;
@@ -586,16 +641,16 @@
     let show = p.state === "expired" || p.daysLeft <= 14;
     if (p.state === "expired") {
       bar.classList.add("bad");
-      txt.textContent = (p.paidUntil ? "Your plan has ended." : "Your free trial has ended.") + " Your data is safe. Upgrade to keep adding entries and sending reminders.";
-      btn.textContent = "Upgrade";
+      txt.textContent = p.paidUntil ? t("bar_plan_ended") : t("bar_trial_ended");
+      btn.textContent = t("upgrade");
     } else if (p.state === "trial") {
       bar.classList.add("warn");
-      txt.textContent = `Free trial: ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left (until ${fmtDay(p.accessUntil)}). Then ${priceText()}.`;
-      btn.textContent = "Upgrade";
+      txt.textContent = t("bar_trial", { n: p.daysLeft, date: fmtDay(p.accessUntil), price: L.inr((state.config.billing || {}).priceInr || 1000), months: (state.config.billing || {}).months || 10 });
+      btn.textContent = t("upgrade");
     } else {
       bar.classList.add("warn");
-      txt.textContent = `Your plan ends in ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} (${fmtDay(p.accessUntil)}).`;
-      btn.textContent = "Renew";
+      txt.textContent = t("bar_plan_ends", { n: p.daysLeft, date: fmtDay(p.accessUntil) });
+      btn.textContent = t("renew");
     }
 
     // Dashboard upgrade card and top bar button
@@ -605,29 +660,27 @@
     $("upgradeCard").hidden = !showCard;
     $("upgradeCard").classList.toggle("bad", p.state === "expired");
     if (showCard) {
-      $("upEyebrow").textContent = p.state === "expired" ? (p.paidUntil ? "Plan ended" : "Free trial ended") : p.state === "trial" ? `Free trial · ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left` : `Plan ends in ${p.daysLeft} days`;
-      $("upTitle").textContent = p.state === "expired" ? "Upgrade to keep collecting" : p.state === "trial" ? `Upgrade: ${priceText()}` : `Renew: ${priceText()}`;
-      $("upSub").textContent = p.state === "expired" ? `Your data is safe. Upgrade for ${priceText()} (about ${perMonth} a month) to add entries and send reminders again.`
-        : `About ${perMonth} a month. Your paid months start after ${fmtDay(p.accessUntil)}, so you don't lose any days.`;
-      $("upBtn").textContent = p.state === "paid" ? "Renew now" : "Upgrade now";
+      const pv = { n: p.daysLeft, price: L.inr(bl.priceInr || 1000), months: bl.months || 10, pm: perMonth, date: fmtDay(p.accessUntil) };
+      $("upEyebrow").textContent = p.state === "expired" ? (p.paidUntil ? t("up_plan_ended") : t("up_trial_ended")) : p.state === "trial" ? t("up_trial_left", pv) : t("up_plan_ends", pv);
+      $("upTitle").textContent = p.state === "expired" ? t("up_title_expired") : p.state === "trial" ? t("up_title_upgrade", pv) : t("up_title_renew", pv);
+      $("upSub").textContent = p.state === "expired" ? t("up_sub_expired", pv) : t("up_sub", pv);
+      $("upBtn").textContent = p.state === "paid" ? t("renew_now") : t("upgrade_now");
     }
     $("topUpgrade").hidden = p.state === "paid" && p.daysLeft > 30;
-    $("topUpgrade").textContent = p.state === "paid" ? "Renew" : "Upgrade";
+    $("topUpgrade").textContent = p.state === "paid" ? t("renew") : t("upgrade");
     bar.hidden = !show || state.view === "settings";
     document.body.classList.toggle("plan-locked", !p.active);
 
     // Settings card
     const b = state.config.billing || {};
     $("planPill").className = "pill " + (p.state === "expired" ? "overdue" : p.state === "paid" ? "clear" : "open");
-    $("planPill").textContent = p.state === "expired" ? "Ended" : p.state === "paid" ? "Active" : "Free trial";
-    $("planStatus").textContent = p.state === "expired" ? `Ended on ${fmtDay(p.accessUntil)}. You can still view your ledger.`
-      : p.state === "paid" ? `Active until ${fmtDay(p.accessUntil)} (${p.daysLeft} days left).`
-      : `Free trial until ${fmtDay(p.accessUntil)} (${p.daysLeft} days left).`;
+    $("planPill").textContent = p.state === "expired" ? t("plan_ended") : p.state === "paid" ? t("plan_active") : t("plan_trial");
+    const sv = { date: fmtDay(p.accessUntil), n: p.daysLeft };
+    $("planStatus").textContent = p.state === "expired" ? t("plan_ended_on", sv) : p.state === "paid" ? t("plan_active_until", sv) : t("plan_trial_until", sv);
     $("planPrice").textContent = L.inr(b.priceInr || 1000);
-    $("planPer").textContent = ` for ${b.months || 10} months`;
-    $("planOfferNote").textContent = p.state === "expired" ? "Starts today. Pay by UPI, card, net banking or wallet."
-      : `Starts after ${fmtDay(p.accessUntil)}, so you don't lose any days. Pay by UPI, card, net banking or wallet.`;
-    $("planBuy").textContent = p.state === "paid" ? "Renew with Razorpay" : "Subscribe with Razorpay";
+    $("planPer").textContent = " " + t("for_months", { months: b.months || 10 });
+    $("planOfferNote").textContent = p.state === "expired" ? t("offer_today") : t("offer_after", { date: fmtDay(p.accessUntil) });
+    $("planBuy").textContent = p.state === "paid" ? t("renew_rzp") : t("subscribe_rzp");
     $("planBuy").hidden = !b.ready;
     $("planTestPay").hidden = !b.testMode;
     $("planTestExpire").hidden = !b.testMode;
@@ -709,7 +762,8 @@
     $("rzpStatus").style.color = u.razorpay.connected ? "var(--good)" : "var(--muted)";
     $("rzpUrl").value = `${location.origin}/api/webhooks/razorpay/${u.id}`;
     $("rzpDisconnect").hidden = !u.razorpay.connected;
-    $("accEmail").textContent = `Logged in as ${u.email}`;
+    $("accEmail").textContent = t("logged_in_as", { email: u.email });
+    $("sUiLang").value = i18n.lang; $("sState").value = u.state || "";
   }
   async function saveSettings(body, errEl, okMsg) {
     errEl.textContent = "";
@@ -722,7 +776,9 @@
       shopName: $("sShop").value, ownerName: $("sOwner").value, businessType: $("sType").value, phone: $("sPhone").value,
       upiId: $("sUpi").value, defaultDays: $("sDays").value, reminderLang: $("sLang").value,
       summaryEmail: $("sSummary").checked, autoRemind: $("sAuto").checked,
-    }, $("bizErr"), "Settings saved");
+      uiLang: $("sUiLang").value, state: $("sState").value,
+    }, $("bizErr"), t("t_saved"));
+    if (state.user.uiLang !== i18n.lang) await setLang(state.user.uiLang);
     $("remText").dataset.for = "";
     busy(e.target, false);
   });
@@ -787,6 +843,7 @@
 
   // ---------------- boot ----------------
   (async function boot() {
+    await setLang(initialLang());
     setKind("credit");
     try { state.config = await api("GET", "/api/config"); } catch { state.config = {}; }
     try { const d = await api("GET", "/api/me"); await enterApp(d.user); }

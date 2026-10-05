@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>VasulBook Admin</title>
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/admin.css">
+</head>
+<body>
+
+<section class="auth" id="loginScreen" hidden>
+  <form class="auth-box card stack" id="loginForm">
+    <div class="brand">Vasul<b>Book</b> <span class="adm-tag">Admin</span></div>
+    <label class="field">Admin email<input id="aEmail" type="email" autocomplete="username" required></label>
+    <label class="field">Admin password<input id="aPass" type="password" autocomplete="current-password" required></label>
+    <p class="err" id="aErr" role="alert"></p>
+    <button class="btn primary block" type="submit">Log in</button>
+  </form>
+</section>
+
+<div id="dash" hidden>
+  <header class="top">
+    <div class="top-l"><span class="brand">Vasul<b>Book</b></span><span class="adm-tag">Admin</span></div>
+    <div class="row"><span class="small muted" id="whoami"></span><a class="btn sm" href="/" target="_blank" rel="noopener">View site</a><button class="btn sm" type="button" id="logout">Log out</button></div>
+  </header>
+
+  <main class="adm">
+    <section class="adm-kpis" id="kpis" aria-label="Key numbers"></section>
+
+    <div class="adm-grid">
+      <section class="card stack adm-chart-card">
+        <div class="sec-head"><h2>Sign-ups, last 30 days</h2><span class="small muted" id="signupTotal"></span></div>
+        <div class="adm-chart" id="chart"></div>
+      </section>
+      <section class="card stack">
+        <div class="sec-head"><h2>Revenue</h2></div>
+        <div class="adm-rev" id="revenue"></div>
+      </section>
+    </div>
+
+    <div class="adm-grid three">
+      <section class="card stack"><h2>By business type</h2><ul class="adm-bars" id="byType"></ul></section>
+      <section class="card stack"><h2>By state</h2><ul class="adm-bars" id="byState"></ul></section>
+      <section class="card stack"><h2>By app language</h2><ul class="adm-bars" id="byLang"></ul></section>
+    </div>
+
+    <section class="card stack">
+      <div class="sec-head"><h2>Businesses</h2><a class="btn sm" id="csv" href="/api/admin/users.csv">Export CSV</a></div>
+      <div class="adm-filters">
+        <input id="q" type="search" placeholder="Search business, owner, email, phone or referral code" aria-label="Search">
+        <div class="filters" role="group" aria-label="Filter by plan">
+          <button class="chip" type="button" data-s="" aria-pressed="true">All</button>
+          <button class="chip" type="button" data-s="trial" aria-pressed="false">On trial</button>
+          <button class="chip" type="button" data-s="paid" aria-pressed="false">Paid</button>
+          <button class="chip" type="button" data-s="expired" aria-pressed="false">Expired</button>
+          <button class="chip" type="button" data-s="unverified" aria-pressed="false">Email not confirmed</button>
+          <button class="chip" type="button" data-s="inactive" aria-pressed="false">Away 5+ days</button>
+        </div>
+      </div>
+      <div class="adm-table-wrap">
+        <table class="adm-table">
+          <thead><tr><th>Business</th><th>Contact</th><th>Type · State</th><th>Plan</th><th class="r">Customers</th><th class="r">Entries</th><th>Last active</th><th>Joined</th></tr></thead>
+          <tbody id="users"></tbody>
+        </table>
+      </div>
+      <div class="row between"><span class="small muted" id="pageInfo"></span><div class="row"><button class="btn sm" type="button" id="prev">Previous</button><button class="btn sm" type="button" id="next">Next</button></div></div>
+    </section>
+
+    <section class="card stack">
+      <h2>Recent payments</h2>
+      <div class="adm-table-wrap">
+        <table class="adm-table">
+          <thead><tr><th>Date</th><th>Business</th><th class="r">Amount</th><th>Months</th><th>Status</th><th>Payment ID</th></tr></thead>
+          <tbody id="payments"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="sheet-wrap" id="sheet" hidden>
+  <div class="sheet adm-sheet" role="dialog" aria-modal="true" aria-labelledby="uTitle">
+    <div class="row between"><h2 id="uTitle"></h2><button class="btn ghost sm" type="button" id="closeSheet">Close</button></div>
+    <dl class="adm-dl" id="uFacts"></dl>
+    <div class="card stack adm-gift">
+      <h3>Gift free months</h3>
+      <div class="row">
+        <select id="giftMonths" aria-label="Months"><option>1</option><option>3</option><option selected>5</option><option>10</option><option>12</option></select>
+        <input id="giftNote" placeholder="Reason (optional)" aria-label="Reason">
+        <button class="btn primary sm" type="button" id="giftBtn">Add months</button>
+      </div>
+    </div>
+    <button class="btn sm" type="button" id="verifyBtn" hidden>Mark email as confirmed</button>
+    <p class="err" id="uErr" role="alert"></p>
+    <div class="stack"><h3>Payments</h3><ul class="plan-history" id="uPays"></ul></div>
+    <div class="stack"><h3>Referred businesses</h3><ul class="plan-history" id="uRefs"></ul></div>
+    <div class="stack"><h3>Admin actions</h3><ul class="plan-history" id="uActs"></ul></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" hidden></div>
+<script src="/admin.js"></script>
+</body>
+</html>

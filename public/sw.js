@@ -1,6 +1,6 @@
 /* VasulBook service worker: app shell offline, last ledger data offline, fonts cached. */
-const VERSION = "vb-v4";
-const SHELL = ["/", "/app", "/app.css", "/app.js", "/ledger.js", "/landing.css", "/landing.js", "/manifest.webmanifest",
+const VERSION = "vb-v5";
+const SHELL = ["/", "/app", "/app.css", "/app.js", "/ledger.js", "/i18n/meta.js", "/landing.css", "/landing.js", "/manifest.webmanifest",
   "/icons/icon.svg", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/maskable-512.png", "/icons/apple-touch-icon.png"];
 const DATA = "vb-data";
 

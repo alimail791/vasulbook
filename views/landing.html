@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="{{=lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>{{meta_title}}</title>
+<meta name="description" content="{{meta_desc}}">
+<link rel="canonical" href="{{=canonical}}">
+{{=alternates}}
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="VasulBook">
+<meta property="og:locale" content="{{=ogLocale}}">
+<meta property="og:url" content="{{=canonical}}">
+<meta property="og:title" content="{{meta_title}}">
+<meta property="og:description" content="{{meta_desc}}">
+<meta property="og:image" content="{{=base}}/og-image.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{meta_title}}">
+<meta name="twitter:description" content="{{meta_desc}}">
+<meta name="twitter:image" content="{{=base}}/og-image.png">
+<meta name="theme-color" content="#2445B5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0D1412" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="VasulBook">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+<link rel="stylesheet" href="/app.css">
+<link rel="stylesheet" href="/landing.css">
+<script type="application/ld+json">{{=jsonld}}</script>
+</head>
+<body class="landing" data-lang="{{=lang}}">
+
+<header class="l-top">
+  <div class="l-wrap l-top-in">
+    <a class="brand" href="{{=home}}">Vasul<b>Book</b></a>
+    <nav class="l-nav" aria-label="Page">
+      <a href="#how">{{nav_how}}</a>
+      <a href="#demo">{{nav_demo}}</a>
+      <a href="#pricing">{{nav_pricing}}</a>
+      <a href="#faq">{{nav_faq}}</a>
+    </nav>
+    <div class="l-top-cta">
+      <select class="l-lang" id="langPick" aria-label="{{lang_label}}">{{=langOptions}}</select>
+      <a class="btn ghost sm l-login" href="{{=appHref}}" id="loginLink">{{log_in}}</a>
+      <a class="btn primary sm" href="{{=startHref}}" data-start>{{start_free}}</a>
+    </div>
+  </div>
+</header>
+
+<div class="l-ref" id="refBanner" hidden>
+  <div class="l-wrap">{{ref_banner}}</div>
+</div>
+
+<main>
+  <section class="l-hero">
+    <div class="l-wrap l-hero-in">
+      <div class="l-hero-text">
+        <span class="l-badge"><span class="dot" aria-hidden="true"></span>{{badge}}</span>
+        <h1>{{h1}}</h1>
+        <p class="l-lede">{{lede}}</p>
+        <div class="row l-cta">
+          <a class="btn primary l-big" href="{{=startHref}}" data-start>{{cta_start}}</a>
+          <a class="btn l-big" href="#demo">{{cta_demo}}</a>
+        </div>
+        <p class="small muted">{{then_price}}</p>
+        <button class="btn sm l-install" type="button" id="installBtn" hidden>{{install}}</button>
+        <p class="small muted" id="iosHint" hidden>{{ios_hint}}</p>
+      </div>
+
+      <div class="l-phone" aria-label="VasulBook" role="img">
+        <div class="l-phone-top"><span class="brand sm">Vasul<b>Book</b></span><span class="small muted">Sri Lakshmi Stores</span></div>
+        <div class="l-tiles">
+          <div><span class="eyebrow">{{mock_pending}}</span><span class="amt">₹18,400</span></div>
+          <div class="good"><span class="eyebrow">{{mock_collected}}</span><span class="amt">₹3,500</span></div>
+        </div>
+        <ul class="l-rows">
+          <li><span>Ravi Kumar</span><span class="amt">₹1,560</span><span class="pill overdue">{{mock_overdue}}</span></li>
+          <li><span>Meena S</span><span class="amt">₹640</span><span class="pill due">{{mock_due}}</span></li>
+          <li><span>Anitha R</span><span class="amt">₹0</span><span class="pill clear">{{mock_paid}}</span></li>
+        </ul>
+        <div class="l-bubble">
+          <span class="eyebrow">{{mock_wa}}</span>
+          <p>{{mock_msg}}</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="l-who">
+    <div class="l-wrap">
+      <p class="eyebrow">{{who_title}}</p>
+      <ul class="l-chips">
+        <li>{{who_1}}</li><li>{{who_2}}</li><li>{{who_3}}</li><li>{{who_4}}</li><li>{{who_5}}</li><li>{{who_6}}</li><li>{{who_7}}</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="l-sec" id="how">
+    <div class="l-wrap">
+      <h2>{{how_title}}</h2>
+      <ol class="l-steps">
+        <li><span class="n">1</span><h3>{{s1_t}}</h3><p>{{s1_p}}</p></li>
+        <li><span class="n">2</span><h3>{{s2_t}}</h3><p>{{s2_p}}</p></li>
+        <li><span class="n">3</span><h3>{{s3_t}}</h3><p>{{s3_p}}</p></li>
+      </ol>
+    </div>
+  </section>
+
+  <section class="l-sec alt">
+    <div class="l-wrap">
+      <h2>{{feat_title}}</h2>
+      <div class="l-feats">
+        <div><h3>{{f1_t}}</h3><p>{{f1_p}}</p></div>
+        <div><h3>{{f2_t}}</h3><p>{{f2_p}}</p></div>
+        <div><h3>{{f3_t}}</h3><p>{{f3_p}}</p></div>
+        <div><h3>{{f4_t}}</h3><p>{{f4_p}}</p></div>
+        <div><h3>{{f5_t}}</h3><p>{{f5_p}}</p></div>
+        <div><h3>{{f6_t}}</h3><p>{{f6_p}}</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="l-sec" id="demo">
+    <div class="l-wrap">
+      <h2>{{demo_title}}</h2>
+      <p class="muted l-sub">{{demo_sub}}</p>
+      <div class="l-videos" id="videos">
+        <figure class="l-video">
+          <video controls playsinline preload="none" poster="/media/demo-poster.jpg" width="390" height="844">
+            <source src="/media/demo.mp4" type="video/mp4">
+            <source src="/media/demo.webm" type="video/webm">
+          </video>
+          <figcaption>{{demo_cap}}</figcaption>
+        </figure>
+      </div>
+    </div>
+  </section>
+
+  <section class="l-sec alt" id="pricing">
+    <div class="l-wrap">
+      <h2>{{pricing_title}}</h2>
+      <div class="l-price">
+        <div class="l-price-card trial">
+          <span class="eyebrow">{{p_start}}</span>
+          <h3>{{p_trial_h}}</h3>
+          <p>{{p_trial_p}}</p>
+          <a class="btn primary block" href="{{=startHref}}" data-start>{{p_trial_btn}}</a>
+        </div>
+        <div class="l-price-card">
+          <span class="eyebrow">{{p_after}}</span>
+          <h3><span class="amt">{{=priceFmt}}</span> <span class="small muted">{{p_for}}</span></h3>
+          <p>{{p_per}}</p>
+          <ul class="l-ticks">
+            <li>{{tick_1}}</li><li>{{tick_2}}</li><li>{{tick_3}}</li><li>{{tick_4}}</li>
+          </ul>
+        </div>
+        <div class="l-price-card refer">
+          <span class="eyebrow">{{p_refer}}</span>
+          <h3>{{p_refer_h}}</h3>
+          <p>{{p_refer_p}}</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="l-sec" id="faq">
+    <div class="l-wrap l-narrow">
+      <h2>{{faq_title}}</h2>
+      <details><summary>{{q1}}</summary><p>{{a1}}</p></details>
+      <details><summary>{{q2}}</summary><p>{{a2}}</p></details>
+      <details><summary>{{q3}}</summary><p>{{a3}}</p></details>
+      <details><summary>{{q4}}</summary><p>{{a4}}</p></details>
+      <details><summary>{{q5}}</summary><p>{{a5}}</p></details>
+    </div>
+  </section>
+
+  <section class="l-final">
+    <div class="l-wrap">
+      <h2>{{final_title}}</h2>
+      <a class="btn primary l-big" href="{{=startHref}}" data-start>{{cta_start}}</a>
+    </div>
+  </section>
+</main>
+
+<footer class="l-foot">
+  <div class="l-wrap l-foot-in">
+    <div>
+      <a class="brand" href="{{=home}}">Vasul<b>Book</b></a>
+      <p class="small muted">{{foot_tag}}</p>
+    </div>
+    <div class="l-foot-links">
+      <span class="eyebrow">{{contact}}</span>
+      <a href="mailto:info@vasulbook.in">info@vasulbook.in</a>
+      <a href="/whatsapp" target="_blank" rel="noopener" data-wa>{{chat_wa}}</a>
+    </div>
+    <div class="l-foot-links">
+      <span class="eyebrow">{{app}}</span>
+      <a href="{{=startHref}}" data-start>{{start_trial}}</a>
+      <a href="{{=appHref}}">{{log_in}}</a>
+    </div>
+    <nav class="l-foot-links l-foot-langs" aria-label="{{lang_label}}">
+      <span class="eyebrow">{{lang_label}}</span>
+      <div>{{=langLinks}}</div>
+    </nav>
+  </div>
+  <div class="l-wrap"><p class="small muted l-copy">© {{=year}} VasulBook. {{rights}}</p></div>
+</footer>
+
+<a class="l-wa" href="/whatsapp" target="_blank" rel="noopener" aria-label="{{chat_wa}}" data-wa>
+  <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" d="M4 5.5h16a1.5 1.5 0 0 1 1.5 1.5v9a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 3.5V17.5H4A1.5 1.5 0 0 1 2.5 16V7A1.5 1.5 0 0 1 4 5.5Z"/><circle cx="8" cy="11.5" r="1.2" fill="currentColor"/><circle cx="12" cy="11.5" r="1.2" fill="currentColor"/><circle cx="16" cy="11.5" r="1.2" fill="currentColor"/></svg>
+  <span class="l-wa-label">{{chat_us}}</span>
+</a>
+
+<div class="toast" id="toast" role="status" hidden></div>
+<script src="/landing.js"></script>
+</body>
+</html>
