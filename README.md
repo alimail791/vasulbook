@@ -35,6 +35,17 @@ Set up, in your own Razorpay account:
 
 Without Razorpay keys the Subscribe button is hidden in production. In local mode you get **Test payment** and **End my trial now** buttons instead, so you can try the whole flow without paying.
 
+## Sign-up codes, refer & earn, and absent-user emails
+
+- **Email confirmation:** after sign-up, the owner enters a 6-digit code sent to their email (valid 10 minutes, 5 tries, new code after 60 seconds, "Wrong email?" to fix a typo). Until then the app shows only the code screen. Accounts made before this feature count as confirmed.
+- **Password reset:** "Forgot password?" emails a 6-digit code; the owner enters it with a new password.
+- Both need Resend. **In production without Resend, codes can't be delivered, so new accounts are confirmed automatically and password reset is unavailable.** Add `RESEND_API_KEY` and `EMAIL_FROM` and both switch on.
+- **Refer & earn:** every owner has a code and link (`https://<your-app>/?ref=CODE`). When a friend signs up with it and confirms their email, the owner gets **5 free months** (added after their current trial or plan) and the friend gets **1 extra trial month**. A popup on the Home screen shows once a day, with WhatsApp share, copy link and counts of friends joined and months earned. There's also a card on Home.
+  Settings: `REFERRAL_REWARD_MONTHS` (default 5), `REFERRAL_FRIEND_BONUS_MONTHS` (default 1), `REFERRAL_TRIGGER` (`signup` by default, or `payment` to reward only when the friend subscribes).
+- **We miss you:** owners who haven't opened the app for 5 days get one email at 11 am IST, showing how much is still pending from their customers. They get another only if they come back and then stay away for 5 days again.
+
+Local testing pages: `/dev/run-inactive?days=0` sends the absent email now; sign-up codes also print in the terminal window.
+
 ## Deploy on Railway
 
 1. Push this folder to a GitHub repository.

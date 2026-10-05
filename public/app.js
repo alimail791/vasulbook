@@ -29,6 +29,7 @@
     }
     const data = await res.json().catch(() => ({}));
     if (res.status === 401 && !path.startsWith("/api/auth/")) { showAuth("login"); }
+    if (res.status === 403 && data.code === "email_unverified" && state.user) { state.user.emailVerified = false; showVerify(); }
     if (res.status === 402 && state.user) {
       state.user.plan = { ...state.user.plan, active: false, state: "expired", daysLeft: 0 };
       renderPlan();
@@ -80,9 +81,10 @@
   });
 
   // ---------------- auth screens ----------------
+  const FORMS = ["loginForm", "registerForm", "forgotForm", "resetForm", "verifyForm"];
   function showAuth(which) {
     $("appScreen").hidden = true; $("authScreen").hidden = false;
-    ["loginForm", "registerForm", "forgotForm", "resetForm"].forEach((id) => { $(id).hidden = true; });
+    FORMS.forEach((id) => { $(id).hidden = true; });
     const tabs = which === "login" || which === "register";
     $("authTabs").hidden = !tabs;
     $("authTabs").querySelectorAll("button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === which)));
@@ -93,6 +95,29 @@
   document.querySelectorAll("[data-back-login]").forEach((b) => b.addEventListener("click", () => { history.replaceState(null, "", "/"); showAuth("login"); }));
 
   function busy(form, on) { form.querySelectorAll("button[type=submit]").forEach((b) => { b.disabled = on; }); }
+  const codeOnly = (el) => el.addEventListener("input", () => { el.value = el.value.replace(/\D/g, "").slice(0, 6); });
+  codeOnly($("vCode")); codeOnly($("nCode"));
+
+  // A countdown on "Send a new code" so people don't hammer it.
+  function cooldown(btn, secs = 60) {
+    const label = "Send a new code"; let left = secs; btn.disabled = true;
+    const t = setInterval(() => {
+      left--; btn.textContent = left > 0 ? `${label} (${left}s)` : label;
+      if (left <= 0) { clearInterval(t); btn.disabled = false; }
+    }, 1000);
+    btn.textContent = `${label} (${left}s)`;
+  }
+
+  // Referral code from a shared link (?ref=VB123ABC), remembered until sign-up.
+  function storedRef() { try { return localStorage.getItem("vb_ref") || ""; } catch { return ""; } }
+  (function captureRef() {
+    const ref = new URLSearchParams(location.search).get("ref");
+    if (ref) {
+      try { localStorage.setItem("vb_ref", ref.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 12)); } catch { /* ignore */ }
+      history.replaceState(null, "", location.pathname + "#register");
+    }
+    if (storedRef()) $("rRef").value = storedRef();
+  })();
 
   $("loginForm").addEventListener("submit", async (e) => {
     e.preventDefault(); busy(e.target, true); $("lErr").textContent = "";
@@ -105,36 +130,82 @@
     try {
       const d = await api("POST", "/api/auth/register", {
         ownerName: $("rOwner").value, shopName: $("rShop").value, businessType: $("rType").value,
-        phone: $("rPhone").value, email: $("rEmail").value, password: $("rPass").value,
+        phone: $("rPhone").value, email: $("rEmail").value, password: $("rPass").value, referralCode: $("rRef").value,
       });
       $("rPass").value = "";
-      await enterApp(d.user);
-      toast("Welcome! Add your UPI ID in Settings.");
+      try { localStorage.removeItem("vb_ref"); } catch { /* ignore */ }
+      if (d.user.emailVerified) { await enterApp(d.user); toast("Welcome! Add your UPI ID in Settings."); }
+      else { state.user = d.user; showVerify(true); }
     } catch (err) { $("rErr").textContent = err.message; }
     finally { busy(e.target, false); }
   });
+
+  // ----- email confirmation with a 6-digit code -----
+  function showVerify(justSent) {
+    showAuth("verify");
+    $("vEmail").textContent = state.user ? state.user.email : "";
+    $("vCode").value = ""; $("vErr").textContent = ""; $("vChangeBox").hidden = true;
+    if (justSent) cooldown($("vResend"));
+    setTimeout(() => $("vCode").focus(), 50);
+  }
+  $("verifyForm").addEventListener("submit", async (e) => {
+    e.preventDefault(); busy(e.target, true); $("vErr").textContent = "";
+    try { const d = await api("POST", "/api/auth/verify-email", { code: $("vCode").value }); await enterApp(d.user); toast("Email confirmed. Welcome to VasulBook!"); }
+    catch (err) { $("vErr").textContent = err.message; $("vCode").select(); }
+    finally { busy(e.target, false); }
+  });
+  $("vCode").addEventListener("input", () => { if ($("vCode").value.length === 6) $("verifyForm").requestSubmit(); });
+  $("vResend").addEventListener("click", async () => {
+    $("vErr").textContent = "";
+    try { await api("POST", "/api/auth/resend-code", {}); toast("New code sent"); cooldown($("vResend")); }
+    catch (err) { $("vErr").textContent = err.message; }
+  });
+  $("vChange").addEventListener("click", () => { $("vChangeBox").hidden = false; $("vNewEmail").value = state.user ? state.user.email : ""; $("vNewEmail").focus(); });
+  $("vChangeSave").addEventListener("click", async () => {
+    $("vErr").textContent = "";
+    try { const d = await api("POST", "/api/auth/change-email", { email: $("vNewEmail").value }); state.user = d.user; showVerify(true); toast("Code sent to the new email"); }
+    catch (err) { $("vErr").textContent = err.message; }
+  });
+  $("vLogout").addEventListener("click", () => $("logoutBtn").click());
+
+  // ----- password reset with a 6-digit code -----
+  async function requestReset(emailAddr) {
+    await api("POST", "/api/auth/forgot", { email: emailAddr });
+    state.resetEmail = emailAddr;
+  }
   $("forgotForm").addEventListener("submit", async (e) => {
     e.preventDefault(); busy(e.target, true); $("fErr").textContent = "";
-    try { await api("POST", "/api/auth/forgot", { email: $("fEmail").value }); showAuth("login"); toast("If that email has an account, a reset link is on its way."); }
-    catch (err) { $("fErr").textContent = err.message; }
+    try {
+      await requestReset($("fEmail").value.trim());
+      showAuth("reset"); $("nEmail").textContent = state.resetEmail; $("nCode").value = ""; $("nPass").value = "";
+      cooldown($("nResend")); setTimeout(() => $("nCode").focus(), 50);
+    } catch (err) { $("fErr").textContent = err.message; }
     finally { busy(e.target, false); }
+  });
+  $("nResend").addEventListener("click", async () => {
+    $("nErr").textContent = "";
+    try { await requestReset(state.resetEmail); toast("New code sent"); cooldown($("nResend")); }
+    catch (err) { $("nErr").textContent = err.message; }
   });
   $("resetForm").addEventListener("submit", async (e) => {
     e.preventDefault(); busy(e.target, true); $("nErr").textContent = "";
     try {
-      await api("POST", "/api/auth/reset", { token: state.resetToken, password: $("nPass").value });
+      const d = await api("POST", "/api/auth/reset", { email: state.resetEmail, code: $("nCode").value, password: $("nPass").value });
+      $("nPass").value = "";
       history.replaceState(null, "", "/#/home");
-      const d = await api("GET", "/api/me"); await enterApp(d.user); toast("Password changed");
+      await enterApp(d.user); toast("Password changed");
     } catch (err) { $("nErr").textContent = err.message; }
     finally { busy(e.target, false); }
   });
 
   async function enterApp(user) {
     state.user = user;
+    if (!user.emailVerified) { showVerify(false); return; }
     $("authScreen").hidden = true; $("appScreen").hidden = false;
     if (!location.hash.startsWith("#/")) history.replaceState(null, "", "#/home");
     await loadData();
     route();
+    maybeShowReferPopup();
   }
 
   async function loadData() {
@@ -168,12 +239,14 @@
     if (m) { view = "customers"; state.sel = Number(m[1]); if (!state.customers.has(state.sel)) { state.sel = null; } }
     else if (h.startsWith("#/customers")) view = "customers";
     else if (h.startsWith("#/settings")) view = "settings";
+    else if (h.startsWith("#/refer")) { view = "home"; setTimeout(openRefer, 50); }
     const changedView = view !== state.view;
     state.view = view;
     ["home", "customers", "settings"].forEach((v) => { $("view-" + v).hidden = v !== view; });
     document.querySelectorAll("[data-nav]").forEach((a) => { if (a.dataset.nav === view) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
     if (view === "settings") fillSettings();
     render();
+    if (view === "home") maybeShowReferPopup();
     if (changedView || m) window.scrollTo(0, 0);
   }
   window.addEventListener("hashchange", route);
@@ -453,6 +526,55 @@
   });
 
   // ---------------- settings ----------------
+  // ---------------- refer & earn ----------------
+  function referLink() { return `${location.origin}/?ref=${encodeURIComponent(state.user.referralCode || "")}`; }
+  function referMessage() {
+    const r = state.config.referral || {};
+    return `I use VasulBook to collect money from customers with WhatsApp reminders and UPI. Try it free for ${((state.config.billing || {}).trialMonths || 3) + (r.friendBonusMonths || 0)} months with my link: ${referLink()} (code ${state.user.referralCode})`;
+  }
+  function fillReferTexts() {
+    const r = state.config.referral || {}; const m = r.rewardMonths || 5, fb = r.friendBonusMonths || 0;
+    const when = r.trigger === "payment" ? "subscribes" : "joins";
+    $("rsMonths").textContent = m;
+    $("rsBody").textContent = `Share VasulBook with another shop or business owner. When they ${r.trigger === "payment" ? "subscribe" : "join"} with your link, you get ${m} months free.` + (fb ? ` They get ${fb} extra month${fb === 1 ? "" : "s"} of free trial.` : "");
+    $("referCardTitle").textContent = `Refer a business, get ${m} months free`;
+    $("referCardSub").textContent = `Each friend who ${when} with your link earns you ${m} free months.`;
+    $("rsCode").textContent = state.user.referralCode || "";
+    $("rsLink").value = referLink();
+    $("rsWa").href = `https://wa.me/?text=${encodeURIComponent(referMessage())}`;
+    $("rsShare").hidden = !navigator.share;
+  }
+  async function openRefer() {
+    if (!state.user) return;
+    fillReferTexts();
+    $("referSheet").hidden = false;
+    try {
+      const d = await api("GET", "/api/referrals");
+      $("rsJoined").textContent = d.joined; $("rsEarned").textContent = d.monthsEarned;
+      $("rsFriends").hidden = !d.friends.length;
+      $("rsFriends").innerHTML = d.friends.slice(0, 10).map((f) => `<li><span>${esc(f.shop)}<div class="sub">${new Date(f.joinedAt).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}</div></span><span class="small ${f.rewardMonths ? "" : "muted"}">${f.rewardMonths ? `+${f.rewardMonths} months` : f.confirmed ? "Joined" : "Confirming email"}</span></li>`).join("");
+    } catch { /* stats are optional */ }
+  }
+  function closeRefer() { $("referSheet").hidden = true; if (location.hash === "#/refer") history.replaceState(null, "", "#/home"); }
+  // Once a day, on the dashboard: the popup reminds owners they can earn free months.
+  function maybeShowReferPopup() {
+    if (!state.user || !state.user.referralPopupDue || state.view !== "home" || state.referShownThisVisit) return;
+    state.referShownThisVisit = true;
+    setTimeout(() => {
+      if (!$("sheet").hidden || state.view !== "home") return;
+      openRefer();
+      state.user.referralPopupDue = false;
+      api("POST", "/api/referrals/popup-seen", {}).catch(() => {});
+    }, 1500);
+  }
+  $("referCard").addEventListener("click", openRefer);
+  $("rsClose").addEventListener("click", closeRefer);
+  $("referSheet").addEventListener("click", (e) => { if (e.target === $("referSheet")) closeRefer(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("referSheet").hidden) closeRefer(); });
+  $("rsCopyCode").addEventListener("click", () => copyText(state.user.referralCode, null));
+  $("rsCopyLink").addEventListener("click", () => copyText(referLink(), $("rsLink")));
+  $("rsShare").addEventListener("click", () => { navigator.share({ title: "VasulBook", text: referMessage() }).catch(() => {}); });
+
   // ---------------- plan & subscription ----------------
   const fmtDay = (iso) => (iso ? new Date(iso).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" }) : "");
   const priceText = () => { const b = state.config.billing || {}; return `${L.inr(b.priceInr || 1000)} for ${b.months || 10} months`; };
@@ -640,13 +762,11 @@
   // ---------------- boot ----------------
   (async function boot() {
     setKind("credit");
-    const m = location.hash.match(/^#reset=([a-f0-9]{64})$/);
     try { state.config = await api("GET", "/api/config"); } catch { state.config = {}; }
-    if (m) { state.resetToken = m[1]; showAuth("reset"); return; }
     try { const d = await api("GET", "/api/me"); await enterApp(d.user); }
     catch (err) {
       if (err.offline) { toast(err.message); }
-      showAuth(location.hash === "#register" ? "register" : "login");
+      showAuth(location.hash === "#register" || storedRef() ? "register" : "login");
     }
   })();
 })();

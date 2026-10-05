@@ -80,13 +80,37 @@ async function planNotices() {
   }
 }
 
+// 11:00 am IST: one friendly email when an owner hasn't opened the app for 5 days.
+// Sent once per absence: coming back and leaving again for 5 days sends one more.
+async function inactiveNudges({ days = 5 } = {}) {
+  if (!email.configured()) return;
+  const { rows: users } = await q(
+    `SELECT * FROM users WHERE email_verified AND last_active_at < now() - make_interval(days => $1)
+       AND (inactive_notice_at IS NULL OR inactive_notice_at < last_active_at)`, [days]);
+  const appUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 3000}`;
+  for (const u of users) {
+    try {
+      const { ledgers } = await userLedgers(u.id);
+      let pending = 0, owing = 0, overdue = 0;
+      for (const L of ledgers.values()) { if (L.bal > 0.5) { pending += L.bal; owing++; } if (L.status === "overdue") overdue++; }
+      const st = billing.status(u);
+      const away = Math.floor((Date.now() - new Date(u.last_active_at).getTime()) / 864e5);
+      const planNote = !st.active ? "Your plan has ended. Subscribe in the app to start sending reminders again."
+        : st.daysLeft <= 7 ? `Your ${st.state === "trial" ? "free trial" : "plan"} ends in ${st.daysLeft} day${st.daysLeft === 1 ? "" : "s"}.` : "";
+      const r = await email.inactiveEmail(u, { days: away, pending, pendingText: Ledger.inr(pending), owing, overdue, planNote }, appUrl);
+      if (r && r.ok) await q("UPDATE users SET inactive_notice_at=now() WHERE id=$1", [u.id]);
+    } catch (err) { console.error(`[inactive] user #${u.id}`, err.message); }
+  }
+}
+
 function start() {
   const opts = { timezone: "Asia/Kolkata" };
   cron.schedule("0 21 * * *", () => eveningSummaries().catch((e) => console.error("[summary job]", e)), opts);
   cron.schedule("30 10 * * *", () => autoReminders().catch((e) => console.error("[remind job]", e)), opts);
+  cron.schedule("0 11 * * *", () => inactiveNudges().catch((e) => console.error("[inactive job]", e)), opts);
   cron.schedule("0 10 * * *", () => planNotices().catch((e) => console.error("[plan notice job]", e)), opts);
-  // Clean up used or expired password reset tokens once a day.
-  cron.schedule("15 3 * * *", () => q("DELETE FROM password_resets WHERE used OR expires_at < now()").catch(() => {}), opts);
+  // Clean up old email codes once a day.
+  cron.schedule("15 3 * * *", () => q("DELETE FROM email_codes WHERE used OR expires_at < now() - interval '1 day'").catch(() => {}), opts);
 }
 
-module.exports = { start, eveningSummaries, autoReminders, planNotices };
+module.exports = { start, eveningSummaries, autoReminders, planNotices, inactiveNudges };

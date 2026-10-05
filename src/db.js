@@ -27,6 +27,7 @@ if (url) {
   }
   const { PGlite, types } = require("@electric-sql/pglite");
   const dir = path.join(__dirname, "..", "local-data", "db");
+  require("fs").mkdirSync(path.dirname(dir), { recursive: true });
   const db = new PGlite(dir, { parsers: { [types.DATE]: (v) => v, [types.NUMERIC]: (v) => (v === null ? null : Number(v)) } });
   // Run queries one at a time and return the same shape as node-postgres.
   let chain = Promise.resolve();
@@ -113,6 +114,36 @@ const MIGRATIONS = [
      paid_at TIMESTAMPTZ
    )`,
   `CREATE INDEX IF NOT EXISTS subscription_payments_user_idx ON subscription_payments(user_id)`,
+  // Email verification: accounts that existed before this feature count as verified; new ones start unverified.
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified BOOLEAN NOT NULL DEFAULT TRUE`,
+  `ALTER TABLE users ALTER COLUMN email_verified SET DEFAULT FALSE`,
+  `CREATE TABLE IF NOT EXISTS email_codes (
+     id SERIAL PRIMARY KEY,
+     user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     purpose TEXT NOT NULL CHECK (purpose IN ('verify','reset')),
+     code_hash TEXT NOT NULL,
+     attempts INT NOT NULL DEFAULT 0,
+     used BOOLEAN NOT NULL DEFAULT FALSE,
+     expires_at TIMESTAMPTZ NOT NULL,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
+  `CREATE INDEX IF NOT EXISTS email_codes_user_idx ON email_codes(user_id, purpose)`,
+  // Refer & earn
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_code TEXT`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS referred_by INT REFERENCES users(id) ON DELETE SET NULL`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS referral_popup_on DATE`,
+  `UPDATE users SET referral_code = 'VB' || upper(substr(md5(id::text || random()::text), 1, 6)) WHERE referral_code IS NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS users_referral_code_idx ON users(referral_code)`,
+  `CREATE TABLE IF NOT EXISTS referral_rewards (
+     referee_id INT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+     referrer_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+     months INT NOT NULL,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
+  // Activity, for "we miss you" emails
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMPTZ`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS inactive_notice_at TIMESTAMPTZ`,
+  `UPDATE users SET last_active_at = created_at WHERE last_active_at IS NULL`,
 ];
 
 async function migrate() {

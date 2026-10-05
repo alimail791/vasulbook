@@ -7,6 +7,28 @@ const PLAN = {
   priceInr: Number(process.env.PLAN_PRICE_INR || 1000),
   months: Number(process.env.PLAN_MONTHS || 10),
 };
+// Refer & earn: the referrer gets free months for each friend who joins (confirms their email) or, if set, pays.
+const REFERRAL = {
+  rewardMonths: Number(process.env.REFERRAL_REWARD_MONTHS || 5),
+  friendBonusMonths: Number(process.env.REFERRAL_FRIEND_BONUS_MONTHS || 1),
+  trigger: process.env.REFERRAL_TRIGGER === "payment" ? "payment" : "signup",
+};
+
+// Adds free months for the person who referred this user. Runs at most once per referred user.
+async function grantReferralReward(refereeId) {
+  if (!(REFERRAL.rewardMonths > 0)) return null;
+  const { rows: rr } = await q("SELECT id, referred_by, shop_name FROM users WHERE id=$1", [refereeId]);
+  const friend = rr[0];
+  if (!friend || !friend.referred_by) return null;
+  const ins = await q(
+    "INSERT INTO referral_rewards (referee_id, referrer_id, months) VALUES ($1,$2,$3) ON CONFLICT (referee_id) DO NOTHING RETURNING *",
+    [friend.id, friend.referred_by, REFERRAL.rewardMonths]);
+  if (!ins.rows[0]) return null;
+  const { rows: ur } = await q(
+    `UPDATE users SET paid_until = GREATEST(now(), COALESCE(trial_ends_at, now()), COALESCE(paid_until, now())) + make_interval(months => $2)
+     WHERE id=$1 RETURNING *`, [friend.referred_by, REFERRAL.rewardMonths]);
+  return ur[0] ? { referrer: ur[0], friend, months: REFERRAL.rewardMonths } : null;
+}
 const API = "https://api.razorpay.com/v1";
 
 function ready() {
@@ -81,7 +103,8 @@ async function applyPayment(orderId, paymentId) {
   const { rows: ur } = await q(
     `UPDATE users SET paid_until = GREATEST(now(), COALESCE(trial_ends_at, now()), COALESCE(paid_until, now())) + make_interval(months => $2)
      WHERE id=$1 RETURNING *`, [p.user_id, p.months]);
-  return { payment: p, user: ur[0] };
+  const reward = REFERRAL.trigger === "payment" ? await grantReferralReward(p.user_id) : null;
+  return { payment: p, user: ur[0], reward };
 }
 
 async function history(userId) {
@@ -90,4 +113,4 @@ async function history(userId) {
   return rows.map((r) => ({ orderId: r.order_id, paymentId: r.payment_id, amount: r.amount, months: r.months, paidAt: r.paid_at }));
 }
 
-module.exports = { PLAN, ready, status, createOrder, checkoutSignatureOk, webhookSignatureOk, applyPayment, history };
+module.exports = { PLAN, REFERRAL, grantReferralReward, ready, status, createOrder, checkoutSignatureOk, webhookSignatureOk, applyPayment, history };

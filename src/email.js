@@ -75,10 +75,9 @@ function adminList() {
 const fmtDay = (d) => (d ? new Date(d).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "long", year: "numeric" }) : "");
 const button = (href, label) => `<p><a href="${esc(href)}" style="display:inline-block;background:#2445B5;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;font-weight:600">${esc(label)}</a></p>`;
 
-// Sent when a new business registers: a welcome to the owner, and an alert to the admin.
-async function registrationEmails(user, appUrl) {
-  const jobs = [];
-  jobs.push(send({
+// Welcome email to the owner (after their email is confirmed).
+async function welcomeEmail(user, appUrl) {
+  return send({
     to: user.email,
     subject: `Welcome to ${APP_NAME}, ${user.owner_name}`,
     html: layout(`Welcome, ${user.owner_name}`, `
@@ -93,8 +92,12 @@ async function registrationEmails(user, appUrl) {
       <p><a href="${esc(appUrl)}" style="display:inline-block;background:#2445B5;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;font-weight:600">Open ${APP_NAME}</a></p>
       <p style="font-size:13px;color:#56665F">Tip: on your phone, open the app and choose "Add to Home screen" to install it.</p>`),
     text: `Welcome to ${APP_NAME}! Your account for ${user.shop_name} is ready. Open: ${appUrl}`,
-  }));
+  });
+}
 
+// "New registration" alert to the admin.
+async function adminRegistrationAlert(user) {
+  const jobs = [];
   const admins = adminList();
   if (admins.length) {
     const when = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium", timeStyle: "short" });
@@ -111,19 +114,54 @@ async function registrationEmails(user, appUrl) {
       replyTo: user.email,
     }));
   }
-  const results = await Promise.allSettled(jobs);
-  results.forEach((r) => { if (r.status === "rejected") console.error("[email error]", r.reason); });
+  await Promise.allSettled(jobs);
 }
 
-async function passwordResetEmail(user, link) {
+async function registrationEmails(user, appUrl) {
+  await Promise.allSettled([welcomeEmail(user, appUrl), adminRegistrationAlert(user)]);
+}
+
+// 6-digit code for confirming an email address or resetting a password.
+async function otpEmail(user, code, purpose, minutes) {
+  const verify = purpose === "verify";
+  const subject = verify ? `${code} is your ${APP_NAME} verification code` : `${code} is your ${APP_NAME} password reset code`;
   return send({
-    to: user.email,
-    subject: `Reset your ${APP_NAME} password`,
-    html: layout("Reset your password", `
-      <p>Someone asked to reset the password for ${esc(user.email)}. If it was you, use the button below. The link works for 1 hour.</p>
-      <p><a href="${esc(link)}" style="display:inline-block;background:#2445B5;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;font-weight:600">Set a new password</a></p>
-      <p style="font-size:13px;color:#56665F">If you didn't ask for this, ignore this email. Your password stays the same.</p>`),
-    text: `Reset your ${APP_NAME} password (valid 1 hour): ${link}`,
+    to: user.email, subject,
+    html: layout(verify ? "Confirm your email" : "Reset your password", `
+      <p>${verify ? `Enter this code in ${APP_NAME} to confirm your email for <b>${esc(user.shop_name)}</b>:` : `Someone asked to reset the password for ${esc(user.email)}. If it was you, enter this code in ${APP_NAME}:`}</p>
+      <p style="font-size:32px;font-weight:700;letter-spacing:8px;font-family:Consolas,Menlo,monospace;margin:16px 0">${esc(code)}</p>
+      <p style="font-size:13px;color:#56665F">The code works for ${minutes} minutes. Never share it with anyone, including people who say they are from ${APP_NAME}.${verify ? "" : " If you didn't ask for this, ignore this email. Your password stays the same."}</p>`),
+    text: `${APP_NAME} code: ${code} (valid ${minutes} minutes). Never share it with anyone.`,
+  });
+}
+
+// The referrer earned free months because a friend they referred paid.
+async function referralRewardEmail(referrer, friend, months, appUrl) {
+  const subject = `You earned ${months} free month${months === 1 ? "" : "s"} of ${APP_NAME}`;
+  return send({
+    to: referrer.email, subject,
+    html: layout("Thank you for sharing VasulBook!", `
+      <p><b>${esc(friend.shop_name)}</b> joined with your link and just subscribed. We've added <b>${months} free month${months === 1 ? "" : "s"}</b> to your plan.</p>
+      <p>Your plan now runs until <b>${esc(fmtDay(referrer.paid_until))}</b>.</p>
+      <p>Every friend who subscribes earns you another free month. Share your link from the app.</p>
+      ${button(appUrl + "/#/refer", "Share your link")}`),
+    text: `${friend.shop_name} subscribed using your link. ${months} free month(s) added; your plan runs until ${fmtDay(referrer.paid_until)}.`,
+  });
+}
+
+// Sent once when an owner hasn't opened the app for 5 days.
+async function inactiveEmail(user, st, appUrl) {
+  const hasDues = st.pending >= 1;
+  const subject = hasDues ? `${st.pendingText} is still pending at ${user.shop_name}` : `We miss you at ${APP_NAME}, ${user.owner_name}`;
+  return send({
+    to: user.email, subject,
+    html: layout(hasDues ? "Your money is waiting" : "Pick up where you left off", `
+      <p>Hi ${esc(user.owner_name)}, you haven't opened ${APP_NAME} for ${st.days} days.</p>
+      ${hasDues ? `<p><b>${esc(st.pendingText)}</b> is still pending from ${st.owing} customer${st.owing === 1 ? "" : "s"}${st.overdue ? `, and <b>${st.overdue}</b> ${st.overdue === 1 ? "is" : "are"} overdue` : ""}. A friendly WhatsApp reminder takes one tap.</p>`
+        : `<p>Add the customers who owe you money and ${APP_NAME} will help you collect it with WhatsApp reminders and UPI.</p>`}
+      ${st.planNote ? `<p style="color:#9A620A">${esc(st.planNote)}</p>` : ""}
+      ${button(appUrl, hasDues ? "Send reminders now" : "Open " + APP_NAME)}`),
+    text: `${subject}. Open ${APP_NAME}: ${appUrl}`,
   });
 }
 
@@ -195,4 +233,4 @@ async function planNoticeEmail(user, stage, st, appUrl) {
   });
 }
 
-module.exports = { configured, resendReady, listOutbox, OUTBOX, send, registrationEmails, passwordResetEmail, dailySummaryEmail, planPurchaseEmails, planNoticeEmail };
+module.exports = { configured, resendReady, listOutbox, OUTBOX, send, registrationEmails, welcomeEmail, adminRegistrationAlert, otpEmail, referralRewardEmail, inactiveEmail, dailySummaryEmail, planPurchaseEmails, planNoticeEmail };

@@ -11,6 +11,7 @@ const ix = require("./src/integrations");
 const Ledger = require("./public/ledger");
 const jobs = require("./src/jobs");
 const billing = require("./src/billing");
+const otp = require("./src/otp");
 
 const PORT = Number(process.env.PORT || 3000);
 const PROD = process.env.NODE_ENV === "production";
@@ -84,6 +85,7 @@ app.post("/api/webhooks/razorpay-billing", express.raw({ type: "*/*", limit: "1m
     if (done) {
       console.log(`[billing] webhook activated plan for user #${done.user.id}`);
       email.planPurchaseEmails(done.user, done.payment, process.env.APP_URL || "").catch((e) => console.error("[plan email]", e));
+      notifyReward(done.reward, process.env.APP_URL || "");
     }
   }
   res.json({ ok: true });
@@ -129,13 +131,40 @@ function limit(max, windowMs) {
 }
 setInterval(() => { const now = Date.now(); for (const [k, h] of hits) if (!h.some((t) => now - t < 3600e3)) hits.delete(k); }, 600e3).unref();
 
-async function auth(req, res, next) {
-  try {
-    const { uid } = jwt.verify(req.cookies[COOKIE] || "", SECRET);
-    const { rows } = await q("SELECT * FROM users WHERE id=$1", [uid]);
-    if (!rows[0]) return bad(res, "Please log in.", 401);
-    req.user = rows[0]; next();
-  } catch { return bad(res, "Please log in.", 401); }
+// Email codes are required when real email works (Resend set up), and always on your own computer.
+// Without Resend in production, new accounts are confirmed automatically so sign-ups don't get stuck.
+const verificationOn = () => email.resendReady() || !PROD;
+
+// Logged in, email confirmed or not (used by /api/me and the verification screen).
+async function authAny(req, res, next) {
+  let uid;
+  try { ({ uid } = jwt.verify(req.cookies[COOKIE] || "", SECRET)); } catch { return bad(res, "Please log in.", 401); }
+  const { rows } = await q("SELECT * FROM users WHERE id=$1", [uid]).catch(() => ({ rows: [] }));
+  if (!rows[0]) return bad(res, "Please log in.", 401);
+  req.user = rows[0];
+  // Remember when the owner was last here (at most once an hour), for "we miss you" emails.
+  const last = rows[0].last_active_at ? new Date(rows[0].last_active_at).getTime() : 0;
+  if (Date.now() - last > 3600e3) q("UPDATE users SET last_active_at=now() WHERE id=$1", [uid]).catch(() => {});
+  next();
+}
+// Logged in with a confirmed email: everything else.
+function auth(req, res, next) {
+  authAny(req, res, () => {
+    if (!req.user.email_verified) return res.status(403).json({ error: "Please confirm your email first.", code: "email_unverified" });
+    next();
+  });
+}
+const newReferralCode = () => "VB" + crypto.randomBytes(3).toString("hex").toUpperCase();
+async function sendCode(user, purpose) {
+  const code = await otp.create(user.id, purpose);
+  if (!PROD) console.log(`[local] ${purpose} code for ${user.email}: ${code}`);
+  const r = await email.otpEmail(user, code, purpose, otp.TTL_MIN);
+  if (r && r.ok === false) { const e = new Error("We couldn't send the email. Please try again in a minute."); e.status = 502; throw e; }
+}
+function notifyReward(r, url) {
+  if (!r) return;
+  console.log(`[referral] user #${r.referrer.id} earned ${r.months} months for #${r.friend.id}`);
+  email.referralRewardEmail(r.referrer, r.friend, r.months, url).catch((e) => console.error("[referral email]", e));
 }
 function publicUser(u) {
   return {
@@ -145,6 +174,9 @@ function publicUser(u) {
     razorpay: { keyId: u.rzp_key_id, connected: Boolean(u.rzp_key_id && u.rzp_key_secret), webhookSet: Boolean(u.rzp_webhook_secret) },
     createdAt: u.created_at,
     plan: billing.status(u),
+    emailVerified: u.email_verified,
+    referralCode: u.referral_code,
+    referralPopupDue: u.referral_popup_on !== Ledger.todayIST(),
   };
 }
 
@@ -164,6 +196,8 @@ app.get("/healthz", wrap(async (req, res) => { await q("SELECT 1"); res.json({ o
 app.get("/api/config", (req, res) => res.json({
   whatsappApi: ix.whatsappConfigured(), email: email.configured(),
   billing: { ready: billing.ready(), testMode: !PROD && !billing.ready(), ...billing.PLAN },
+  verification: verificationOn(),
+  referral: billing.REFERRAL,
 }));
 
 // ---------- auth ----------
@@ -179,17 +213,68 @@ app.post("/api/auth/register", limit(10, 15 * 60e3), wrap(async (req, res) => {
   if (pw.length < 8) return bad(res, "Use a password of at least 8 characters.");
   const exists = await q("SELECT 1 FROM users WHERE email=$1", [e]);
   if (exists.rowCount) return bad(res, "An account with this email already exists. Try logging in.", 409);
+  let referrerId = null;
+  const refCode = clean(b.referralCode, 20).toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (refCode) {
+    const r = await q("SELECT id FROM users WHERE referral_code=$1", [refCode]);
+    if (!r.rows[0]) return bad(res, "That referral code isn't valid. Check it, or leave it empty.");
+    referrerId = r.rows[0].id;
+  }
+  const trialMonths = billing.PLAN.trialMonths + (referrerId ? billing.REFERRAL.friendBonusMonths : 0);
   const hash = await bcrypt.hash(pw, 10);
-  const { rows } = await q(
-    `INSERT INTO users (email, password_hash, owner_name, shop_name, phone, business_type, trial_ends_at)
-     VALUES ($1,$2,$3,$4,$5,$6, now() + make_interval(months => $7)) RETURNING *`,
-    [e, hash, ownerName, shopName, phone, type, billing.PLAN.trialMonths]);
-  const user = rows[0];
+  const verified = !verificationOn();
+  let user;
+  for (let i = 0; i < 4 && !user; i++) {
+    try {
+      const { rows } = await q(
+        `INSERT INTO users (email, password_hash, owner_name, shop_name, phone, business_type, trial_ends_at, email_verified, referral_code, referred_by, last_active_at)
+         VALUES ($1,$2,$3,$4,$5,$6, now() + make_interval(months => $7), $8, $9, $10, now()) RETURNING *`,
+        [e, hash, ownerName, shopName, phone, type, trialMonths, verified, newReferralCode(), referrerId]);
+      user = rows[0];
+    } catch (err) {
+      if (err.code === "23505" && String(err.message).includes("email")) return bad(res, "An account with this email already exists. Try logging in.", 409);
+      if (err.code !== "23505" || i === 3) throw err; // referral code clash: try another
+    }
+  }
   setSession(res, user.id);
-  // Emails go out in the background so signup stays fast.
-  email.registrationEmails(user, appUrl(req)).catch((err) => console.error("[registration email]", err));
-  console.log(`[register] user #${user.id} ${shopName}`);
+  console.log(`[register] user #${user.id} ${shopName}${referrerId ? ` (referred by #${referrerId})` : ""}`);
+  email.adminRegistrationAlert(user).catch((err) => console.error("[admin alert]", err));
+  if (verified) {
+    email.welcomeEmail(user, appUrl(req)).catch((err) => console.error("[welcome email]", err));
+    if (billing.REFERRAL.trigger === "signup") notifyReward(await billing.grantReferralReward(user.id), appUrl(req));
+  } else {
+    await sendCode(user, "verify").catch((err) => console.error("[verify code]", err.message));
+  }
   res.status(201).json({ user: publicUser(user) });
+}));
+
+app.post("/api/auth/verify-email", authAny, limit(20, 15 * 60e3), wrap(async (req, res) => {
+  if (req.user.email_verified) return res.json({ user: publicUser(req.user) });
+  await otp.check(req.user.id, "verify", req.body.code);
+  const { rows } = await q("UPDATE users SET email_verified=TRUE WHERE id=$1 RETURNING *", [req.user.id]);
+  const user = rows[0];
+  email.welcomeEmail(user, appUrl(req)).catch((err) => console.error("[welcome email]", err));
+  if (billing.REFERRAL.trigger === "signup") notifyReward(await billing.grantReferralReward(user.id), appUrl(req));
+  res.json({ user: publicUser(user) });
+}));
+
+app.post("/api/auth/resend-code", authAny, limit(8, 15 * 60e3), wrap(async (req, res) => {
+  if (req.user.email_verified) return bad(res, "Your email is already confirmed.");
+  await sendCode(req.user, "verify");
+  res.json({ ok: true });
+}));
+
+// Change the email on an unconfirmed account (typo at sign-up), then send a fresh code.
+app.post("/api/auth/change-email", authAny, limit(5, 15 * 60e3), wrap(async (req, res) => {
+  if (req.user.email_verified) return bad(res, "Your email is already confirmed.");
+  const e = clean(req.body.email, 200).toLowerCase();
+  if (!isEmail(e)) return bad(res, "Enter a valid email address.");
+  const taken = await q("SELECT 1 FROM users WHERE email=$1 AND id<>$2", [e, req.user.id]);
+  if (taken.rowCount) return bad(res, "An account with this email already exists.", 409);
+  const { rows } = await q("UPDATE users SET email=$1 WHERE id=$2 RETURNING *", [e, req.user.id]);
+  await q("DELETE FROM email_codes WHERE user_id=$1 AND purpose='verify'", [req.user.id]);
+  await sendCode(rows[0], "verify");
+  res.json({ user: publicUser(rows[0]) });
 }));
 
 app.post("/api/auth/login", limit(20, 15 * 60e3), wrap(async (req, res) => {
@@ -198,6 +283,7 @@ app.post("/api/auth/login", limit(20, 15 * 60e3), wrap(async (req, res) => {
   const ok = rows[0] && (await bcrypt.compare(pw, rows[0].password_hash));
   if (!ok) return bad(res, "Email or password is wrong.", 401);
   setSession(res, rows[0].id);
+  q("UPDATE users SET last_active_at=now() WHERE id=$1", [rows[0].id]).catch(() => {});
   res.json({ user: publicUser(rows[0]) });
 }));
 
@@ -206,33 +292,35 @@ app.post("/api/auth/logout", (req, res) => {
   res.json({ ok: true });
 });
 
+// Password reset step 1: email a 6-digit code.
 app.post("/api/auth/forgot", limit(5, 15 * 60e3), wrap(async (req, res) => {
+  if (PROD && !email.resendReady()) return bad(res, "Password reset by email isn't available yet. Please contact support.", 503);
   const e = clean(req.body.email, 200).toLowerCase();
+  if (!isEmail(e)) return bad(res, "Enter a valid email address.");
   const { rows } = await q("SELECT * FROM users WHERE email=$1", [e]);
   if (rows[0]) {
-    const token = crypto.randomBytes(32).toString("hex");
-    const hash = crypto.createHash("sha256").update(token).digest("hex");
-    await q("INSERT INTO password_resets (token_hash, user_id, expires_at) VALUES ($1,$2, now() + interval '1 hour')", [hash, rows[0].id]);
-    await email.passwordResetEmail(rows[0], `${appUrl(req)}/#reset=${token}`);
+    try { await sendCode(rows[0], "reset"); }
+    catch (err) { if (err.status !== 429) throw err; } // a code was sent moments ago; it still works
   }
   // Same answer either way, so nobody can check which emails have accounts.
-  res.json({ ok: true });
+  res.json({ ok: true, minutes: otp.TTL_MIN });
 }));
 
+// Password reset step 2: code + new password.
 app.post("/api/auth/reset", limit(10, 15 * 60e3), wrap(async (req, res) => {
-  const token = String(req.body.token || ""), pw = String(req.body.password || "");
+  const e = clean(req.body.email, 200).toLowerCase(), pw = String(req.body.password || "");
   if (pw.length < 8) return bad(res, "Use a password of at least 8 characters.");
-  const hash = crypto.createHash("sha256").update(token).digest("hex");
-  const { rows } = await q("SELECT * FROM password_resets WHERE token_hash=$1 AND NOT used AND expires_at > now()", [hash]);
-  if (!rows[0]) return bad(res, "This reset link has expired or was already used. Ask for a new one.");
-  await q("UPDATE users SET password_hash=$1 WHERE id=$2", [await bcrypt.hash(pw, 10), rows[0].user_id]);
-  await q("UPDATE password_resets SET used=TRUE WHERE token_hash=$1", [hash]);
-  setSession(res, rows[0].user_id);
-  res.json({ ok: true });
+  const { rows } = await q("SELECT * FROM users WHERE email=$1", [e]);
+  if (!rows[0]) return bad(res, "That code is wrong or has expired.");
+  await otp.check(rows[0].id, "reset", req.body.code);
+  // The code proves they own the email, so this also confirms it.
+  const { rows: ur } = await q("UPDATE users SET password_hash=$1, email_verified=TRUE WHERE id=$2 RETURNING *", [await bcrypt.hash(pw, 10), rows[0].id]);
+  setSession(res, rows[0].id);
+  res.json({ user: publicUser(ur[0]) });
 }));
 
 // ---------- account ----------
-app.get("/api/me", auth, (req, res) => res.json({ user: publicUser(req.user) }));
+app.get("/api/me", authAny, (req, res) => res.json({ user: publicUser(req.user) }));
 
 app.put("/api/settings", auth, wrap(async (req, res) => {
   const b = req.body || {}, u = req.user;
@@ -380,6 +468,26 @@ app.post("/api/customers/:id/send-reminder", auth, requireActive, wrap(async (re
   res.json({ customer: toCustomer(rows[0]) });
 }));
 
+// ---------- refer & earn ----------
+app.get("/api/referrals", auth, wrap(async (req, res) => {
+  const { rows } = await q(
+    `SELECT u.shop_name, u.created_at, u.email_verified, rr.months
+     FROM users u LEFT JOIN referral_rewards rr ON rr.referee_id = u.id
+     WHERE u.referred_by=$1 ORDER BY u.created_at DESC LIMIT 200`, [req.user.id]);
+  const friends = rows.map((r) => ({ shop: r.shop_name, joinedAt: r.created_at, rewardMonths: r.months || 0, confirmed: r.email_verified }));
+  res.json({
+    code: req.user.referral_code,
+    rewardMonths: billing.REFERRAL.rewardMonths, friendBonusMonths: billing.REFERRAL.friendBonusMonths, trigger: billing.REFERRAL.trigger,
+    joined: friends.length, rewarded: friends.filter((f) => f.rewardMonths).length,
+    monthsEarned: friends.reduce((s, f) => s + f.rewardMonths, 0), friends,
+  });
+}));
+// The dashboard popup shows once a day; this records that today's was seen.
+app.post("/api/referrals/popup-seen", auth, wrap(async (req, res) => {
+  await q("UPDATE users SET referral_popup_on=$1 WHERE id=$2", [Ledger.todayIST(), req.user.id]);
+  res.json({ ok: true });
+}));
+
 // ---------- subscription ----------
 app.get("/api/subscription", auth, wrap(async (req, res) => {
   res.json({ plan: billing.status(req.user), payments: await billing.history(req.user.id) });
@@ -403,6 +511,7 @@ app.post("/api/subscription/verify", auth, wrap(async (req, res) => {
     user = done.user;
     console.log(`[billing] user #${user.id} paid order ${orderId}`);
     email.planPurchaseEmails(user, done.payment, appUrl(req)).catch((e) => console.error("[plan email]", e));
+    notifyReward(done.reward, appUrl(req));
   } else {
     user = (await q("SELECT * FROM users WHERE id=$1", [req.user.id])).rows[0];
   }
@@ -445,6 +554,7 @@ if (!PROD) {
     const { rows } = await q("UPDATE users SET trial_ends_at = now() - interval '1 day', paid_until = NULL, plan_notice='' WHERE id=$1 RETURNING *", [req.user.id]);
     res.json({ user: publicUser(rows[0]) });
   }));
+  app.get("/dev/run-inactive", wrap(async (req, res) => { await jobs.inactiveNudges({ days: Number(req.query.days ?? 5) }); res.redirect("/dev/emails"); }));
   app.get("/dev/run-plan-notices", wrap(async (req, res) => { await jobs.planNotices(); res.redirect("/dev/emails"); }));
   app.get("/dev/run-summary", wrap(async (req, res) => {
     await q("UPDATE users SET last_summary_on = NULL");

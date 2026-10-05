@@ -59,25 +59,48 @@
       <label class="field">Mobile number<input id="rPhone" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="10-digit mobile"></label>
       <label class="field">Email<input id="rEmail" type="email" autocomplete="email" required></label>
       <label class="field">Password<input id="rPass" type="password" autocomplete="new-password" minlength="8" required><span class="hint">At least 8 characters</span></label>
+      <label class="field">Referral code (optional)<input id="rRef" autocomplete="off" autocapitalize="characters" placeholder="VB1A2B3C"><span class="hint" id="rRefHint">Got a code from a friend? You get an extra month free.</span></label>
       <p class="err" id="rErr" role="alert"></p>
       <button class="btn primary block" type="submit">Create account</button>
     </form>
 
+    <form class="card stack" id="verifyForm" autocomplete="off" hidden>
+      <h2>Confirm your email</h2>
+      <p class="small">We sent a 6-digit code to <b id="vEmail"></b>. Enter it below. Check your spam folder if you don't see it.</p>
+      <label class="field">Code<input id="vCode" class="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required placeholder="••••••"></label>
+      <p class="err" id="vErr" role="alert"></p>
+      <button class="btn primary block" type="submit">Confirm</button>
+      <div class="row between">
+        <button class="linkbtn" type="button" id="vResend">Send a new code</button>
+        <button class="linkbtn" type="button" id="vChange">Wrong email?</button>
+      </div>
+      <div class="stack" id="vChangeBox" hidden>
+        <label class="field">Correct email<input id="vNewEmail" type="email" autocomplete="email"></label>
+        <button class="btn" type="button" id="vChangeSave">Update email and send code</button>
+      </div>
+      <button class="linkbtn" type="button" id="vLogout">Log out</button>
+    </form>
+
     <form class="card stack" id="forgotForm" hidden>
       <h2>Reset your password</h2>
-      <p class="muted small">Enter your account email. We'll send you a link to set a new password.</p>
+      <p class="muted small">Enter your account email. We'll email you a 6-digit code.</p>
       <label class="field">Email<input id="fEmail" type="email" autocomplete="email" required></label>
       <p class="err" id="fErr" role="alert"></p>
-      <button class="btn primary block" type="submit">Send reset link</button>
+      <button class="btn primary block" type="submit">Send code</button>
       <button class="linkbtn" type="button" data-back-login>Back to log in</button>
     </form>
 
-    <form class="card stack" id="resetForm" hidden>
+    <form class="card stack" id="resetForm" autocomplete="off" hidden>
       <h2>Set a new password</h2>
+      <p class="small">If <b id="nEmail"></b> has an account, a 6-digit code is on its way. It works for 10 minutes.</p>
+      <label class="field">Code<input id="nCode" class="otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required placeholder="••••••"></label>
       <label class="field">New password<input id="nPass" type="password" autocomplete="new-password" minlength="8" required><span class="hint">At least 8 characters</span></label>
       <p class="err" id="nErr" role="alert"></p>
       <button class="btn primary block" type="submit">Save password</button>
-      <button class="linkbtn" type="button" data-back-login>Back to log in</button>
+      <div class="row between">
+        <button class="linkbtn" type="button" id="nResend">Send a new code</button>
+        <button class="linkbtn" type="button" data-back-login>Back to log in</button>
+      </div>
     </form>
   </div>
 </section>
@@ -122,6 +145,12 @@
         <div class="tile"><span class="eyebrow">Credit today</span><span class="amt" id="tCredit">₹0</span><span class="sub" id="tCreditSub"></span></div>
         <div class="tile hot"><span class="eyebrow">Overdue</span><span class="amt" id="tOverdue">₹0</span><span class="sub" id="tOverdueSub"></span></div>
       </div>
+
+      <button class="refer-card" type="button" id="referCard">
+        <span class="refer-gift" aria-hidden="true">₹</span>
+        <span class="refer-text"><b id="referCardTitle">Refer a business, get 5 months free</b><span class="small" id="referCardSub">Share your link. Each friend who joins earns you 5 free months.</span></span>
+        <span class="refer-go" aria-hidden="true">→</span>
+      </button>
 
       <div class="home-cols">
         <div class="card stack">
@@ -303,6 +332,32 @@
     <a href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 010 7M18.5 14.8c1.6.8 2.6 2.5 3 5.2"/></svg>Customers</a>
     <a href="#/settings" data-nav="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>Settings</a>
   </nav>
+</div>
+
+<!-- refer & earn popup (shown once a day on the dashboard) -->
+<div class="sheet-wrap" id="referSheet" hidden>
+  <div class="sheet refer-sheet" role="dialog" aria-modal="true" aria-labelledby="referTitle">
+    <div class="refer-hero">
+      <span class="eyebrow">Refer &amp; earn</span>
+      <h2 id="referTitle">Get <span id="rsMonths">5</span> months of VasulBook free</h2>
+      <p class="small" id="rsBody">Share VasulBook with another shop or business owner. When they join with your link, you get 5 months free. They get 1 extra month of free trial.</p>
+    </div>
+    <div class="refer-code">
+      <span class="eyebrow">Your code</span>
+      <div class="row between"><span class="amt code" id="rsCode">VB••••••</span><button class="btn sm" type="button" id="rsCopyCode">Copy code</button></div>
+      <div class="copybox"><input id="rsLink" readonly aria-label="Your referral link"><button class="btn sm" type="button" id="rsCopyLink">Copy link</button></div>
+    </div>
+    <div class="row">
+      <a class="btn wa" id="rsWa" href="#" target="_blank" rel="noopener">Share on WhatsApp</a>
+      <button class="btn" type="button" id="rsShare" hidden>More ways to share</button>
+    </div>
+    <div class="refer-stats" id="rsStats">
+      <div><span class="amt" id="rsJoined">0</span><span class="small muted">friends joined</span></div>
+      <div><span class="amt" id="rsEarned">0</span><span class="small muted">months earned</span></div>
+    </div>
+    <ul class="plan-history" id="rsFriends" hidden></ul>
+    <button class="btn ghost block" type="button" id="rsClose">Maybe later</button>
+  </div>
 </div>
 
 <!-- sheet for add/edit customer and confirmations -->
