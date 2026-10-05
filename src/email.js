@@ -89,9 +89,9 @@ async function welcomeEmail(user, appUrl) {
         <li>Add the customers who owe you money, with their WhatsApp numbers.</li>
         <li>Send your first reminder and watch the payments come in.</li>
       </ol>
-      <p><a href="${esc(appUrl)}" style="display:inline-block;background:#2445B5;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;font-weight:600">Open ${APP_NAME}</a></p>
+      <p><a href="${esc(appUrl)}/app" style="display:inline-block;background:#2445B5;color:#fff;padding:10px 16px;border-radius:8px;text-decoration:none;font-weight:600">Open ${APP_NAME}</a></p>
       <p style="font-size:13px;color:#56665F">Tip: on your phone, open the app and choose "Add to Home screen" to install it.</p>`),
-    text: `Welcome to ${APP_NAME}! Your account for ${user.shop_name} is ready. Open: ${appUrl}`,
+    text: `Welcome to ${APP_NAME}! Your account for ${user.shop_name} is ready. Open: ${appUrl}/app`,
   });
 }
 
@@ -144,7 +144,7 @@ async function referralRewardEmail(referrer, friend, months, appUrl) {
       <p><b>${esc(friend.shop_name)}</b> joined with your link and just subscribed. We've added <b>${months} free month${months === 1 ? "" : "s"}</b> to your plan.</p>
       <p>Your plan now runs until <b>${esc(fmtDay(referrer.paid_until))}</b>.</p>
       <p>Every friend who subscribes earns you another free month. Share your link from the app.</p>
-      ${button(appUrl + "/#/refer", "Share your link")}`),
+      ${button(appUrl + "/app#/refer", "Share your link")}`),
     text: `${friend.shop_name} subscribed using your link. ${months} free month(s) added; your plan runs until ${fmtDay(referrer.paid_until)}.`,
   });
 }
@@ -160,8 +160,8 @@ async function inactiveEmail(user, st, appUrl) {
       ${hasDues ? `<p><b>${esc(st.pendingText)}</b> is still pending from ${st.owing} customer${st.owing === 1 ? "" : "s"}${st.overdue ? `, and <b>${st.overdue}</b> ${st.overdue === 1 ? "is" : "are"} overdue` : ""}. A friendly WhatsApp reminder takes one tap.</p>`
         : `<p>Add the customers who owe you money and ${APP_NAME} will help you collect it with WhatsApp reminders and UPI.</p>`}
       ${st.planNote ? `<p style="color:#9A620A">${esc(st.planNote)}</p>` : ""}
-      ${button(appUrl, hasDues ? "Send reminders now" : "Open " + APP_NAME)}`),
-    text: `${subject}. Open ${APP_NAME}: ${appUrl}`,
+      ${button(appUrl + "/app", hasDues ? "Send reminders now" : "Open " + APP_NAME)}`),
+    text: `${subject}. Open ${APP_NAME}: ${appUrl}/app`,
   });
 }
 
@@ -178,7 +178,7 @@ async function dailySummaryEmail(user, s, appUrl) {
         <tr><td style="padding:4px 0">Total pending</td><td style="text-align:right;font-weight:700">${esc(s.pending)}</td></tr>
       </table>
       ${rows ? `<h2 style="font-size:15px;margin:18px 0 6px">Overdue</h2><table style="width:100%;font-size:14px;border-collapse:collapse">${rows}</table>` : `<p style="color:#1F7A4B">No overdue customers. Well done!</p>`}
-      <p style="margin-top:18px"><a href="${esc(appUrl)}" style="color:#2445B5;font-weight:600">Open ${APP_NAME}</a></p>`),
+      <p style="margin-top:18px"><a href="${esc(appUrl)}/app" style="color:#2445B5;font-weight:600">Open ${APP_NAME}</a></p>`),
     text: `Collected today ${s.collected}. New credit ${s.credit}. Pending ${s.pending}.`,
   });
 }
@@ -195,7 +195,7 @@ async function planPurchaseEmails(user, payment, appUrl) {
            ["Active until", fmtDay(user.paid_until)], ["Payment ID", payment.payment_id || ""], ["Order ID", payment.order_id]]
           .map(([k, v]) => `<tr><td style="padding:6px 0;color:#56665F;width:120px">${k}</td><td style="padding:6px 0;font-weight:600">${esc(v)}</td></tr>`).join("")}
       </table>
-      ${button(appUrl, "Open " + APP_NAME)}`),
+      ${button(appUrl + "/app", "Open " + APP_NAME)}`),
     text: `Payment of ${amount} received. Your ${APP_NAME} plan is active until ${fmtDay(user.paid_until)}. Payment ID ${payment.payment_id}.`,
   })];
   const admins = adminList();
@@ -228,8 +228,8 @@ async function planNoticeEmail(user, stage, st, appUrl) {
        <p>Subscribe now for <b>${esc(price)}</b>. Your paid months start after the current period ends, so you don't lose any days.</p>`;
   return send({
     to: user.email, subject,
-    html: layout(subject, body + button(appUrl + "/#/settings", "Subscribe in the app")),
-    text: `${subject}. Subscribe for ${price}: ${appUrl}/#/settings`,
+    html: layout(subject, body + button(appUrl + "/app#/settings", "Subscribe in the app")),
+    text: `${subject}. Subscribe for ${price}: ${appUrl}/app#/settings`,
   });
 }
 

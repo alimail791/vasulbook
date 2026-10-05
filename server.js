@@ -44,8 +44,8 @@ app.use((req, res, next) => {
   res.setHeader("Permissions-Policy", "camera=(), geolocation=()");
   res.setHeader("Content-Security-Policy",
     "default-src 'self'; script-src 'self' https://checkout.razorpay.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; " +
-    "img-src 'self' data: https://*.razorpay.com; connect-src 'self' https://api.razorpay.com https://lumberjack.razorpay.com; " +
-    "frame-src https://api.razorpay.com https://checkout.razorpay.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://api.razorpay.com");
+    "img-src 'self' data: https://*.razorpay.com https://i.ytimg.com; media-src 'self'; connect-src 'self' https://api.razorpay.com https://lumberjack.razorpay.com; " +
+    "frame-src https://api.razorpay.com https://checkout.razorpay.com https://www.youtube-nocookie.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://api.razorpay.com");
   if (PROD) res.setHeader("Strict-Transport-Security", "max-age=31536000");
   next();
 });
@@ -191,6 +191,15 @@ const toEntry = (r) => ({
 });
 const toCustomer = (r) => ({ id: r.id, name: r.name, phone: r.phone, lastReminderAt: r.last_reminder_at ? new Date(r.last_reminder_at).getTime() : null, createdAt: new Date(r.created_at).getTime() });
 
+// Contact WhatsApp number for the landing page button (digits; 10-digit numbers get +91).
+const WA_CONTACT = (() => { const d = digits(process.env.WHATSAPP_CONTACT || ""); return d.length === 10 ? "91" + d : d; })();
+// Demo videos for the landing page: YouTube links or IDs, comma separated, optional "Title|link".
+const DEMO_VIDEOS = String(process.env.DEMO_VIDEOS || "").split(",").map((x) => x.trim()).filter(Boolean).map((x) => {
+  const [title, link] = x.includes("|") ? x.split("|").map((t) => t.trim()) : ["", x];
+  const m = link.match(/(?:youtu\.be\/|v=|embed\/|shorts\/)([\w-]{11})/) || link.match(/^([\w-]{11})$/);
+  return m ? { id: m[1], title: title || "VasulBook video" } : null;
+}).filter(Boolean);
+
 // ---------- health & config ----------
 app.get("/healthz", wrap(async (req, res) => { await q("SELECT 1"); res.json({ ok: true }); }));
 app.get("/api/config", (req, res) => res.json({
@@ -198,7 +207,15 @@ app.get("/api/config", (req, res) => res.json({
   billing: { ready: billing.ready(), testMode: !PROD && !billing.ready(), ...billing.PLAN },
   verification: verificationOn(),
   referral: billing.REFERRAL,
+  whatsappChat: Boolean(WA_CONTACT),
+  demoVideos: DEMO_VIDEOS,
 }));
+
+// Landing page "Chat with us": the number lives only on the server, never in the page.
+app.get("/whatsapp", (req, res) => {
+  if (!WA_CONTACT) return res.redirect("/");
+  res.redirect(302, `https://wa.me/${WA_CONTACT}?text=${encodeURIComponent("Hi VasulBook, I'd like to know more.")}`);
+});
 
 // ---------- auth ----------
 app.post("/api/auth/register", limit(10, 15 * 60e3), wrap(async (req, res) => {
@@ -564,7 +581,10 @@ if (!PROD) {
 }
 
 // ---------- static PWA ----------
+app.get("/", (req, res) => { res.setHeader("Cache-Control", "no-cache"); res.sendFile(path.join(__dirname, "public", "landing.html")); });
+app.get(["/app", "/app/*"], (req, res) => { res.setHeader("Cache-Control", "no-cache"); res.sendFile(path.join(__dirname, "public", "index.html")); });
 app.use(express.static(path.join(__dirname, "public"), {
+  index: false,
   setHeaders(res, file) {
     if (file.endsWith("sw.js") || file.endsWith(".html") || file.endsWith(".webmanifest")) res.setHeader("Cache-Control", "no-cache");
     else res.setHeader("Cache-Control", "public, max-age=3600");
@@ -572,7 +592,7 @@ app.use(express.static(path.join(__dirname, "public"), {
   },
 }));
 app.use("/api", (req, res) => bad(res, "Not found.", 404));
-app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
+app.get("*", (req, res) => res.redirect("/"));
 
 // ---------- errors ----------
 app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars

@@ -46,6 +46,13 @@ Without Razorpay keys the Subscribe button is hidden in production. In local mod
 
 Local testing pages: `/dev/run-inactive?days=0` sends the absent email now; sign-up codes also print in the terminal window.
 
+## Landing page
+
+- `/` is the public landing page (free trial, how it works, demo video, pricing, FAQ, footer with info@vasulbook.in). The app itself is at `/app`. Installed phone apps open `/app` directly.
+- **WhatsApp chat button:** set `WHATSAPP_CONTACT` (e.g. `9443424064`). The page links to `/whatsapp`, and the server redirects to WhatsApp, so the number never appears on the page. Without the variable the button is hidden.
+- **Demo video:** `public/media/demo.mp4` (and `.webm`) is a 48-second captioned walkthrough recorded from the app. To add YouTube videos as well, set `DEMO_VIDEOS`, comma separated, optionally with a title: `Tamil demo|https://youtu.be/XXXXXXXXXXX, https://youtu.be/YYYYYYYYYYY`.
+- **Upgrade:** trial and expired owners see an Upgrade card on their dashboard and an Upgrade button in the top bar; both open Razorpay checkout.
+
 ## Deploy on Railway
 
 1. Push this folder to a GitHub repository.

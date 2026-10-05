@@ -108,7 +108,8 @@
 <!-- ============ APP ============ -->
 <div id="appScreen" hidden>
   <header class="top">
-    <div class="top-l"><span class="brand">Vasul<b>Book</b></span><span class="shop" id="topShop"></span></div>
+    <div class="top-l"><a class="brand" href="/">Vasul<b>Book</b></a><span class="shop" id="topShop"></span></div>
+    <button class="btn primary sm top-up" type="button" id="topUpgrade" hidden>Upgrade</button>
     <nav class="top-nav" aria-label="Main">
       <a href="#/home" data-nav="home">Home</a>
       <a href="#/customers" data-nav="customers">Customers</a>
@@ -144,6 +145,15 @@
         <div class="tile good"><span class="eyebrow">Collected today</span><span class="amt" id="tCollected">₹0</span><span class="sub" id="tCollectedSub"></span></div>
         <div class="tile"><span class="eyebrow">Credit today</span><span class="amt" id="tCredit">₹0</span><span class="sub" id="tCreditSub"></span></div>
         <div class="tile hot"><span class="eyebrow">Overdue</span><span class="amt" id="tOverdue">₹0</span><span class="sub" id="tOverdueSub"></span></div>
+      </div>
+
+      <div class="upgrade-card" id="upgradeCard" hidden>
+        <div class="up-text">
+          <span class="eyebrow" id="upEyebrow">Free trial</span>
+          <h2 id="upTitle">Upgrade</h2>
+          <p class="small" id="upSub"></p>
+        </div>
+        <button class="btn primary" type="button" id="upBtn">Upgrade now</button>
       </div>
 
       <button class="refer-card" type="button" id="referCard">

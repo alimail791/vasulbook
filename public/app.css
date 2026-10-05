@@ -231,3 +231,15 @@ main{max-width:1180px;margin:0 auto;padding:16px 16px calc(var(--nav-h) + 24px +
 .refer-stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .refer-stats>div{border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column}
 .refer-stats .amt{font-size:22px}
+
+/* ---------- upgrade ---------- */
+.top .brand{text-decoration:none;color:var(--ink)}
+.top-up{margin-left:auto}
+@media (min-width:900px){.top-up{order:3;margin-left:12px}}
+.upgrade-card{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;background:var(--surface);border:2px solid var(--good);border-radius:14px;padding:14px 16px}
+.upgrade-card .eyebrow{color:var(--good)}
+.upgrade-card h2{font-size:19px;margin:2px 0}
+.upgrade-card .up-text{flex:1 1 240px;min-width:0}
+.upgrade-card .small{color:var(--muted)}
+.upgrade-card.bad{border-color:var(--bad);background:var(--bad-soft)}
+.upgrade-card.bad .eyebrow{color:var(--bad)}

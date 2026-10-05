@@ -92,7 +92,7 @@
   }
   $("authTabs").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) showAuth(b.dataset.tab); });
   $("toForgot").addEventListener("click", () => { $("fEmail").value = $("lEmail").value; showAuth("forgot"); });
-  document.querySelectorAll("[data-back-login]").forEach((b) => b.addEventListener("click", () => { history.replaceState(null, "", "/"); showAuth("login"); }));
+  document.querySelectorAll("[data-back-login]").forEach((b) => b.addEventListener("click", () => { history.replaceState(null, "", "/app"); showAuth("login"); }));
 
   function busy(form, on) { form.querySelectorAll("button[type=submit]").forEach((b) => { b.disabled = on; }); }
   const codeOnly = (el) => el.addEventListener("input", () => { el.value = el.value.replace(/\D/g, "").slice(0, 6); });
@@ -192,7 +192,7 @@
     try {
       const d = await api("POST", "/api/auth/reset", { email: state.resetEmail, code: $("nCode").value, password: $("nPass").value });
       $("nPass").value = "";
-      history.replaceState(null, "", "/#/home");
+      history.replaceState(null, "", "/app#/home");
       await enterApp(d.user); toast("Password changed");
     } catch (err) { $("nErr").textContent = err.message; }
     finally { busy(e.target, false); }
@@ -582,21 +582,37 @@
     const p = state.user && state.user.plan; if (!p) return;
     const bar = $("planBar"), txt = $("planBarText"), btn = $("planBarBtn");
     bar.classList.remove("warn", "bad");
-    let show = true;
+    // Top banner only for warnings: plan ended, or 14 days or less left.
+    let show = p.state === "expired" || p.daysLeft <= 14;
     if (p.state === "expired") {
       bar.classList.add("bad");
-      txt.textContent = (p.paidUntil ? "Your plan has ended." : "Your free trial has ended.") + " Your data is safe. Subscribe to keep adding entries and sending reminders.";
-      btn.textContent = "Subscribe";
+      txt.textContent = (p.paidUntil ? "Your plan has ended." : "Your free trial has ended.") + " Your data is safe. Upgrade to keep adding entries and sending reminders.";
+      btn.textContent = "Upgrade";
     } else if (p.state === "trial") {
-      if (p.daysLeft <= 14) bar.classList.add("warn");
+      bar.classList.add("warn");
       txt.textContent = `Free trial: ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left (until ${fmtDay(p.accessUntil)}). Then ${priceText()}.`;
-      btn.textContent = "Subscribe";
+      btn.textContent = "Upgrade";
     } else {
-      show = p.daysLeft <= 14;
-      if (show) bar.classList.add("warn");
+      bar.classList.add("warn");
       txt.textContent = `Your plan ends in ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} (${fmtDay(p.accessUntil)}).`;
       btn.textContent = "Renew";
     }
+
+    // Dashboard upgrade card and top bar button
+    const bl = state.config.billing || {};
+    const perMonth = L.inr((bl.priceInr || 1000) / (bl.months || 10));
+    const showCard = p.state !== "paid" || p.daysLeft <= 30;
+    $("upgradeCard").hidden = !showCard;
+    $("upgradeCard").classList.toggle("bad", p.state === "expired");
+    if (showCard) {
+      $("upEyebrow").textContent = p.state === "expired" ? (p.paidUntil ? "Plan ended" : "Free trial ended") : p.state === "trial" ? `Free trial · ${p.daysLeft} day${p.daysLeft === 1 ? "" : "s"} left` : `Plan ends in ${p.daysLeft} days`;
+      $("upTitle").textContent = p.state === "expired" ? "Upgrade to keep collecting" : p.state === "trial" ? `Upgrade: ${priceText()}` : `Renew: ${priceText()}`;
+      $("upSub").textContent = p.state === "expired" ? `Your data is safe. Upgrade for ${priceText()} (about ${perMonth} a month) to add entries and send reminders again.`
+        : `About ${perMonth} a month. Your paid months start after ${fmtDay(p.accessUntil)}, so you don't lose any days.`;
+      $("upBtn").textContent = p.state === "paid" ? "Renew now" : "Upgrade now";
+    }
+    $("topUpgrade").hidden = p.state === "paid" && p.daysLeft > 30;
+    $("topUpgrade").textContent = p.state === "paid" ? "Renew" : "Upgrade";
     bar.hidden = !show || state.view === "settings";
     document.body.classList.toggle("plan-locked", !p.active);
 
@@ -660,7 +676,17 @@
     finally { setTimeout(() => { btn.disabled = false; }, 1500); }
   }
   $("planBuy").addEventListener("click", buyPlan);
-  $("planBarBtn").addEventListener("click", () => { location.hash = "#/settings"; });
+  // Upgrade buttons on the dashboard: open the plan in Settings and start Razorpay checkout.
+  function goUpgrade() {
+    location.hash = "#/settings";
+    setTimeout(() => {
+      $("planCard").scrollIntoView({ block: "start" });
+      if ((state.config.billing || {}).ready) buyPlan();
+    }, 150);
+  }
+  $("planBarBtn").addEventListener("click", goUpgrade);
+  $("upBtn").addEventListener("click", goUpgrade);
+  $("topUpgrade").addEventListener("click", goUpgrade);
   $("planTestPay").addEventListener("click", async () => {
     try { const d = await api("POST", "/api/subscription/test-pay", {}); state.user = d.user; renderPlan(); loadPlanHistory(); toast("Test payment done. Plan extended."); }
     catch (err) { $("planErr").textContent = err.message; }
@@ -712,7 +738,7 @@
     try { await api("POST", "/api/auth/logout", {}); } catch { /* ignore */ }
     state.user = null; state.customers.clear(); state.entries.clear();
     if (navigator.serviceWorker && navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage("clear-data");
-    history.replaceState(null, "", "/"); showAuth("login");
+    history.replaceState(null, "", "/app"); showAuth("login");
   });
   $("deleteAccBtn").addEventListener("click", () => {
     openSheet({
@@ -722,7 +748,7 @@
       ok: "Delete everything",
       onSubmit: async () => {
         await api("POST", "/api/account/delete", { password: $("shPass").value });
-        state.user = null; history.replaceState(null, "", "/"); showAuth("register"); toast("Your account was deleted.");
+        state.user = null; location.href = "/"; toast("Your account was deleted.");
       },
     });
   });
