@@ -89,7 +89,7 @@ module.exports = function mountSeo(app, { baseUrl }) {
 
   app.get("/robots.txt", (req, res) => {
     res.type("text/plain").setHeader("Cache-Control", "public, max-age=300");
-    res.send(`User-agent: *\nAllow: /\nAllow: /app.css\nAllow: /app.js\nDisallow: /app\nDisallow: /admin\nDisallow: /api/\nDisallow: /dev/\nDisallow: /whatsapp\n\nSitemap: ${baseUrl(req)}/sitemap.xml\n`);
+    res.send(`User-agent: *\nAllow: /\nAllow: /app.css\nAllow: /app.js\nDisallow: /app\nDisallow: /admin\nDisallow: /api/\nDisallow: /dev/\nDisallow: /whatsapp\nDisallow: /p/\n\nSitemap: ${baseUrl(req)}/sitemap.xml\n`);
   });
 };
 module.exports.render = render;

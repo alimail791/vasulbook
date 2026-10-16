@@ -163,6 +163,12 @@
         <button class="btn primary" type="button" id="upBtn" data-i18n="upgrade_now">Upgrade now</button>
       </div>
 
+      <button class="refer-card qr-card" type="button" id="qrCard">
+        <span class="refer-gift qr-ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2v2h-2zM18 14h2v2h-2zM16 16h2v2h-2zM14 18h2v2h-2zM18 18h2v2h-2z" fill="currentColor"/></svg></span>
+        <span class="refer-text"><b data-i18n="qr_card_title">Show my payment QR</b><span class="small" data-i18n="qr_card_sub">Customers scan it with any UPI app. Share it on WhatsApp too.</span></span>
+        <span class="refer-go" aria-hidden="true">→</span>
+      </button>
+
       <button class="refer-card" type="button" id="referCard">
         <span class="refer-gift" aria-hidden="true">₹</span>
         <span class="refer-text"><b id="referCardTitle">Refer a business, get 5 months free</b><span class="small" id="referCardSub">Share your link. Each friend who joins earns you 5 free months.</span></span>
@@ -308,6 +314,8 @@
         </label>
         <label class="field"><span data-i18n="f_my_wa">Your WhatsApp number</span><input id="sPhone" type="tel" inputmode="tel"><span class="hint" data-i18n="my_wa_hint">Used for "Send to my WhatsApp"</span></label>
         <label class="field"><span data-i18n="f_upi">UPI ID</span><input id="sUpi" placeholder="yourshop@okaxis"><span class="hint" data-i18n="upi_hint">Goes into every reminder so customers can pay at once</span></label>
+        <button class="btn block" type="button" id="sQrBtn"><span data-i18n="qr_settings">Payment QR</span></button>
+        <p class="hint" data-i18n="qr_settings_hint">Your UPI QR and a payment page link to share with customers.</p>
         <div class="grid2">
           <label class="field"><span data-i18n="f_days">Days to pay</span><input id="sDays" type="number" min="0" max="120" inputmode="numeric"></label>
           <label class="field"><span data-i18n="f_rem_default">Reminder language</span><select id="sLang"></select></label>
@@ -348,6 +356,27 @@
     <a href="#/customers" data-nav="customers"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.5 3.4-5.5 6.5-5.5s5.7 2 6.5 5.5"/><path d="M16 4.5a3.5 3.5 0 010 7M18.5 14.8c1.6.8 2.6 2.5 3 5.2"/></svg>Customers</a>
     <a href="#/settings" data-nav="settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>Settings</a>
   </nav>
+</div>
+
+<!-- receive payments: owner's UPI QR and payment link -->
+<div class="sheet-wrap" id="qrSheet" hidden>
+  <div class="sheet qr-sheet" role="dialog" aria-modal="true" aria-labelledby="qrTitle">
+    <div class="row between"><h2 id="qrTitle" data-i18n="qr_title">Receive payments</h2><button class="btn ghost sm" type="button" id="qrClose" data-i18n="close">Close</button></div>
+    <div class="qr-box" id="qrBox">
+      <p class="qr-shop" id="qrShop"></p>
+      <img id="qrImg" alt="UPI QR code" width="240" height="240" hidden>
+      <p class="small muted" id="qrSrc"></p>
+      <p class="qr-need" id="qrNeed" hidden data-i18n="qr_need_upi">Add your UPI ID in Settings, or upload the QR from GPay, PhonePe or Paytm, to get a payment QR.</p>
+    </div>
+    <div class="copybox" id="qrUpiRow" hidden><input id="qrUpi" readonly aria-label="UPI ID"><button class="btn sm" type="button" id="qrCopyUpi" data-i18n="copy">Copy</button></div>
+    <div class="qr-actions" id="qrActions">
+      <button class="btn wa" type="button" id="qrShare" data-i18n="qr_share">Share QR</button>
+      <a class="btn" id="qrDownload" href="#" download="vasulbook-upi-qr.png" data-i18n="qr_download">Download</a>
+      <button class="btn" type="button" id="qrCopyLink" data-i18n="qr_copy_link">Copy payment link</button>
+    </div>
+    <label class="btn block qr-upload"><input type="file" id="qrFile" accept="image/*" hidden><span id="qrUploadText" data-i18n="qr_upload">Upload my own QR</span></label>
+    <button class="btn ghost block" type="button" id="qrRemove" hidden data-i18n="qr_remove">Remove uploaded QR</button>
+  </div>
 </div>
 
 <!-- refer & earn popup (shown once a day on the dashboard) -->

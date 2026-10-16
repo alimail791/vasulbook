@@ -277,6 +277,7 @@
     if (!user.emailVerified) { showVerify(false); return; }
     $("authScreen").hidden = true; $("appScreen").hidden = false;
     if (!location.hash.startsWith("#/")) history.replaceState(null, "", "#/home");
+    loadPay();
     await loadData();
     route();
     maybeShowReferPopup();
@@ -407,7 +408,7 @@
     // Reminder text: keep the owner's own edits unless they switch customer, language or tone.
     const ta = $("remText");
     if (ta.dataset.for !== String(c.id)) { $("remLang").value = state.user.reminderLang || "en"; $("remTone").value = "auto"; }
-    const auto = L.reminder({ lang: $("remLang").value, tone: $("remTone").value, customerName: c.name, shop: state.user.shopName, upi: state.user.upiId, link: state.payLinks[c.id], L: Lg });
+    const auto = L.reminder({ lang: $("remLang").value, tone: $("remTone").value, customerName: c.name, shop: state.user.shopName, upi: state.user.upiId, link: state.payLinks[c.id], page: payPage(Lg.bal), L: Lg });
     if (document.activeElement !== ta && (ta.dataset.for !== String(c.id) || ta.dataset.auto === ta.value || !ta.value)) { ta.value = auto; ta.dataset.auto = auto; ta.dataset.for = String(c.id); }
     updateWa(c, Lg);
     $("apiSend").hidden = !state.config.whatsappApi;
@@ -539,7 +540,7 @@
   ["remLang", "remTone"].forEach((id) => $(id).addEventListener("change", () => {
     const ta = $("remText"), c = state.customers.get(state.sel); if (!c) return;
     const Lg = ledgerFor(c.id);
-    const auto = L.reminder({ lang: $("remLang").value, tone: $("remTone").value, customerName: c.name, shop: state.user.shopName, upi: state.user.upiId, link: state.payLinks[c.id], L: Lg });
+    const auto = L.reminder({ lang: $("remLang").value, tone: $("remTone").value, customerName: c.name, shop: state.user.shopName, upi: state.user.upiId, link: state.payLinks[c.id], page: payPage(Lg.bal), L: Lg });
     ta.value = auto; ta.dataset.auto = auto; updateWa(c, Lg);
   }));
   $("remText").addEventListener("input", () => { const c = state.customers.get(state.sel); if (c) updateWa(c, ledgerFor(c.id)); });
@@ -630,6 +631,66 @@
     } catch { /* stats are optional */ }
   }
   function closeRefer() { $("referSheet").hidden = true; if (location.hash === "#/refer") history.replaceState(null, "", "#/home"); }
+  // ----- receive payments: UPI QR + payment page -----
+  async function loadPay() {
+    try { state.pay = await api("GET", "/api/pay/me"); } catch { state.pay = null; }
+    return state.pay;
+  }
+  const payPage = (amt) => (state.pay && state.pay.hasUpi || state.pay && state.pay.hasQr ? state.pay.url + (amt > 0 ? "?a=" + (Math.round(amt * 100) / 100) : "") : "");
+  async function openQr() {
+    if (!state.user) return;
+    $("qrSheet").hidden = false;
+    $("qrShop").textContent = state.user.shopName;
+    const p = await loadPay();
+    const ok = p && (p.hasUpi || p.hasQr);
+    $("qrImg").hidden = !ok; $("qrNeed").hidden = !!ok; $("qrActions").hidden = !ok;
+    $("qrUpiRow").hidden = !(p && p.hasUpi); $("qrUpi").value = state.user.upiId || "";
+    $("qrRemove").hidden = !(p && p.hasQr);
+    $("qrUploadText").textContent = t(p && p.hasQr ? "qr_replace" : "qr_upload");
+    if (!ok) return;
+    $("qrImg").src = p.qrUrl;
+    $("qrSrc").textContent = p.hasQr ? t("qr_from_upload") : t("qr_from_upi", { upi: state.user.upiId });
+    $("qrDownload").href = p.hasQr ? p.qrUrl : p.qrUrl.replace("qr.svg", "qr.png");
+  }
+  const closeQr = () => { $("qrSheet").hidden = true; };
+  $("qrCard").addEventListener("click", openQr);
+  $("sQrBtn").addEventListener("click", openQr);
+  $("qrClose").addEventListener("click", closeQr);
+  $("qrSheet").addEventListener("click", (e) => { if (e.target === $("qrSheet")) closeQr(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("qrSheet").hidden) closeQr(); });
+  $("qrCopyUpi").addEventListener("click", () => copyText(state.user.upiId || "", $("qrUpi")));
+  $("qrCopyLink").addEventListener("click", () => copyText(state.pay ? state.pay.url : ""));
+  $("qrShare").addEventListener("click", async () => {
+    const p = state.pay; if (!p) return;
+    const text = t("qr_share_msg", { shop: state.user.shopName, link: p.url });
+    try {
+      const img = await fetch(p.hasQr ? p.qrUrl : p.qrUrl.replace("qr.svg", "qr.png")).then((r) => r.blob());
+      const file = new File([img], "upi-qr." + (img.type.includes("jpeg") ? "jpg" : "png"), { type: img.type || "image/png" });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], text }); return; }
+    } catch (err) { if (err && err.name === "AbortError") return; }
+    window.open("https://wa.me/?text=" + encodeURIComponent(text), "_blank", "noopener");
+  });
+  // Upload a QR from GPay / PhonePe / Paytm: shrink it in the browser first.
+  $("qrFile").addEventListener("change", async (e) => {
+    const f = e.target.files && e.target.files[0]; e.target.value = "";
+    if (!f || !/^image\//.test(f.type)) { if (f) toast(t("qr_bad")); return; }
+    try {
+      const url = URL.createObjectURL(f);
+      const img = await new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = url; });
+      const max = 900, k = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement("canvas"); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+      const g = c.getContext("2d"); g.fillStyle = "#fff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      let data = c.toDataURL("image/png");
+      if (data.length > 550 * 1024) data = c.toDataURL("image/jpeg", 0.85);
+      await api("POST", "/api/pay/qr", { image: data });
+      toast(t("qr_saved")); openQr();
+    } catch (err) { toast(err && err.message && err.message !== "[object Event]" ? err.message : t("qr_bad")); }
+  });
+  $("qrRemove").addEventListener("click", async () => {
+    try { await api("DELETE", "/api/pay/qr"); toast(t("qr_removed")); openQr(); } catch (err) { toast(err.message); }
+  });
+
   // Once a day, on the dashboard: the popup reminds owners they can earn free months.
   function maybeShowReferPopup() {
     if (!state.user || !state.user.referralPopupDue || state.view !== "home" || state.referShownThisVisit) return;
@@ -786,7 +847,7 @@
   }
   async function saveSettings(body, errEl, okMsg) {
     errEl.textContent = "";
-    try { const d = await api("PUT", "/api/settings", body); state.user = d.user; fillSettings(); render(); toast(okMsg); }
+    try { const d = await api("PUT", "/api/settings", body); state.user = d.user; fillSettings(); render(); toast(okMsg); loadPay(); }
     catch (err) { errEl.textContent = err.message; }
   }
   $("bizForm").addEventListener("submit", async (e) => {

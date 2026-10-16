@@ -156,6 +156,14 @@ const MIGRATIONS = [
      detail TEXT NOT NULL DEFAULT '',
      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
+  // Receive payments: public payment page code and an optional uploaded QR image
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS pay_code TEXT`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS users_pay_code ON users(pay_code)`,
+  `CREATE TABLE IF NOT EXISTS user_qr (
+     user_id INT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+     image TEXT NOT NULL,
+     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
   // Admin password set through "Forgot password", and its one-time codes
   `CREATE TABLE IF NOT EXISTS admin_settings (
      key TEXT PRIMARY KEY,

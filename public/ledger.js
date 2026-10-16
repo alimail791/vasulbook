@@ -117,10 +117,12 @@
     }
   };
   const autoTone = (L) => (L.daysOver > 0 ? "firm" : L.daysOver === 0 ? "due" : "gentle");
-  function reminder({ lang, tone, customerName, shop, upi, link, L }) {
+  function reminder({ lang, tone, customerName, shop, upi, link, page, L }) {
     const T = TPL[lang] || TPL.en;
     const tn = !tone || tone === "auto" ? autoTone(L) : tone;
-    const pay = link ? T.payLink.replace("{link}", link) : upi ? T.payUpi.replace("{upi}", upi) : "";
+    // Razorpay link first; otherwise the owner's payment page (UPI QR) and UPI ID.
+    const parts = link ? [T.payLink.replace("{link}", link)] : [page && T.payLink.replace("{link}", page), upi && T.payUpi.replace("{upi}", upi)].filter(Boolean);
+    const pay = parts.join(" ");
     return T[tn]
       .replaceAll("{name}", String(customerName || "").split(" ")[0])
       .replaceAll("{shop}", shop || "our shop")

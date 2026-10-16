@@ -45,7 +45,7 @@ app.use((req, res, next) => {
   res.setHeader("Permissions-Policy", "camera=(), geolocation=()");
   res.setHeader("Content-Security-Policy",
     "default-src 'self'; script-src 'self' https://checkout.razorpay.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; " +
-    "img-src 'self' data: https://*.razorpay.com https://i.ytimg.com; media-src 'self'; connect-src 'self' https://api.razorpay.com https://lumberjack.razorpay.com; " +
+    "img-src 'self' data: blob: https://*.razorpay.com https://i.ytimg.com; media-src 'self'; connect-src 'self' https://api.razorpay.com https://lumberjack.razorpay.com; " +
     "frame-src https://api.razorpay.com https://checkout.razorpay.com https://www.youtube-nocookie.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://api.razorpay.com");
   if (PROD) res.setHeader("Strict-Transport-Security", "max-age=31536000");
   next();
@@ -92,7 +92,8 @@ app.post("/api/webhooks/razorpay-billing", express.raw({ type: "*/*", limit: "1m
   res.json({ ok: true });
 }));
 
-app.use(express.json({ limit: "100kb" }));
+const jsonSmall = express.json({ limit: "100kb" }), jsonQr = express.json({ limit: "800kb" });
+app.use((req, res, next) => (req.path === "/api/pay/qr" ? jsonQr : jsonSmall)(req, res, next));
 app.use(cookieParser());
 
 // Reject cross-site form posts: POST/PUT/PATCH must be JSON (HTML forms can't send JSON or DELETE).
@@ -594,6 +595,7 @@ if (!PROD) {
 // ---------- static PWA ----------
 require("./src/seo")(app, { baseUrl: (req) => appUrl(req).replace(/\/+$/, "") });
 require("./src/legal")(app, { baseUrl: (req) => appUrl(req).replace(/\/+$/, "") });
+require("./src/pay")(app, { auth, wrap, bad, baseUrl: (req) => appUrl(req).replace(/\/+$/, "") });
 app.get("/admin", (req, res) => { res.setHeader("Cache-Control", "no-cache"); res.setHeader("X-Robots-Tag", "noindex, nofollow"); res.sendFile(path.join(__dirname, "public", "admin.html")); });
 app.get(["/app", "/app/*"], (req, res) => { res.setHeader("Cache-Control", "no-cache"); res.setHeader("X-Robots-Tag", "noindex"); res.sendFile(path.join(__dirname, "public", "index.html")); });
 app.use(express.static(path.join(__dirname, "public"), {

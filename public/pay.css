@@ -1,0 +1,16 @@
+/* Customer payment page (/p/CODE) */
+body.pp{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 16px;background:var(--bg)}
+.pp-card{width:100%;max-width:420px;text-align:center;gap:14px;padding:24px 20px}
+.pp-shop{font-weight:700;color:var(--accent);margin:0}
+.pp h1{font-size:24px;margin:0}
+.pp-amt{font-family:var(--mono, "IBM Plex Mono", monospace);font-size:36px;font-weight:700;margin:-6px 0 0}
+.pp-qr{margin:4px auto 0;display:flex;flex-direction:column;align-items:center;gap:8px}
+.pp-qr img{width:260px;height:260px;max-width:78vw;max-height:78vw;object-fit:contain;background:#fff;border:1px solid var(--line);border-radius:14px;padding:8px}
+.pp-qr figcaption{font-weight:600}
+.pp-or{color:var(--muted);margin:0;font-size:14px}
+.pp-open{min-height:50px;font-size:16px}
+.pp-upi{display:flex;align-items:center;justify-content:space-between;gap:10px;text-align:left;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--surface-2, #F2F5F4)}
+.pp-upi b{display:block;font-family:var(--mono, monospace);word-break:break-all}
+.pp-note{background:var(--accent-soft);border-radius:10px;padding:10px 12px;margin:0;font-size:14px}
+.pp-langs a,.pp-foot a{color:var(--muted)}
+.pp-foot{margin-top:16px}

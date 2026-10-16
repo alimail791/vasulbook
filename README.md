@@ -74,6 +74,12 @@ Local testing pages: `/dev/run-inactive?days=0` sends the absent email now; sign
 - `/sitemap.xml` lists all language pages; `/robots.txt` points to it and keeps `/app`, `/admin` and `/api` out of search.
 - Set `APP_URL` to your real domain (e.g. `https://www.vasulbook.com`) so canonical and sitemap links use it. Then add the site in Google Search Console and submit `https://your-domain/sitemap.xml`.
 
+## Receive payments (UPI QR)
+
+- Each owner gets a payment page at `/p/CODE` (shown in the app under "Show my payment QR" on Home, and "Payment QR" in Settings). It shows the shop name, the amount (`?a=1560`), a UPI QR, a "Pay with a UPI app" button and the UPI ID, in the owner's reminder language.
+- The QR is made from the owner's UPI ID with the amount filled in. Owners can instead upload the QR from GPay, PhonePe or Paytm Business (stored in `user_qr`).
+- Owners can share the QR image on WhatsApp, download it to print, or copy the payment link. WhatsApp reminders now include the payment link with the customer's balance.
+
 ## Policy pages (needed for Razorpay)
 
 `/terms`, `/privacy`, `/refund-policy`, `/delivery-policy` and `/contact` are linked in the footer of every landing page and on the app's sign-in screen. Set these on the server so the pages show your registered business details (Razorpay checks that they match your KYC):
