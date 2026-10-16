@@ -6,6 +6,8 @@
   const num = (n) => Number(n || 0).toLocaleString("en-IN");
   const day = (d) => (d ? new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Kolkata" }) : "–");
   const ago = (d) => { if (!d) return "–"; const n = Math.floor((Date.now() - new Date(d).getTime()) / 864e5); return n <= 0 ? "Today" : n === 1 ? "Yesterday" : `${n} days ago`; };
+  const CAT_NAMES = {};
+  const typeName = (k) => CAT_NAMES[k] || TYPES[k] || k;
   const TYPES = { retail: "Retail shop", tuition: "Tuition / coaching", delivery: "Daily delivery", services: "Services", wholesale: "Wholesale", rental: "Rent / hostel", clinic: "Clinic / professional" };
   const LANGS = { en: "English", hi: "हिन्दी Hindi", ta: "தமிழ் Tamil", te: "తెలుగు Telugu", kn: "ಕನ್ನಡ Kannada", ml: "മലയാളം Malayalam", mr: "मराठी Marathi", bn: "বাংলা Bengali", gu: "ગુજરાતી Gujarati", pa: "ਪੰਜਾਬੀ Punjabi" };
   const state = { status: "", q: "", page: 0, total: 0, sel: null };
@@ -61,7 +63,7 @@
     try { const me = await api("GET", "/api/admin/me"); $("whoami").textContent = me.email; }
     catch { showLogin(); return; }
     $("loginScreen").hidden = true; $("dash").hidden = false;
-    loadStats(); loadUsers(); loadPayments();
+    loadCats().finally(() => { loadStats(); loadUsers(); }); loadPayments();
   }
 
   // ---------- stats ----------
@@ -82,7 +84,7 @@
     $("revenue").innerHTML = `<div><span class="eyebrow">This month</span><span class="amt">${inr(r.month)}</span><span class="small muted">${num(r.month_orders)} payments</span></div>
       <div><span class="eyebrow">All time</span><span class="amt">${inr(r.total)}</span><span class="small muted">${num(r.orders)} payments · plan ${inr(d.plan.priceInr)} / ${d.plan.months} months</span></div>`;
     drawChart(d.signups);
-    bars($("byType"), d.byType, (x) => TYPES[x] || x);
+    bars($("byType"), d.byType, typeName);
     bars($("byState"), d.byState, (x) => x);
     bars($("byLang"), d.byLang, (x) => LANGS[x] || x);
   }
@@ -123,7 +125,7 @@
     $("users").innerHTML = d.users.length ? d.users.map((u) => `<tr class="click" data-id="${u.id}" tabindex="0">
       <td><div class="nm">${esc(u.shop_name)}</div><div class="sub">${esc(u.owner_name)}${u.referrer_shop ? ` · via ${esc(u.referrer_shop)}` : ""}</div></td>
       <td>${esc(u.email)}${u.email_verified ? "" : ` <span class="pill due">not confirmed</span>`}<div class="sub">${esc(u.phone || "")}</div></td>
-      <td>${esc(TYPES[u.business_type] || u.business_type)}<div class="sub">${esc(u.state || "–")} · ${esc((LANGS[u.ui_lang] || u.ui_lang).split(" ")[0])}</div></td>
+      <td>${esc(typeName(u.business_type))}<div class="sub">${esc(u.state || "–")} · ${esc((LANGS[u.ui_lang] || u.ui_lang).split(" ")[0])}</div></td>
       <td>${planCell(u.plan)}</td>
       <td class="r">${num(u.customers)}</td><td class="r">${num(u.entries)}</td>
       <td>${ago(u.last_active_at)}</td><td>${day(u.created_at)}</td></tr>`).join("") : `<tr><td colspan="8" class="muted">No businesses match.</td></tr>`;
@@ -149,7 +151,7 @@
     const u = d.user, p = u.plan;
     $("uTitle").textContent = u.shop_name;
     const facts = [["Owner", u.owner_name], ["Email", u.email + (u.email_verified ? "" : " (not confirmed)")], ["Phone", u.phone || "–"],
-      ["Type", TYPES[u.business_type] || u.business_type], ["State", u.state || "–"], ["Language", LANGS[u.ui_lang] || u.ui_lang],
+      ["Type", typeName(u.business_type)], ["State", u.state || "–"], ["Language", LANGS[u.ui_lang] || u.ui_lang],
       ["Plan", `${p.state === "paid" ? "Paid" : p.state === "trial" ? "Free trial" : "Expired"} until ${day(p.accessUntil)}`],
       ["Customers", `${num(u.customers)} customers · ${num(u.entries)} entries`], ["Set up", `UPI ${u.upi_set ? "added" : "not added"} · Razorpay ${u.razorpay_connected ? "connected" : "not connected"}`],
       ["Joined", day(u.created_at)], ["Last active", ago(u.last_active_at)], ["Referral code", u.referral_code], ["Referred by", u.referrer_shop || "–"]];
@@ -185,4 +187,72 @@
   }
 
   start();
+
+  // ---------- business categories ----------
+  const NOUNS = { customer: "Customers", student: "Students", household: "Households", shop: "Shops", tenant: "Tenants", client: "Clients" };
+  const catState = { list: [], langs: [], editing: null };
+  async function loadCats() {
+    try {
+      const d = await api("GET", "/api/admin/categories");
+      catState.list = d.categories; catState.langs = d.langs.filter((l) => l.code !== "en");
+      d.categories.forEach((c) => { CAT_NAMES[c.key] = c.name_en; });
+      renderCats();
+    } catch (err) { $("cats").innerHTML = `<tr><td colspan="5" class="muted">${esc(err.message)}</td></tr>`; }
+  }
+  function renderCats() {
+    $("cats").innerHTML = catState.list.map((c, i) => {
+      const tr = Object.keys(c.names || {}).filter((k) => k !== "en").length;
+      return `<tr>
+        <td><b>${esc(c.name_en)}</b><div class="sub">${c.builtin ? "Built in · translated" : tr ? `${tr} translation${tr === 1 ? "" : "s"}` : "English name only"}</div></td>
+        <td>${esc(NOUNS[c.noun] || c.noun)}</td>
+        <td class="r">${num(c.users)}</td>
+        <td><label class="switch"><input type="checkbox" data-toggle="${esc(c.key)}" ${c.active ? "checked" : ""} aria-label="Show ${esc(c.name_en)} at sign-up"> ${c.active ? "Shown" : "Hidden"}</label></td>
+        <td class="r nowrap">
+          <button class="btn ghost sm" type="button" data-up="${i}" ${i === 0 ? "disabled" : ""} aria-label="Move up">↑</button>
+          <button class="btn ghost sm" type="button" data-down="${i}" ${i === catState.list.length - 1 ? "disabled" : ""} aria-label="Move down">↓</button>
+          <button class="btn sm" type="button" data-edit="${esc(c.key)}">Edit</button>
+        </td></tr>`;
+    }).join("");
+  }
+  $("cats").addEventListener("change", async (e) => {
+    const key = e.target.dataset.toggle; if (!key) return;
+    try { await api("PUT", "/api/admin/categories/" + encodeURIComponent(key), { active: e.target.checked }); toast(e.target.checked ? "Shown at sign-up." : "Hidden from sign-up."); }
+    catch (err) { toast(err.message); }
+    loadCats();
+  });
+  $("cats").addEventListener("click", async (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    if (b.dataset.edit) return openCat(catState.list.find((c) => c.key === b.dataset.edit));
+    const i = Number(b.dataset.up ?? b.dataset.down); if (Number.isNaN(i)) return;
+    const j = b.dataset.up !== undefined ? i - 1 : i + 1;
+    const list = catState.list.slice(); [list[i], list[j]] = [list[j], list[i]];
+    catState.list = list; renderCats();
+    await api("POST", "/api/admin/categories/order", { keys: list.map((c) => c.key) }).catch((err) => toast(err.message));
+  });
+  function openCat(c) {
+    catState.editing = c || null;
+    $("cTitle").textContent = c ? "Edit category" : "Add category";
+    $("cName").value = c ? c.name_en : ""; $("cNoun").value = c ? c.noun : "customer";
+    $("cActive").checked = c ? c.active : true; $("cActiveRow").hidden = !c;
+    $("cTrans").innerHTML = catState.langs.map((l) => `<label class="field">${esc(l.native)} · ${esc(l.name)}<input data-lang="${l.code}" maxlength="80" value="${esc((c && c.names && c.names[l.code]) || "")}"></label>`).join("");
+    $("cTransBox").open = Boolean(c && Object.keys(c.names || {}).length);
+    $("cErr").textContent = ""; $("catSheet").hidden = false; $("cName").focus();
+  }
+  $("addCat").addEventListener("click", () => openCat(null));
+  const closeCat = () => { $("catSheet").hidden = true; };
+  $("closeCat").addEventListener("click", closeCat);
+  $("catSheet").addEventListener("click", (e) => { if (e.target === $("catSheet")) closeCat(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeCat(); });
+  $("catForm").addEventListener("submit", async (e) => {
+    e.preventDefault(); $("cErr").textContent = "";
+    const names = {}; $("cTrans").querySelectorAll("input[data-lang]").forEach((i) => { if (i.value.trim()) names[i.dataset.lang] = i.value.trim(); });
+    const body = { name_en: $("cName").value, noun: $("cNoun").value, names };
+    $("cSave").disabled = true;
+    try {
+      if (catState.editing) await api("PUT", "/api/admin/categories/" + encodeURIComponent(catState.editing.key), { ...body, active: $("cActive").checked });
+      else await api("POST", "/api/admin/categories", body);
+      closeCat(); toast("Category saved."); loadCats(); loadStats();
+    } catch (err) { $("cErr").textContent = err.message; }
+    finally { $("cSave").disabled = false; }
+  });
 })();

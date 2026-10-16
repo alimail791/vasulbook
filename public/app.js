@@ -11,7 +11,7 @@
   const i18n = { lang: "en", d: {}, en: {} };
   const t = (k, v) => LANG.fill(i18n.d[k] ?? i18n.en[k] ?? k, v);
   const NOUN_KEY = { retail: "n_customer", tuition: "n_student", delivery: "n_household", services: "n_customer", wholesale: "n_shop", rental: "n_tenant", clinic: "n_client" };
-  const nounPl = () => t(NOUN_KEY[state.user && state.user.businessType] || "n_customer");
+  const nounPl = () => t((catNoun() ? "n_" + catNoun() : NOUN_KEY[state.user && state.user.businessType]) || "n_customer");
   const loc = () => (LANG.LANGS.find((l) => l.code === i18n.lang) || {}).locale || "en-IN";
   const fd = (s) => (s ? new Date(String(s).slice(0, 10) + "T00:00:00Z").toLocaleDateString(loc(), { day: "numeric", month: "short", timeZone: "UTC" }) : "");
   async function fetchDict(code) { const r = await fetch(`/i18n/${code}.json`); if (!r.ok) throw new Error("lang"); return (await r.json()).app; }
@@ -38,6 +38,7 @@
     if (state.user) $("vText").innerHTML = esc(t("verify_text")).replace("{email}", `<b>${esc(state.user.email)}</b>`);
     if (state.resetEmail) $("nText").innerHTML = esc(t("reset_sent")).replace("{email}", `<b>${esc(state.resetEmail)}</b>`);
     ["authLang", "sUiLang"].forEach((id) => { $(id).value = i18n.lang; });
+    if (typeof fillTypes === "function" && state.config) fillTypes();
   }
   (function fillLangSelects() {
     const ui = LANG.LANGS.map((l) => `<option value="${l.code}">${l.native}${l.code === "en" ? "" : " · " + l.name}</option>`).join("");
@@ -65,7 +66,24 @@
     user: null, config: {}, customers: new Map(), entries: new Map(),
     sel: null, filter: "all", q: "", kind: "credit", payLinks: {}, view: "home",
   };
-  const noun = () => NOUN[state.user && state.user.businessType] || "Customer";
+  // Business categories come from the server (the admin can add more). Built-in ones are translated in i18n.
+  const NOUN_WORD = { customer: "Customer", student: "Student", household: "Household", shop: "Shop", tenant: "Tenant", client: "Client" };
+  const catOf = (key) => (state.config.categories || []).find((c) => c.key === key);
+  const catNoun = () => { const k = state.user && state.user.businessType; const c = catOf(k); return c ? c.noun : null; };
+  const catLabel = (c) => (c.names && c.names[i18n.lang]) || (c.builtin ? t("bt_" + c.key) : (c.names && c.names.en) || c.name);
+  function fillTypes() {
+    const cats = state.config.categories;
+    if (!cats || !cats.length) return;
+    ["rType", "sType"].forEach((id) => {
+      const sel = $(id), cur = sel.value;
+      const list = cats.slice();
+      const mine = id === "sType" && state.user && state.user.businessType;
+      if (mine && !list.some((c) => c.key === mine)) list.push({ key: mine, name: mine, builtin: ["retail", "tuition", "delivery", "services", "wholesale", "rental", "clinic"].includes(mine) });
+      sel.innerHTML = list.map((c) => `<option value="${esc(c.key)}">${esc(catLabel(c))}</option>`).join("");
+      if (cur && list.some((c) => c.key === cur)) sel.value = cur;
+    });
+  }
+  const noun = () => NOUN_WORD[catNoun()] || NOUN[state.user && state.user.businessType] || "Customer";
 
   // ---------------- API ----------------
   async function api(method, path, body) {
@@ -221,6 +239,7 @@
     catch (err) { $("vErr").textContent = err.message; }
   });
   $("vLogout").addEventListener("click", () => $("logoutBtn").click());
+  $("topLogout").addEventListener("click", () => { if (window.confirm(t("logout_confirm"))) $("logoutBtn").click(); });
 
   // ----- password reset with a 6-digit code -----
   async function requestReset(emailAddr) {
@@ -616,7 +635,7 @@
     if (!state.user || !state.user.referralPopupDue || state.view !== "home" || state.referShownThisVisit) return;
     state.referShownThisVisit = true;
     setTimeout(() => {
-      if (!$("sheet").hidden || state.view !== "home") return;
+      if (!state.user || !$("sheet").hidden || state.view !== "home") return;
       openRefer();
       state.user.referralPopupDue = false;
       api("POST", "/api/referrals/popup-seen", {}).catch(() => {});
@@ -846,6 +865,7 @@
     await setLang(initialLang());
     setKind("credit");
     try { state.config = await api("GET", "/api/config"); } catch { state.config = {}; }
+    fillTypes();
     try { const d = await api("GET", "/api/me"); await enterApp(d.user); }
     catch (err) {
       if (err.offline) { toast(err.message); }

@@ -162,6 +162,17 @@ const MIGRATIONS = [
      value TEXT NOT NULL,
      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
+  `CREATE TABLE IF NOT EXISTS business_categories (
+     id SERIAL PRIMARY KEY,
+     key TEXT NOT NULL UNIQUE,
+     name_en TEXT NOT NULL,
+     names JSONB NOT NULL DEFAULT '{}'::jsonb,
+     noun TEXT NOT NULL DEFAULT 'customer',
+     builtin BOOLEAN NOT NULL DEFAULT FALSE,
+     active BOOLEAN NOT NULL DEFAULT TRUE,
+     sort INT NOT NULL DEFAULT 100,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
   `CREATE TABLE IF NOT EXISTS admin_codes (
      id SERIAL PRIMARY KEY,
      email TEXT NOT NULL,

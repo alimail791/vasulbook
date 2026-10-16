@@ -3,6 +3,8 @@ const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const email = require("./email");
+const categories = require("./categories");
+const VBLang = require("../public/i18n/meta");
 const { q } = require("./db");
 const billing = require("./billing");
 
@@ -213,6 +215,66 @@ module.exports = function mountAdmin(app, { wrap, bad, limit, PROD, secret }) {
       email_verified: x.email_verified, created_at: x.created_at, last_active_at: x.last_active_at, referral_code: x.referral_code, referrer_shop: x.referrer_shop,
       upi_set: Boolean(x.upi_id), razorpay_connected: Boolean(x.rzp_key_id), ...counts.rows[0], plan: billing.status(x) };
     res.json({ user: safe, payments: pays.rows, referrals: refs.rows, actions: acts.rows });
+  }));
+
+  // ---------- business categories ----------
+  function cleanNames(obj) {
+    const out = {};
+    for (const c of VBLang.CODES) {
+      const v = String((obj || {})[c] || "").trim().replace(/\s+/g, " ").slice(0, 80);
+      if (v) out[c] = v;
+    }
+    return out;
+  }
+  app.get("/api/admin/categories", adminAuth, wrap(async (req, res) => {
+    const { rows } = await q(`SELECT c.key, c.name_en, c.names, c.noun, c.builtin, c.active, c.sort,
+        (SELECT count(*)::int FROM users u WHERE u.business_type = c.key) AS users
+      FROM business_categories c ORDER BY c.sort, c.id`);
+    res.json({ categories: rows.map((r) => ({ ...r, names: typeof r.names === "string" ? JSON.parse(r.names) : r.names })), nouns: categories.NOUNS, langs: VBLang.LANGS });
+  }));
+  app.post("/api/admin/categories", adminAuth, wrap(async (req, res) => {
+    const name = String(req.body.name_en || "").trim().replace(/\s+/g, " ").slice(0, 80);
+    if (name.length < 2) return bad(res, "Enter the category name in English.");
+    const noun = categories.NOUNS.includes(req.body.noun) ? req.body.noun : "customer";
+    let key = categories.slug(name) || "category";
+    if (await categories.exists(key)) {
+      const { rows } = await q("SELECT 1 FROM business_categories WHERE lower(name_en)=lower($1)", [name]);
+      if (rows[0]) return bad(res, "A category with this name already exists.");
+      key = `${key.slice(0, 24)}_${Date.now().toString(36).slice(-5)}`;
+    }
+    const { rows: m } = await q("SELECT COALESCE(max(sort),0)+10 AS s FROM business_categories");
+    await q("INSERT INTO business_categories (key, name_en, names, noun, sort) VALUES ($1,$2,$3::jsonb,$4,$5)",
+      [key, name, JSON.stringify(cleanNames(req.body.names)), noun, m[0].s]);
+    await categories.load();
+    await logAction(req.admin, null, "category_add", `${key}: ${name}`);
+    res.json({ ok: true, key });
+  }));
+  app.put("/api/admin/categories/:key", adminAuth, wrap(async (req, res) => {
+    const key = String(req.params.key);
+    const { rows } = await q("SELECT * FROM business_categories WHERE key=$1", [key]);
+    const c = rows[0];
+    if (!c) return bad(res, "Category not found.", 404);
+    const b = req.body || {};
+    const name = b.name_en !== undefined ? String(b.name_en).trim().replace(/\s+/g, " ").slice(0, 80) : c.name_en;
+    if (name.length < 2) return bad(res, "Enter the category name in English.");
+    const noun = categories.NOUNS.includes(b.noun) ? b.noun : c.noun;
+    const active = typeof b.active === "boolean" ? b.active : c.active;
+    const names = b.names !== undefined ? JSON.stringify(cleanNames(b.names)) : JSON.stringify(typeof c.names === "string" ? JSON.parse(c.names) : c.names);
+    if (!active) {
+      const left = (await categories.active()).filter((x) => x.key !== key).length;
+      if (left < 1) return bad(res, "Keep at least one category visible.");
+    }
+    await q("UPDATE business_categories SET name_en=$2, names=$3::jsonb, noun=$4, active=$5 WHERE key=$1", [key, name, names, noun, active]);
+    await categories.load();
+    await logAction(req.admin, null, "category_edit", `${key}: ${name}${active ? "" : " (hidden)"}`);
+    res.json({ ok: true });
+  }));
+  app.post("/api/admin/categories/order", adminAuth, wrap(async (req, res) => {
+    const keys = Array.isArray(req.body.keys) ? req.body.keys.map(String).slice(0, 200) : [];
+    let i = 0;
+    for (const k of keys) await q("UPDATE business_categories SET sort=$2 WHERE key=$1", [k, (i += 10)]);
+    await categories.load();
+    res.json({ ok: true });
   }));
 
   async function logAction(adminEmail, userId, action, detail) {

@@ -107,7 +107,7 @@ async function adminRegistrationAlert(user) {
       html: layout("New business registered", `
         <table style="border-collapse:collapse;font-size:14px;width:100%">
           ${[["Business", user.shop_name], ["Owner", user.owner_name], ["Email", user.email], ["Phone", user.phone || "Not given"],
-             ["Type", BTYPE[user.business_type] || user.business_type], ["Registered", when + " IST"], ["User ID", "#" + user.id]]
+             ["Type", BTYPE[user.business_type] || require("./categories").labelSync(user.business_type)], ["Registered", when + " IST"], ["User ID", "#" + user.id]]
             .map(([k, v]) => `<tr><td style="padding:6px 0;color:#56665F;width:110px">${k}</td><td style="padding:6px 0;font-weight:600">${esc(v)}</td></tr>`).join("")}
         </table>`),
       text: `New registration: ${user.shop_name} (${user.owner_name}, ${user.email}, ${user.phone}) at ${when} IST`,

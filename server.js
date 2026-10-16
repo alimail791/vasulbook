@@ -30,7 +30,7 @@ if (!SECRET || SECRET.length < 32) {
   process.exit(1);
 }
 const COOKIE = "vb_session";
-const BTYPES = ["retail", "tuition", "delivery", "services", "wholesale", "rental", "clinic"];
+const categories = require("./src/categories");
 const LANGS = VBLang.CODES;
 
 const app = express();
@@ -205,14 +205,15 @@ const DEMO_VIDEOS = String(process.env.DEMO_VIDEOS || "").split(",").map((x) => 
 
 // ---------- health & config ----------
 app.get("/healthz", wrap(async (req, res) => { await q("SELECT 1"); res.json({ ok: true }); }));
-app.get("/api/config", (req, res) => res.json({
+app.get("/api/config", wrap(async (req, res) => res.json({
+  categories: await categories.publicList(),
   whatsappApi: ix.whatsappConfigured(), email: email.configured(),
   billing: { ready: billing.ready(), testMode: !PROD && !billing.ready(), ...billing.PLAN },
   verification: verificationOn(),
   referral: billing.REFERRAL,
   whatsappChat: Boolean(WA_CONTACT),
   demoVideos: DEMO_VIDEOS,
-}));
+})));
 
 // Landing page "Chat with us": the number lives only on the server, never in the page.
 app.get("/whatsapp", (req, res) => {
@@ -225,7 +226,7 @@ app.post("/api/auth/register", limit(10, 15 * 60e3), wrap(async (req, res) => {
   const b = req.body || {};
   const e = clean(b.email, 200).toLowerCase(), pw = String(b.password || "");
   const ownerName = clean(b.ownerName, 100), shopName = clean(b.shopName, 120), phone = digits(b.phone).slice(-10);
-  const type = BTYPES.includes(b.businessType) ? b.businessType : "retail";
+  const type = (await categories.isActive(b.businessType)) ? b.businessType : "retail";
   const st = VBLang.STATES[b.state] ? b.state : "";
   const uiLang = VBLang.isLang(b.uiLang) ? b.uiLang : st ? VBLang.STATES[st] : "en";
   if (!ownerName) return bad(res, "Enter your name.");
@@ -353,7 +354,7 @@ app.put("/api/settings", auth, wrap(async (req, res) => {
   if (phone && phone.length !== 10) return bad(res, "Enter a 10-digit mobile number.");
   const upi = b.upiId !== undefined ? clean(b.upiId, 100) : u.upi_id;
   if (upi && !/^[\w.\-]{2,}@[a-zA-Z]{2,}$/.test(upi)) return bad(res, "That UPI ID doesn't look right. It should look like name@okaxis.");
-  const type = BTYPES.includes(b.businessType) ? b.businessType : u.business_type;
+  const type = b.businessType && b.businessType !== u.business_type && (await categories.isActive(b.businessType)) ? b.businessType : u.business_type;
   const days = b.defaultDays !== undefined ? Math.max(0, Math.min(120, parseInt(b.defaultDays, 10) || 0)) : u.default_days;
   const lang = LANGS.includes(b.reminderLang) ? b.reminderLang : u.reminder_lang;
   const summary = typeof b.summaryEmail === "boolean" ? b.summaryEmail : u.summary_email;
@@ -616,6 +617,7 @@ app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
 
 (async () => {
   await migrate();
+  await categories.seed(); await categories.load();
   jobs.start();
   app.listen(PORT, () => {
     console.log(`VasulBook running on port ${PORT} (database: ${require("./src/db").mode})`);

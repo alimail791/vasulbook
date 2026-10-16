@@ -103,6 +103,17 @@
       <div class="row between"><span class="small muted" id="pageInfo"></span><div class="row"><button class="btn sm" type="button" id="prev">Previous</button><button class="btn sm" type="button" id="next">Next</button></div></div>
     </section>
 
+    <section class="card stack" id="catSection">
+      <div class="sec-head"><h2>Business categories</h2><button class="btn primary sm" type="button" id="addCat">Add category</button></div>
+      <p class="small muted">These appear in "Type of business" when owners sign up and in Settings. Hidden categories stay on businesses that already use them.</p>
+      <div class="adm-table-wrap">
+        <table class="adm-table">
+          <thead><tr><th>Category</th><th>Calls customers</th><th class="r">Businesses</th><th>Shown at sign-up</th><th></th></tr></thead>
+          <tbody id="cats"></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="card stack">
       <h2>Recent payments</h2>
       <div class="adm-table-wrap">
@@ -133,6 +144,27 @@
     <div class="stack"><h3>Referred businesses</h3><ul class="plan-history" id="uRefs"></ul></div>
     <div class="stack"><h3>Admin actions</h3><ul class="plan-history" id="uActs"></ul></div>
   </div>
+</div>
+
+<div class="sheet-wrap" id="catSheet" hidden>
+  <form class="sheet adm-sheet" id="catForm" role="dialog" aria-modal="true" aria-labelledby="cTitle">
+    <div class="row between"><h2 id="cTitle">Add category</h2><button class="btn ghost sm" type="button" id="closeCat">Close</button></div>
+    <label class="field">Name in English<input id="cName" required maxlength="80" placeholder="e.g. Hotel or restaurant"></label>
+    <label class="field">What do they call their customers?
+      <select id="cNoun">
+        <option value="customer">Customers</option><option value="student">Students</option><option value="household">Households</option>
+        <option value="shop">Shops</option><option value="tenant">Tenants</option><option value="client">Clients</option>
+      </select>
+    </label>
+    <details class="adm-trans" id="cTransBox">
+      <summary>Names in other languages (optional)</summary>
+      <p class="small muted">Leave empty to show the English name. For built-in categories, empty uses the app's own translation.</p>
+      <div class="adm-trans-grid" id="cTrans"></div>
+    </details>
+    <label class="check" id="cActiveRow"><input type="checkbox" id="cActive" checked> Show at sign-up</label>
+    <p class="err" id="cErr" role="alert"></p>
+    <button class="btn primary block" type="submit" id="cSave">Save category</button>
+  </form>
 </div>
 
 <div class="toast" id="toast" role="status" hidden></div>

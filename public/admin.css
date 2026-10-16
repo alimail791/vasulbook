@@ -42,3 +42,11 @@
 .adm-dl dd{margin:0;font-weight:600;overflow-wrap:anywhere}
 .adm-gift select{width:auto}
 .adm-gift input{flex:1 1 160px}
+.adm-trans summary{cursor:pointer;font-weight:600;padding:6px 0}
+.adm-trans-grid{display:grid;gap:10px;margin-top:8px}
+@media (min-width:560px){.adm-trans-grid{grid-template-columns:1fr 1fr}}
+.check{display:flex;align-items:center;gap:8px;font-weight:500}
+.check input,.switch input{width:18px;height:18px;min-height:0;accent-color:var(--accent)}
+.switch{display:inline-flex;align-items:center;gap:8px;cursor:pointer;white-space:nowrap}
+.adm-table .nowrap{white-space:nowrap}
+.adm-table .btn.sm{min-height:34px;padding:4px 10px}

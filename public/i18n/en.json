@@ -43,7 +43,6 @@
     "reset_sent": "If {email} has an account, a 6-digit code is on its way. It works for 10 minutes.",
     "f_new_password": "New password",
     "btn_save_password": "Save password",
-
     "nav_home": "Home",
     "nav_customers": "Customers",
     "nav_settings": "Settings",
@@ -51,7 +50,6 @@
     "install_text": "Install VasulBook on your phone for one-tap access.",
     "install_app": "Install app",
     "not_now": "Not now",
-
     "quick_entry": "Quick entry",
     "save": "Save",
     "quick_hint": "Name and amount adds credit: {ex1}. Add \"paid\" for a payment: {ex2}.",
@@ -84,7 +82,6 @@
     "due_word": "due {date}",
     "err_amount": "Add an amount, like 500.",
     "err_name": "Start with the name.",
-
     "n_customer": "Customers",
     "n_student": "Students",
     "n_household": "Households",
@@ -164,7 +161,6 @@
     "risk_watch": "Paid late before",
     "risk_good": "Pays on time",
     "often_late": "Often late",
-
     "your_plan": "Your plan",
     "business": "Business",
     "f_shop": "Business name",
@@ -180,7 +176,6 @@
     "delete_account": "Delete account",
     "logged_in_as": "Logged in as {email}",
     "lang_hint": "Changes the app screens. Reminders can use any language.",
-
     "plan_trial": "Free trial",
     "plan_active": "Active",
     "plan_ended": "Ended",
@@ -210,7 +205,6 @@
     "bar_trial_ended": "Your free trial has ended. Your data is safe. Upgrade to keep adding entries and sending reminders.",
     "bar_plan_ended": "Your plan has ended. Your data is safe. Upgrade to keep adding entries and sending reminders.",
     "bar_plan_ends": "Your plan ends in {n} days ({date}).",
-
     "refer_card_title": "Refer a business, get {m} months free",
     "refer_card_sub": "Each friend who joins with your link earns you {m} free months.",
     "refer_eyebrow": "Refer & earn",
@@ -225,13 +219,13 @@
     "months_earned": "months earned",
     "maybe_later": "Maybe later",
     "refer_msg": "I use VasulBook to collect money from customers with WhatsApp reminders and UPI. Try it free for {months} months with my link: {link} (code {code})",
-
     "t_copied": "Copied",
     "t_saved": "Saved",
     "t_credit_saved": "Credit saved",
     "t_payment_saved": "Payment saved",
     "t_welcome": "Email confirmed. Welcome to VasulBook!",
-    "t_lang_changed": "Language changed"
+    "t_lang_changed": "Language changed",
+    "logout_confirm": "Log out of VasulBook on this device?"
   },
   "landing": {
     "meta_title": "VasulBook: collect customer dues on WhatsApp",
