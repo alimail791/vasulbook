@@ -42,7 +42,7 @@ function render(lang, base) {
       description: plain("meta_desc"), image: base + "/og-image.png",
       offers: { "@type": "Offer", price: String(P.priceInr), priceCurrency: "INR", description: plain("p_for") },
     },
-    { "@context": "https://schema.org", "@type": "Organization", name: "VasulBook", url: base + "/", email: "info@vasulbook.in", logo: base + "/icons/icon-512.png" },
+    { "@context": "https://schema.org", "@type": "Organization", name: "VasulBook", url: base + "/", email: "info@vasulbook.com", logo: base + "/icons/icon-512.png" },
     {
       "@context": "https://schema.org", "@type": "FAQPage", inLanguage: lang,
       mainEntity: [1, 2, 3, 4, 5].map((i) => ({ "@type": "Question", name: plain("q" + i), acceptedAnswer: { "@type": "Answer", text: plain("a" + i) } })),

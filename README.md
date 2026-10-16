@@ -48,7 +48,7 @@ Local testing pages: `/dev/run-inactive?days=0` sends the absent email now; sign
 
 ## Landing page
 
-- `/` is the public landing page (free trial, how it works, demo video, pricing, FAQ, footer with info@vasulbook.in). The app itself is at `/app`. Installed phone apps open `/app` directly.
+- `/` is the public landing page (free trial, how it works, demo video, pricing, FAQ, footer with info@vasulbook.com). The app itself is at `/app`. Installed phone apps open `/app` directly.
 - **WhatsApp chat button:** set `WHATSAPP_CONTACT` (e.g. `9443424064`). The page links to `/whatsapp`, and the server redirects to WhatsApp, so the number never appears on the page. Without the variable the button is hidden.
 - **Demo video:** `public/media/demo.mp4` (and `.webm`) is a 48-second captioned walkthrough recorded from the app. To add YouTube videos as well, set `DEMO_VIDEOS`, comma separated, optionally with a title: `Tamil demo|https://youtu.be/XXXXXXXXXXX, https://youtu.be/YYYYYYYYYYY`.
 - **Upgrade:** trial and expired owners see an Upgrade card on their dashboard and an Upgrade button in the top bar; both open Razorpay checkout.
@@ -69,7 +69,7 @@ Local testing pages: `/dev/run-inactive?days=0` sends the absent email now; sign
 
 - The landing page is rendered on the server in every language: `/` (English), `/hi`, `/ta`, `/te`, `/kn`, `/ml`, `/mr`, `/bn`, `/gu`, `/pa`. Each page has its own title and description, `hreflang` links to the others, a canonical URL, Open Graph and Twitter tags with `public/og-image.png`, and JSON-LD (SoftwareApplication with the INR price, Organization, FAQ).
 - `/sitemap.xml` lists all language pages; `/robots.txt` points to it and keeps `/app`, `/admin` and `/api` out of search.
-- Set `APP_URL` to your real domain (e.g. `https://vasulbook.in`) so canonical and sitemap links use it. Then add the site in Google Search Console and submit `https://your-domain/sitemap.xml`.
+- Set `APP_URL` to your real domain (e.g. `https://www.vasulbook.com`) so canonical and sitemap links use it. Then add the site in Google Search Console and submit `https://your-domain/sitemap.xml`.
 
 ## Deploy on Railway
 
@@ -89,9 +89,9 @@ The `railway.json` file already sets the start command and health check.
 ## Set up Resend (registration and summary emails)
 
 1. Create an account at resend.com.
-2. **Domains → Add domain.** Add your domain (for example `vasulbook.in`) and create the DNS records Resend shows you. Wait until it says **Verified**.
+2. **Domains → Add domain.** Add your domain (for example `vasulbook.com`) and create the DNS records Resend shows you. Wait until it says **Verified**.
 3. **API Keys → Create API key** with "Sending access". Copy it into `RESEND_API_KEY`.
-4. Set `EMAIL_FROM` to an address on the verified domain, for example `VasulBook <hello@vasulbook.in>`.
+4. Set `EMAIL_FROM` to an address on the verified domain, for example `VasulBook <hello@vasulbook.com>`.
 5. Set `ADMIN_EMAIL` to the address that should hear about every new registration.
 
 Without a verified domain, Resend only delivers to your own Resend account email, so welcome emails to other people won't arrive. If the Resend variables are missing, the app still works and logs "email skipped" instead of sending.
