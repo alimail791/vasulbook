@@ -82,12 +82,12 @@ module.exports = function mountSeo(app, { baseUrl }) {
     const alts = VBLang.CODES.map((c) => `    <xhtml:link rel="alternate" hreflang="${c}" href="${base}${pagePath(c)}"/>`)
       .concat(`    <xhtml:link rel="alternate" hreflang="x-default" href="${base}/"/>`).join("\n");
     const urls = VBLang.CODES.map((c) => `  <url>\n    <loc>${base}${pagePath(c)}</loc>\n    <lastmod>${UPDATED}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>${c === "en" ? "1.0" : "0.9"}</priority>\n${alts}\n  </url>`).join("\n");
-    res.type("application/xml").setHeader("Cache-Control", "public, max-age=3600");
+    res.type("application/xml").setHeader("Cache-Control", "public, max-age=300");
     res.send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n${urls}\n</urlset>\n`);
   });
 
   app.get("/robots.txt", (req, res) => {
-    res.type("text/plain").setHeader("Cache-Control", "public, max-age=3600");
+    res.type("text/plain").setHeader("Cache-Control", "public, max-age=300");
     res.send(`User-agent: *\nAllow: /\nAllow: /app.css\nAllow: /app.js\nDisallow: /app\nDisallow: /admin\nDisallow: /api/\nDisallow: /dev/\nDisallow: /whatsapp\n\nSitemap: ${baseUrl(req)}/sitemap.xml\n`);
   });
 };
