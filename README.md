@@ -71,6 +71,17 @@ Local testing pages: `/dev/run-inactive?days=0` sends the absent email now; sign
 - `/sitemap.xml` lists all language pages; `/robots.txt` points to it and keeps `/app`, `/admin` and `/api` out of search.
 - Set `APP_URL` to your real domain (e.g. `https://www.vasulbook.com`) so canonical and sitemap links use it. Then add the site in Google Search Console and submit `https://your-domain/sitemap.xml`.
 
+## Policy pages (needed for Razorpay)
+
+`/terms`, `/privacy`, `/refund-policy`, `/delivery-policy` and `/contact` are linked in the footer of every landing page and on the app's sign-in screen. Set these on the server so the pages show your registered business details (Razorpay checks that they match your KYC):
+
+- `LEGAL_NAME`: registered business or proprietor name (default "VasulBook")
+- `BUSINESS_ADDRESS`: full postal address shown on the Contact page
+- `BUSINESS_CITY`: city whose courts handle disputes (Terms, section 11)
+- `SUPPORT_EMAIL`: default info@vasulbook.com
+
+The refund rule is: full refund on request within 7 days of payment; duplicate or failed charges always refunded; refunds paid in 5–7 working days. Edit `src/legal.js` to change it.
+
 ## Deploy on Railway
 
 1. Push this folder to a GitHub repository.

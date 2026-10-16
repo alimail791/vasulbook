@@ -105,7 +105,7 @@ details p{margin-top:8px;color:var(--muted)}
 /* footer */
 .l-foot{border-top:1px solid var(--line);background:var(--surface);padding:36px 0 calc(90px + var(--safe-b))}
 .l-foot-in{display:grid;gap:22px}
-@media (min-width:760px){.l-foot-in{grid-template-columns:2fr 1fr 1fr}}
+@media (min-width:760px){.l-foot-in{grid-template-columns:1.6fr 1fr 1fr 1.4fr}}
 .l-foot .brand{font-size:22px;text-decoration:none;color:var(--ink)}
 .l-foot-links{display:flex;flex-direction:column;gap:6px}
 .l-foot-links a{color:var(--ink);text-decoration:none;font-weight:500}
@@ -128,3 +128,16 @@ details p{margin-top:8px;color:var(--muted)}
 .l-hero-in>*{min-width:0}
 .landing h1,.landing h2,.landing h3{overflow-wrap:anywhere}
 .l-cta .btn{white-space:normal;text-align:center;max-width:100%}
+
+/* policy pages */
+.lg-links{display:flex;flex-wrap:wrap;gap:8px 20px;margin-top:22px;padding-top:18px;border-top:1px solid var(--line)}
+.lg-links a{color:var(--muted);text-decoration:none;font-size:14px;font-weight:500}
+.lg-links a:hover,.lg-links a[aria-current]{color:var(--accent)}
+.legal .l-foot{padding-bottom:36px}
+.lg-doc h1{font-size:clamp(28px,5vw,40px);margin:6px 0 18px}
+.lg-doc h2{font-size:20px;margin:28px 0 8px}
+.lg-doc p,.lg-doc li{line-height:1.65;color:var(--ink)}
+.lg-doc ul{padding-left:20px;display:grid;gap:6px;margin:8px 0}
+.lg-doc a{color:var(--accent)}
+.lg-card{border:1px solid var(--line);background:var(--surface);border-radius:14px;padding:18px 20px;margin:18px 0}
+.lg-card p{margin:4px 0}

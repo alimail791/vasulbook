@@ -83,7 +83,8 @@ module.exports = function mountSeo(app, { baseUrl }) {
       .concat(`    <xhtml:link rel="alternate" hreflang="x-default" href="${base}/"/>`).join("\n");
     const urls = VBLang.CODES.map((c) => `  <url>\n    <loc>${base}${pagePath(c)}</loc>\n    <lastmod>${UPDATED}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>${c === "en" ? "1.0" : "0.9"}</priority>\n${alts}\n  </url>`).join("\n");
     res.type("application/xml").setHeader("Cache-Control", "public, max-age=300");
-    res.send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n${urls}\n</urlset>\n`);
+    const legal = ["/contact", "/terms", "/privacy", "/refund-policy", "/delivery-policy"].map((p) => `  <url>\n    <loc>${base}${p}</loc>\n    <changefreq>yearly</changefreq>\n    <priority>0.3</priority>\n  </url>`).join("\n");
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n${urls}\n${legal}\n</urlset>\n`);
   });
 
   app.get("/robots.txt", (req, res) => {

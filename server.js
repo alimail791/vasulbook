@@ -592,6 +592,7 @@ if (!PROD) {
 
 // ---------- static PWA ----------
 require("./src/seo")(app, { baseUrl: (req) => appUrl(req).replace(/\/+$/, "") });
+require("./src/legal")(app, { baseUrl: (req) => appUrl(req).replace(/\/+$/, "") });
 app.get("/admin", (req, res) => { res.setHeader("Cache-Control", "no-cache"); res.setHeader("X-Robots-Tag", "noindex, nofollow"); res.sendFile(path.join(__dirname, "public", "admin.html")); });
 app.get(["/app", "/app/*"], (req, res) => { res.setHeader("Cache-Control", "no-cache"); res.setHeader("X-Robots-Tag", "noindex"); res.sendFile(path.join(__dirname, "public", "index.html")); });
 app.use(express.static(path.join(__dirname, "public"), {

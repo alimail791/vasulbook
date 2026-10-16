@@ -243,3 +243,4 @@ main{max-width:1180px;margin:0 auto;padding:16px 16px calc(var(--nav-h) + 24px +
 .upgrade-card .small{color:var(--muted)}
 .upgrade-card.bad{border-color:var(--bad);background:var(--bad-soft)}
 .upgrade-card.bad .eyebrow{color:var(--bad)}
+.auth-legal{text-align:center;margin-top:14px;line-height:1.6}.auth-legal a{color:inherit;text-decoration:underline}
