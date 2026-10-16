@@ -1,6 +1,8 @@
 // VasulBook admin dashboard API. Separate login: ADMIN_EMAIL (one of the listed addresses) + ADMIN_PASSWORD.
 const crypto = require("crypto");
 const jwt = require("jsonwebtoken");
+const bcrypt = require("bcryptjs");
+const email = require("./email");
 const { q } = require("./db");
 const billing = require("./billing");
 
@@ -20,32 +22,105 @@ module.exports = function mountAdmin(app, { wrap, bad, limit, PROD, secret }) {
     password = "admin12345";
     console.log("[local] admin login: any ADMIN_EMAIL address (or admin@localhost) / admin12345 at /admin");
   }
-  const enabled = () => Boolean(password && password.length >= 10);
+  // A password set through "Forgot password" is stored (hashed) in the database and replaces ADMIN_PASSWORD.
+  let stored = null; // { hash, changedAt }
+  async function loadStored() {
+    try {
+      const { rows } = await q("SELECT value, updated_at FROM admin_settings WHERE key='password_hash'");
+      stored = rows[0] ? { hash: rows[0].value, changedAt: new Date(rows[0].updated_at).getTime() } : null;
+    } catch { /* table appears after first migration */ }
+    return stored;
+  }
+  setTimeout(loadStored, 1500);
+  const enabled = () => Boolean(stored || (password && password.length >= 10));
+  const allowedEmails = () => (admins().length ? admins() : (!PROD ? ["admin@localhost"] : []));
 
   const safeEq = (a, b) => {
     const x = crypto.createHash("sha256").update(String(a)).digest(), y = crypto.createHash("sha256").update(String(b)).digest();
     return crypto.timingSafeEqual(x, y);
   };
+  async function passwordOk(pw) {
+    await loadStored();
+    if (stored) return bcrypt.compare(String(pw), stored.hash);
+    return safeEq(String(pw), password);
+  }
+  function signIn(res, e) {
+    const token = jwt.sign({ admin: true, email: e }, secret, { expiresIn: "12h" });
+    res.cookie(COOKIE, token, { httpOnly: true, sameSite: "strict", secure: PROD, maxAge: 12 * 3600e3, path: "/" });
+  }
 
   function adminAuth(req, res, next) {
     try {
       const t = jwt.verify(req.cookies[COOKIE] || "", secret);
       if (!t.admin) throw new Error();
+      // Sessions started before a password reset stop working.
+      if (stored && t.iat * 1000 < stored.changedAt - 1000) throw new Error();
       req.admin = t.email; next();
     } catch { return bad(res, "Please log in as admin.", 401); }
   }
 
-  app.post("/api/admin/login", limit(6, 15 * 60e3), (req, res) => {
+  app.post("/api/admin/login", limit(6, 15 * 60e3), wrap(async (req, res) => {
+    if (!enabled()) await loadStored();
     if (!enabled()) return bad(res, "Admin login is not set up. Set ADMIN_PASSWORD (10+ characters) on the server.", 503);
     const e = String(req.body.email || "").trim().toLowerCase();
-    const allowed = admins().length ? admins() : (!PROD ? ["admin@localhost"] : []);
-    const ok = allowed.includes(e) && safeEq(String(req.body.password || ""), password);
+    const ok = allowedEmails().includes(e) && (await passwordOk(req.body.password || ""));
     if (!ok) return bad(res, "Email or password is wrong.", 401);
-    const token = jwt.sign({ admin: true, email: e }, secret, { expiresIn: "12h" });
-    res.cookie(COOKIE, token, { httpOnly: true, sameSite: "strict", secure: PROD, maxAge: 12 * 3600e3, path: "/" });
+    signIn(res, e);
     console.log(`[admin] login ${e}`);
     res.json({ ok: true, email: e });
-  });
+  }));
+
+  // Forgot password: a 6-digit code goes to the admin email; it sets a new password.
+  const codeHash = (e, code) => crypto.createHmac("sha256", String(secret)).update(`admin:${e}:${code}`).digest("hex");
+  app.post("/api/admin/forgot", limit(5, 15 * 60e3), wrap(async (req, res) => {
+    const e = String(req.body.email || "").trim().toLowerCase();
+    if (!email.configured()) return bad(res, "Email sending is not set up on the server yet (RESEND_API_KEY), so a code can't be sent. Change ADMIN_PASSWORD in Railway instead.", 503);
+    if (allowedEmails().includes(e)) {
+      const { rows } = await q("SELECT created_at FROM admin_codes WHERE email=$1 ORDER BY created_at DESC LIMIT 1", [e]);
+      if (rows[0] && Date.now() - new Date(rows[0].created_at).getTime() < 60e3) return bad(res, "Please wait a minute before asking for a new code.", 429);
+      const code = String(crypto.randomInt(0, 1e6)).padStart(6, "0");
+      await q("UPDATE admin_codes SET used=TRUE WHERE email=$1 AND NOT used", [e]);
+      await q("INSERT INTO admin_codes (email, code_hash, expires_at) VALUES ($1,$2, now() + interval '10 minutes')", [e, codeHash(e, code)]);
+      await email.send({
+        to: e, subject: `${code} is your VasulBook admin reset code`,
+        html: email.layout("Reset your admin password", `
+          <p>Someone asked to reset the VasulBook <b>admin</b> password. If it was you, enter this code on the admin login page:</p>
+          <p style="font-size:32px;font-weight:700;letter-spacing:8px;font-family:Consolas,Menlo,monospace;margin:16px 0">${code}</p>
+          <p style="font-size:13px;color:#56665F">The code works for 10 minutes. If you didn't ask for this, ignore this email; the password stays the same.</p>`),
+        text: `VasulBook admin reset code: ${code} (valid 10 minutes).`,
+      });
+      console.log(`[admin] reset code sent to ${e}`);
+    }
+    // Same answer either way, so the page doesn't reveal which emails are admins.
+    res.json({ ok: true });
+  }));
+
+  app.post("/api/admin/reset", limit(8, 15 * 60e3), wrap(async (req, res) => {
+    const e = String(req.body.email || "").trim().toLowerCase();
+    const code = String(req.body.code || "").replace(/\D/g, "");
+    const pw = String(req.body.password || "");
+    if (pw.length < 10) return bad(res, "Use at least 10 characters for the admin password.");
+    const { rows } = await q("SELECT * FROM admin_codes WHERE email=$1 AND NOT used AND expires_at > now() ORDER BY created_at DESC LIMIT 1", [e]);
+    const row = rows[0];
+    if (!row || !allowedEmails().includes(e)) return bad(res, "This code has expired. Ask for a new code.");
+    if (row.attempts >= 5) return bad(res, "Too many wrong tries. Ask for a new code.");
+    const a = Buffer.from(codeHash(e, code)), b = Buffer.from(row.code_hash);
+    if (code.length !== 6 || a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+      await q("UPDATE admin_codes SET attempts = attempts + 1 WHERE id=$1", [row.id]);
+      return bad(res, "That code is wrong.");
+    }
+    await q("UPDATE admin_codes SET used=TRUE WHERE email=$1", [e]);
+    const hash = await bcrypt.hash(pw, 10);
+    await q(`INSERT INTO admin_settings (key, value, updated_at) VALUES ('password_hash', $1, now())
+             ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value, updated_at=now()`, [hash]);
+    await loadStored();
+    await logAction(e, null, "admin_password_reset", "via email code").catch(() => {});
+    await new Promise((r) => setTimeout(r, 1100)); // new session must be issued after the change time
+    signIn(res, e);
+    console.log(`[admin] password reset by ${e}`);
+    res.json({ ok: true, email: e });
+  }));
+
   app.post("/api/admin/logout", (req, res) => { res.clearCookie(COOKIE, { path: "/" }); res.json({ ok: true }); });
   app.get("/api/admin/me", adminAuth, (req, res) => res.json({ email: req.admin }));
 

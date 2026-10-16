@@ -233,4 +233,4 @@ async function planNoticeEmail(user, stage, st, appUrl) {
   });
 }
 
-module.exports = { configured, resendReady, listOutbox, OUTBOX, send, registrationEmails, welcomeEmail, adminRegistrationAlert, otpEmail, referralRewardEmail, inactiveEmail, dailySummaryEmail, planPurchaseEmails, planNoticeEmail };
+module.exports = { layout, configured, resendReady, listOutbox, OUTBOX, send, registrationEmails, welcomeEmail, adminRegistrationAlert, otpEmail, referralRewardEmail, inactiveEmail, dailySummaryEmail, planPurchaseEmails, planNoticeEmail };

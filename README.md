@@ -57,6 +57,8 @@ Local testing pages: `/dev/run-inactive?days=0` sends the absent email now; sign
 
 - Open `/admin` and log in with any address listed in `ADMIN_EMAIL` and `ADMIN_PASSWORD` (at least 10 characters). Without `ADMIN_PASSWORD` the admin panel stays locked in production. Locally it is `admin@localhost` / `admin12345`.
 - Shows: businesses, new sign-ups, paid / trial / expired counts, revenue this month and all time, a 30-day sign-up chart, and breakdowns by business type, state and app language.
+- **Forgot password:** on the admin login, tap "Forgot password?". A 6-digit code is emailed to the admin address (needs Resend set up). The new password is stored hashed in the database and from then on replaces `ADMIN_PASSWORD`; older admin sessions are logged out.
+- **Install as an app:** open `/admin` in Chrome on your phone and tap "Install app" (or browser menu → Install). It installs separately from the shop app, as "VB Admin".
 - Businesses table: search, filters (trial, paid, expired, email not confirmed, away 5+ days), CSV export, and a detail panel where you can gift free months or mark an email as confirmed. Every admin action is logged in `admin_actions`.
 
 ## Languages

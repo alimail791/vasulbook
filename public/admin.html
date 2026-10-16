@@ -6,6 +6,12 @@
 <meta name="robots" content="noindex, nofollow">
 <title>VasulBook Admin</title>
 <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
+<link rel="manifest" href="/admin.webmanifest">
+<meta name="theme-color" content="#14211D">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="VB Admin">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Figtree:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
@@ -21,13 +27,38 @@
     <label class="field">Admin password<input id="aPass" type="password" autocomplete="current-password" required></label>
     <p class="err" id="aErr" role="alert"></p>
     <button class="btn primary block" type="submit">Log in</button>
+    <button class="linkbtn" type="button" id="toForgot">Forgot password?</button>
+  </form>
+
+  <form class="auth-box card stack" id="forgotForm" hidden>
+    <div class="brand">Vasul<b>Book</b> <span class="adm-tag">Admin</span></div>
+    <h2>Reset admin password</h2>
+    <p class="small muted">Enter the admin email. We'll send a 6-digit code to it.</p>
+    <label class="field">Admin email<input id="fEmail" type="email" autocomplete="username" required></label>
+    <p class="err" id="fErr" role="alert"></p>
+    <button class="btn primary block" type="submit">Send code</button>
+    <button class="linkbtn" type="button" data-to-login>Back to log in</button>
+  </form>
+
+  <form class="auth-box card stack" id="resetForm" hidden>
+    <div class="brand">Vasul<b>Book</b> <span class="adm-tag">Admin</span></div>
+    <h2>Set a new password</h2>
+    <p class="small muted" id="rText">If that email is an admin, a code is on its way. Check spam too.</p>
+    <label class="field">6-digit code<input id="rCode" inputmode="numeric" autocomplete="one-time-code" maxlength="6" required></label>
+    <label class="field">New password (10+ characters)<input id="rPass" type="password" autocomplete="new-password" minlength="10" required></label>
+    <p class="err" id="rErr" role="alert"></p>
+    <button class="btn primary block" type="submit">Save and log in</button>
+    <div class="row between">
+      <button class="linkbtn" type="button" id="rResend">Send a new code</button>
+      <button class="linkbtn" type="button" data-to-login>Back to log in</button>
+    </div>
   </form>
 </section>
 
 <div id="dash" hidden>
   <header class="top">
     <div class="top-l"><span class="brand">Vasul<b>Book</b></span><span class="adm-tag">Admin</span></div>
-    <div class="row"><span class="small muted" id="whoami"></span><a class="btn sm" href="/" target="_blank" rel="noopener">View site</a><button class="btn sm" type="button" id="logout">Log out</button></div>
+    <div class="row"><span class="small muted" id="whoami"></span><button class="btn sm" type="button" id="installAdmin" hidden>Install app</button><a class="btn sm" href="/" target="_blank" rel="noopener">View site</a><button class="btn sm" type="button" id="logout">Log out</button></div>
   </header>
 
   <main class="adm">

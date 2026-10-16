@@ -14,11 +14,41 @@
   async function api(method, path, body) {
     const res = await fetch(path, { method, credentials: "same-origin", headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
     const data = await res.json().catch(() => ({}));
-    if (res.status === 401 && path !== "/api/admin/login") { showLogin(); }
+    if (res.status === 401 && !/\/api\/admin\/(login|forgot|reset)$/.test(path)) { showLogin(); }
     if (!res.ok) throw new Error(data.error || "Something went wrong.");
     return data;
   }
-  function showLogin() { $("dash").hidden = true; $("loginScreen").hidden = false; }
+  function showLogin() { $("dash").hidden = true; $("loginScreen").hidden = false; showForm("loginForm"); }
+  function showForm(id) { ["loginForm", "forgotForm", "resetForm"].forEach((f) => { $(f).hidden = f !== id; }); const first = $(id).querySelector("input"); if (first) first.focus(); }
+
+  // Forgot password
+  $("toForgot").addEventListener("click", () => { $("fEmail").value = $("aEmail").value; $("fErr").textContent = ""; showForm("forgotForm"); });
+  document.querySelectorAll("[data-to-login]").forEach((b) => b.addEventListener("click", () => showForm("loginForm")));
+  async function sendCode(errEl) {
+    await api("POST", "/api/admin/forgot", { email: $("fEmail").value });
+  }
+  $("forgotForm").addEventListener("submit", async (e) => {
+    e.preventDefault(); $("fErr").textContent = "";
+    try { await sendCode(); $("rErr").textContent = ""; $("rCode").value = ""; $("rPass").value = ""; showForm("resetForm"); }
+    catch (err) { $("fErr").textContent = err.message; }
+  });
+  $("rResend").addEventListener("click", async () => {
+    $("rErr").textContent = "";
+    try { await sendCode(); toast("New code sent."); } catch (err) { $("rErr").textContent = err.message; }
+  });
+  $("resetForm").addEventListener("submit", async (e) => {
+    e.preventDefault(); $("rErr").textContent = "";
+    try {
+      await api("POST", "/api/admin/reset", { email: $("fEmail").value, code: $("rCode").value, password: $("rPass").value });
+      $("rPass").value = ""; toast("Password changed."); start();
+    } catch (err) { $("rErr").textContent = err.message; }
+  });
+
+  // Install the admin dashboard as its own app
+  if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => {}));
+  let installEvt = null;
+  window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); installEvt = e; $("installAdmin").hidden = false; });
+  $("installAdmin").addEventListener("click", async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice.catch(() => {}); installEvt = null; $("installAdmin").hidden = true; });
 
   $("loginForm").addEventListener("submit", async (e) => {
     e.preventDefault(); $("aErr").textContent = "";

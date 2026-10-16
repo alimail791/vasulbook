@@ -156,6 +156,21 @@ const MIGRATIONS = [
      detail TEXT NOT NULL DEFAULT '',
      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
+  // Admin password set through "Forgot password", and its one-time codes
+  `CREATE TABLE IF NOT EXISTS admin_settings (
+     key TEXT PRIMARY KEY,
+     value TEXT NOT NULL,
+     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
+  `CREATE TABLE IF NOT EXISTS admin_codes (
+     id SERIAL PRIMARY KEY,
+     email TEXT NOT NULL,
+     code_hash TEXT NOT NULL,
+     attempts INT NOT NULL DEFAULT 0,
+     used BOOLEAN NOT NULL DEFAULT FALSE,
+     expires_at TIMESTAMPTZ NOT NULL,
+     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+   )`,
 ];
 
 async function migrate() {
