@@ -338,6 +338,17 @@
     "start_trial": "Start free trial",
     "rights": "All rights reserved.",
     "chat_us": "Chat with us",
-    "lang_label": "Language"
+    "lang_label": "Language",
+    "sites_eyebrow": "From the same team",
+    "sites_title": "More tools for students, teachers and coaching centres",
+    "sites_sub": "Run a tuition centre, teach, or have a child preparing for exams? Try our other websites.",
+    "cc_tag": "For teachers and tutors",
+    "cc_p": "Create tests, track every student's progress and help them improve, all in one place.",
+    "tm_tag": "Mock tests marketplace",
+    "tm_p": "Buy mock tests for school, state and national exams, or sell your own tests if you are a teacher or institute.",
+    "yn_tag": "NEET preparation",
+    "yn_p": "Practice, tests and guidance for students preparing for NEET.",
+    "visit": "Visit {site}",
+    "our_sites": "Our other sites"
   }
 }
