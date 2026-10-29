@@ -43,6 +43,7 @@
     <nav class="l-nav" aria-label="Page">
       <a href="#how">{{nav_how}}</a>
       <a href="#demo">{{nav_demo}}</a>
+      <a href="#compare">{{nav_compare}}</a>
       <a href="#pricing">{{nav_pricing}}</a>
       <a href="#faq">{{nav_faq}}</a>
     </nav>
@@ -140,6 +141,32 @@
           <figcaption>{{demo_cap}}</figcaption>
         </figure>
       </div>
+    </div>
+  </section>
+
+  <section class="l-sec" id="compare">
+    <div class="l-wrap">
+      <p class="eyebrow">{{cmp_eyebrow}}</p>
+      <h2>{{cmp_title}}</h2>
+      <p class="muted l-sub">{{cmp_sub}}</p>
+      <div class="cmp-wrap" role="region" aria-label="{{cmp_eyebrow}}" tabindex="0">
+        <table class="cmp">
+          <thead><tr><th scope="col"></th><th scope="col" class="cmp-vb">Vasul<b>Book</b></th><th scope="col">{{cmp_col_paper}}</th><th scope="col">{{cmp_col_apps}}</th><th scope="col">{{cmp_col_billing}}</th></tr></thead>
+          <tbody>
+            <tr class="cmp-price"><th scope="row">{{cmp_price}}</th><td class="cmp-vb">{{cmp_price_vb}}</td><td>{{cmp_price_paper}}</td><td>{{cmp_price_apps}}</td><td>{{cmp_price_billing}}</td></tr>
+            <tr><th scope="row">{{cmp_r1}}</th><td class="cmp-y cmp-vb"><span class="cmp-i" aria-hidden="true">✓</span><span class="cmp-t">{{cmp_yes}}</span></td><td class="cmp-n"><span class="cmp-i" aria-hidden="true">✕</span><span class="cmp-t">{{cmp_no}}</span></td><td class="cmp-v"><span class="cmp-i" aria-hidden="true">~</span><span class="cmp-t">{{cmp_varies}}</span></td><td class="cmp-v"><span class="cmp-i" aria-hidden="true">~</span><span class="cmp-t">{{cmp_varies}}</span></td></tr>
+            <tr><th scope="row">{{cmp_r2}}</th><td class="cmp-y cmp-vb"><span class="cmp-i" aria-hidden="true">✓</span><span class="cmp-t">{{cmp_yes}}</span></td><td class="cmp-n"><span class="cmp-i" aria-hidden="true">✕</span><span class="cmp-t">{{cmp_no}}</span></td><td class="cmp-v"><span class="cmp-i" aria-hidden="true">~</span><span class="cmp-t">{{cmp_varies}}</span></td><td class="cmp-v"><span class="cmp-i" aria-hidden="true">~</span><span class="cmp-t">{{cmp_varies}}</span></td></tr>
+            <tr><th scope="row">{{cmp_r3}}</th><td class="cmp-y cmp-vb"><span class="cmp-i" aria-hidden="true">✓</span><span class="cmp-t">{{cmp_yes}}</span></td><td class="cmp-n"><span class="cmp-i" aria-hidden="true">✕</span><span class="cmp-t">{{cmp_no}}</span></td><td class="cmp-v"><span class="cmp-i" aria-hidden="true">~</span><span class="cmp-t">{{cmp_varies}}</span></td><td class="cmp-v"><span class="cmp-i" aria-hidden="true">~</span><span class="cmp-t">{{cmp_varies}}</span></td></tr>
+            <tr><th scope="row">{{cmp_r4}}</th><td class="cmp-y cmp-vb"><span class="cmp-i" aria-hidden="true">✓</span><span class="cmp-t">{{cmp_yes}}</span></td><td class="cmp-n"><span class="cmp-i" aria-hidden="true">✕</span><span class="cmp-t">{{cmp_no}}</span></td><td class="cmp-v"><span class="cmp-i" aria-hidden="true">~</span><span class="cmp-t">{{cmp_varies}}</span></td><td class="cmp-v"><span class="cmp-i" aria-hidden="true">~</span><span class="cmp-t">{{cmp_varies}}</span></td></tr>
+            <tr><th scope="row">{{cmp_r5}}</th><td class="cmp-y cmp-vb"><span class="cmp-i" aria-hidden="true">✓</span><span class="cmp-t">{{cmp_yes}}</span></td><td class="cmp-n"><span class="cmp-i" aria-hidden="true">✕</span><span class="cmp-t">{{cmp_no}}</span></td><td class="cmp-y"><span class="cmp-i" aria-hidden="true">✓</span><span class="cmp-t">{{cmp_yes}}</span></td><td class="cmp-y"><span class="cmp-i" aria-hidden="true">✓</span><span class="cmp-t">{{cmp_yes}}</span></td></tr>
+            <tr><th scope="row">{{cmp_r6}}</th><td class="cmp-y cmp-vb"><span class="cmp-i" aria-hidden="true">✓</span><span class="cmp-t">{{cmp_yes}}</span></td><td class="cmp-y"><span class="cmp-i" aria-hidden="true">✓</span><span class="cmp-t">{{cmp_yes}}</span></td><td class="cmp-y"><span class="cmp-i" aria-hidden="true">✓</span><span class="cmp-t">{{cmp_yes}}</span></td><td class="cmp-n"><span class="cmp-i" aria-hidden="true">✕</span><span class="cmp-t">{{cmp_no}}</span></td></tr>
+            <tr><th scope="row">{{cmp_r7}}</th><td class="cmp-y cmp-vb"><span class="cmp-i" aria-hidden="true">✓</span><span class="cmp-t">{{cmp_yes}}</span></td><td class="cmp-n"><span class="cmp-i" aria-hidden="true">✕</span><span class="cmp-t">{{cmp_no}}</span></td><td class="cmp-v"><span class="cmp-i" aria-hidden="true">~</span><span class="cmp-t">{{cmp_varies}}</span></td><td class="cmp-v"><span class="cmp-i" aria-hidden="true">~</span><span class="cmp-t">{{cmp_varies}}</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="cmp-legend" aria-hidden="true"><span><b class="cmp-y-i">✓</b> {{cmp_yes}}</span><span><b class="cmp-n-i">✕</b> {{cmp_no}}</span><span><b>~</b> {{cmp_varies}}</span></p>
+      <p class="small muted cmp-note">{{cmp_note}}</p>
+      <div class="row l-cta"><a class="btn primary l-big" href="{{=startHref}}" data-start>{{cta_start}}</a></div>
     </div>
   </section>
 

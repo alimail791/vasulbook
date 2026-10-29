@@ -150,3 +150,39 @@ details p{margin-top:8px;color:var(--muted)}
 .l-site-name{font-family:var(--display, inherit);font-size:24px;font-weight:700}
 .l-site-p{color:var(--muted);line-height:1.55;flex:1}
 .l-site-go{color:var(--accent);font-weight:600;margin-top:4px}
+
+/* comparison table */
+.cmp-legend{display:none;gap:14px;flex-wrap:wrap;margin-top:10px;font-size:12.5px;color:var(--muted)}
+.cmp-wrap{margin-top:22px;overflow-x:auto;border:1px solid var(--line);border-radius:16px;background:var(--surface);-webkit-overflow-scrolling:touch}
+.cmp{width:100%;min-width:720px;border-collapse:collapse;font-size:14.5px}
+.cmp th,.cmp td{padding:12px 14px;border-bottom:1px solid var(--line);text-align:center;vertical-align:middle}
+.cmp tbody tr:last-child th,.cmp tbody tr:last-child td{border-bottom:none}
+.cmp thead th{font-size:13px;font-weight:700;color:var(--muted);background:var(--surface-2)}
+.cmp thead th.cmp-vb{color:var(--ink);font-size:17px;font-family:var(--display, inherit)}
+.cmp thead th.cmp-vb b{color:var(--accent)}
+.cmp tbody th{text-align:left;font-weight:600;min-width:200px;position:sticky;left:0;background:var(--surface);z-index:1}
+.cmp .cmp-vb{background:var(--accent-soft)}
+.cmp thead th.cmp-vb{background:var(--accent-soft);border-top:3px solid var(--accent)}
+.cmp-price td{font-weight:600}
+.cmp-price td.cmp-vb{color:var(--accent)}
+.cmp-i{display:block;font-size:18px;font-weight:700;line-height:1.2}
+.cmp-t{display:block;font-size:12.5px;color:var(--muted);margin-top:2px}
+.cmp-y .cmp-i{color:#1B7A3E}
+.cmp-n .cmp-i{color:var(--margin, #B3261E)}
+.cmp-v .cmp-i{color:var(--muted)}
+.cmp-note{margin-top:12px}
+#compare .l-cta{margin-top:18px}
+@media (max-width:720px){
+  .cmp{min-width:0;table-layout:fixed;font-size:12.5px}
+  .cmp th,.cmp td{padding:9px 5px}
+  .cmp thead th{font-size:11px;font-weight:700;line-height:1.25;word-break:break-word;hyphens:auto}
+  .cmp thead th:first-child,.cmp tbody th{width:31%}
+  .cmp thead th.cmp-vb{font-size:11.5px;width:21%;white-space:nowrap;word-break:normal;letter-spacing:-.2px}
+  .cmp tbody th{min-width:0;font-size:12.5px;position:static;padding-left:10px}
+  .cmp-t{display:none}
+  .cmp-price td{font-size:11px;font-weight:600;line-height:1.3}
+  .cmp-legend{display:flex}
+}
+
+.cmp-legend b{font-size:15px}
+.cmp-y-i{color:#1B7A3E}.cmp-n-i{color:var(--margin, #B3261E)}
