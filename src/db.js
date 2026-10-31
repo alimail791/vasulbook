@@ -178,6 +178,10 @@ const MIGRATIONS = [
    )`,
   `CREATE INDEX IF NOT EXISTS site_visits_day ON site_visits(day)`,
   `ALTER TABLE users ADD COLUMN IF NOT EXISTS signup_source TEXT NOT NULL DEFAULT ''`,
+  // WhatsApp messages from the shared bot: number confirmed by tapping a button, and STOP
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_verified BOOLEAN NOT NULL DEFAULT FALSE`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_verified_at TIMESTAMPTZ`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS wa_opt_out BOOLEAN NOT NULL DEFAULT FALSE`,
   // Admin password set through "Forgot password", and its one-time codes
   `CREATE TABLE IF NOT EXISTS admin_settings (
      key TEXT PRIMARY KEY,

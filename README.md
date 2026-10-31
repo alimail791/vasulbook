@@ -81,6 +81,10 @@ Local testing pages: `/dev/run-inactive?days=0` sends the absent email now; sign
 - The QR is made from the owner's UPI ID with the amount filled in. Owners can instead upload the QR from GPay, PhonePe or Paytm Business (stored in `user_qr`).
 - Owners can share the QR image on WhatsApp, download it to print, or copy the payment link. WhatsApp reminders now include the payment link with the customer's balance.
 
+## WhatsApp messages to owners (through the shared bot)
+
+The WA-bot (Raise Academy number) sends owners a welcome, a confirm-number-and-email message, refer & earn invitations and a "we miss you" after 5 idle days. VasulBook gives the bot what it needs through `/api/bot/*` (protected by `BOT_API_KEY`, same value as `VASULBOOK_BOT_KEY` on the bot). Tapping "Yes, my number" sets `phone_verified`; STOP sets `wa_opt_out`. Both show in the admin dashboard.
+
 ## Policy pages (needed for Razorpay)
 
 `/terms`, `/privacy`, `/refund-policy`, `/delivery-policy` and `/contact` are linked in the footer of every landing page and on the app's sign-in screen. Set these on the server so the pages show your registered business details (Razorpay checks that they match your KYC):

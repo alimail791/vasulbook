@@ -246,7 +246,8 @@
     "qr_settings_hint": "आपका UPI QR और ग्राहकों को भेजने के लिए भुगतान लिंक।",
     "link_copied": "लिंक कॉपी हो गया",
     "upi_copied": "UPI ID कॉपी हो गया",
-    "close": "बंद करें"
+    "close": "बंद करें",
+    "wa_hint": "आपका WhatsApp नंबर। हम इस पर खाते की जानकारी भेजते हैं; कभी भी STOP लिखकर बंद करें।"
   },
   "landing": {
     "meta_title": "VasulBook: WhatsApp से ग्राहकों का बकाया वसूलें",

@@ -169,7 +169,7 @@ module.exports = function mountAdmin(app, { wrap, bad, limit, PROD, secret }) {
       where.push(`(lower(u.email) LIKE $${params.length} OR lower(u.shop_name) LIKE $${params.length} OR lower(u.owner_name) LIKE $${params.length} OR u.phone LIKE $${params.length} OR lower(u.referral_code) LIKE $${params.length})`);
     }
     if (STATUS_SQL[query.status]) where.push(STATUS_SQL[query.status]);
-    const sql = `SELECT u.id, u.email, u.owner_name, u.shop_name, u.phone, u.business_type, u.state, u.ui_lang, u.email_verified,
+    const sql = `SELECT u.id, u.email, u.owner_name, u.shop_name, u.phone, u.phone_verified, u.wa_opt_out, u.business_type, u.state, u.ui_lang, u.email_verified,
         u.created_at, u.last_active_at, u.trial_ends_at, u.paid_until, u.referral_code,
         ref.shop_name AS referrer_shop,
         (SELECT count(*) FROM customers c WHERE c.user_id=u.id)::int AS customers,
@@ -211,7 +211,7 @@ module.exports = function mountAdmin(app, { wrap, bad, limit, PROD, secret }) {
     const x = u.rows[0];
     if (!x) return bad(res, "Not found.", 404);
     const counts = await q(`SELECT (SELECT count(*) FROM customers WHERE user_id=$1)::int AS customers, (SELECT count(*) FROM entries WHERE user_id=$1)::int AS entries`, [id]);
-    const safe = { id: x.id, email: x.email, owner_name: x.owner_name, shop_name: x.shop_name, phone: x.phone, business_type: x.business_type, state: x.state, ui_lang: x.ui_lang,
+    const safe = { id: x.id, email: x.email, owner_name: x.owner_name, shop_name: x.shop_name, phone: x.phone, phone_verified: x.phone_verified, wa_opt_out: x.wa_opt_out, business_type: x.business_type, state: x.state, ui_lang: x.ui_lang,
       email_verified: x.email_verified, created_at: x.created_at, last_active_at: x.last_active_at, referral_code: x.referral_code, referrer_shop: x.referrer_shop,
       upi_set: Boolean(x.upi_id), razorpay_connected: Boolean(x.rzp_key_id), ...counts.rows[0], plan: billing.status(x) };
     res.json({ user: safe, payments: pays.rows, referrals: refs.rows, actions: acts.rows });

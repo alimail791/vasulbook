@@ -246,7 +246,8 @@
     "qr_settings_hint": "ਤੁਹਾਡਾ UPI QR ਅਤੇ ਗਾਹਕਾਂ ਨੂੰ ਭੇਜਣ ਲਈ ਭੁਗਤਾਨ ਲਿੰਕ।",
     "link_copied": "ਲਿੰਕ ਕਾਪੀ ਹੋ ਗਿਆ",
     "upi_copied": "UPI ID ਕਾਪੀ ਹੋ ਗਿਆ",
-    "close": "ਬੰਦ ਕਰੋ"
+    "close": "ਬੰਦ ਕਰੋ",
+    "wa_hint": "ਤੁਹਾਡਾ WhatsApp ਨੰਬਰ। ਖਾਤੇ ਦੀ ਜਾਣਕਾਰੀ ਇੱਥੇ ਭੇਜਦੇ ਹਾਂ; ਕਦੇ ਵੀ STOP ਭੇਜ ਕੇ ਬੰਦ ਕਰੋ।"
   },
   "landing": {
     "meta_title": "VasulBook: WhatsApp ਨਾਲ ਗਾਹਕਾਂ ਦਾ ਬਕਾਇਆ ਵਸੂਲੋ",

@@ -246,7 +246,8 @@
     "qr_settings_hint": "तुमचा UPI QR आणि ग्राहकांना पाठवण्यासाठी पेमेंट लिंक.",
     "link_copied": "लिंक कॉपी झाली",
     "upi_copied": "UPI ID कॉपी झाला",
-    "close": "बंद करा"
+    "close": "बंद करा",
+    "wa_hint": "तुमचा WhatsApp नंबर. खात्याची माहिती आम्ही इथे पाठवतो; कधीही STOP पाठवून बंद करा."
   },
   "landing": {
     "meta_title": "VasulBook: WhatsApp ने ग्राहकांची थकबाकी वसूल करा",

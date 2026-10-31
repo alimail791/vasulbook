@@ -246,7 +246,8 @@
     "qr_settings_hint": "ನಿಮ್ಮ UPI QR ಮತ್ತು ಗ್ರಾಹಕರಿಗೆ ಹಂಚಲು ಪಾವತಿ ಲಿಂಕ್.",
     "link_copied": "ಲಿಂಕ್ ಕಾಪಿ ಆಯಿತು",
     "upi_copied": "UPI ID ಕಾಪಿ ಆಯಿತು",
-    "close": "ಮುಚ್ಚಿ"
+    "close": "ಮುಚ್ಚಿ",
+    "wa_hint": "ನಿಮ್ಮ WhatsApp ಸಂಖ್ಯೆ. ಖಾತೆ ಮಾಹಿತಿಯನ್ನು ಇಲ್ಲಿ ಕಳುಹಿಸುತ್ತೇವೆ; ಯಾವಾಗ ಬೇಕಾದರೂ STOP ಕಳುಹಿಸಿ ನಿಲ್ಲಿಸಿ."
   },
   "landing": {
     "meta_title": "VasulBook: WhatsApp ಮೂಲಕ ಗ್ರಾಹಕರ ಬಾಕಿ ವಸೂಲಿ ಮಾಡಿ",

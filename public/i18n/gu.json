@@ -246,7 +246,8 @@
     "qr_settings_hint": "તમારો UPI QR અને ગ્રાહકોને મોકલવા પેમેન્ટ લિંક.",
     "link_copied": "લિંક કૉપિ થઈ",
     "upi_copied": "UPI ID કૉપિ થયું",
-    "close": "બંધ કરો"
+    "close": "બંધ કરો",
+    "wa_hint": "તમારો WhatsApp નંબર. ખાતાની માહિતી અહીં મોકલીએ છીએ; ક્યારેય પણ STOP મોકલી બંધ કરો."
   },
   "landing": {
     "meta_title": "VasulBook: WhatsApp થી ગ્રાહકોનું બાકી વસૂલો",

@@ -246,7 +246,8 @@
     "qr_settings_hint": "మీ UPI QR మరియు కస్టమర్లకు పంపడానికి చెల్లింపు లింక్.",
     "link_copied": "లింక్ కాపీ అయింది",
     "upi_copied": "UPI ID కాపీ అయింది",
-    "close": "మూసివేయి"
+    "close": "మూసివేయి",
+    "wa_hint": "మీ WhatsApp నంబర్. ఖాతా సమాచారం ఇక్కడ పంపుతాం; ఎప్పుడైనా STOP అని పంపి ఆపవచ్చు."
   },
   "landing": {
     "meta_title": "VasulBook: WhatsApp తో కస్టమర్ బకాయిలు వసూలు చేయండి",

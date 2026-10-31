@@ -178,6 +178,7 @@ function publicUser(u) {
     createdAt: u.created_at,
     plan: billing.status(u),
     emailVerified: u.email_verified,
+    phoneVerified: Boolean(u.phone_verified),
     referralCode: u.referral_code,
     referralPopupDue: u.referral_popup_on !== Ledger.todayIST(),
     uiLang: u.ui_lang || "en",
@@ -375,7 +376,8 @@ app.put("/api/settings", auth, wrap(async (req, res) => {
   }
   const { rows } = await q(
     `UPDATE users SET shop_name=$1, owner_name=$2, phone=$3, upi_id=$4, business_type=$5, default_days=$6, reminder_lang=$7,
-       summary_email=$8, auto_remind=$9, rzp_key_id=$10, rzp_key_secret=$11, rzp_webhook_secret=$12, ui_lang=$14, state=$15 WHERE id=$13 RETURNING *`,
+       summary_email=$8, auto_remind=$9, rzp_key_id=$10, rzp_key_secret=$11, rzp_webhook_secret=$12, ui_lang=$14, state=$15,
+       phone_verified = CASE WHEN phone IS DISTINCT FROM $3 THEN FALSE ELSE phone_verified END WHERE id=$13 RETURNING *`,
     [shopName, ownerName, phone, upi, type, days, lang, summary, autoRemind, rzpId, rzpSecret, rzpHook, u.id, uiLang, stateName]);
   res.json({ user: publicUser(rows[0]) });
 }));
@@ -598,6 +600,7 @@ if (!PROD) {
 require("./src/seo")(app, { baseUrl: (req) => appUrl(req).replace(/\/+$/, "") });
 require("./src/legal")(app, { baseUrl: (req) => appUrl(req).replace(/\/+$/, "") });
 require("./src/traffic")(app, { limit, secret: SECRET, PROD });
+require("./src/botapi")(app, { wrap, bad });
 require("./src/pay")(app, { auth, wrap, bad, baseUrl: (req) => appUrl(req).replace(/\/+$/, "") });
 app.get("/admin", (req, res) => { res.setHeader("Cache-Control", "no-cache"); res.setHeader("X-Robots-Tag", "noindex, nofollow"); res.sendFile(path.join(__dirname, "public", "admin.html")); });
 app.get(["/app", "/app/*"], (req, res) => { res.setHeader("Cache-Control", "no-cache"); res.setHeader("X-Robots-Tag", "noindex"); res.sendFile(path.join(__dirname, "public", "index.html")); });

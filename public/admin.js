@@ -124,7 +124,7 @@
     state.total = d.total;
     $("users").innerHTML = d.users.length ? d.users.map((u) => `<tr class="click" data-id="${u.id}" tabindex="0">
       <td><div class="nm">${esc(u.shop_name)}</div><div class="sub">${esc(u.owner_name)}${u.referrer_shop ? ` · via ${esc(u.referrer_shop)}` : ""}</div></td>
-      <td>${esc(u.email)}${u.email_verified ? "" : ` <span class="pill due">not confirmed</span>`}<div class="sub">${esc(u.phone || "")}</div></td>
+      <td>${esc(u.email)}${u.email_verified ? "" : ` <span class="pill due">not confirmed</span>`}<div class="sub">${esc(u.phone || "")}${u.phone ? (u.phone_verified ? " · WhatsApp ✓" : "") + (u.wa_opt_out ? " · WhatsApp off" : "") : ""}</div></td>
       <td>${esc(typeName(u.business_type))}<div class="sub">${esc(u.state || "–")} · ${esc((LANGS[u.ui_lang] || u.ui_lang).split(" ")[0])}</div></td>
       <td>${planCell(u.plan)}</td>
       <td class="r">${num(u.customers)}</td><td class="r">${num(u.entries)}</td>
@@ -150,7 +150,7 @@
     const d = await api("GET", "/api/admin/users/" + id);
     const u = d.user, p = u.plan;
     $("uTitle").textContent = u.shop_name;
-    const facts = [["Owner", u.owner_name], ["Email", u.email + (u.email_verified ? "" : " (not confirmed)")], ["Phone", u.phone || "–"],
+    const facts = [["Owner", u.owner_name], ["Email", u.email + (u.email_verified ? "" : " (not confirmed)")], ["Phone", u.phone ? u.phone + (u.phone_verified ? " (WhatsApp confirmed)" : " (not confirmed)") + (u.wa_opt_out ? ", WhatsApp messages stopped" : "") : "–"],
       ["Type", typeName(u.business_type)], ["State", u.state || "–"], ["Language", LANGS[u.ui_lang] || u.ui_lang],
       ["Plan", `${p.state === "paid" ? "Paid" : p.state === "trial" ? "Free trial" : "Expired"} until ${day(p.accessUntil)}`],
       ["Customers", `${num(u.customers)} customers · ${num(u.entries)} entries`], ["Set up", `UPI ${u.upi_set ? "added" : "not added"} · Razorpay ${u.razorpay_connected ? "connected" : "not connected"}`],

@@ -246,7 +246,8 @@
     "qr_settings_hint": "Your UPI QR and a payment page link to share with customers.",
     "link_copied": "Link copied",
     "upi_copied": "UPI ID copied",
-    "close": "Close"
+    "close": "Close",
+    "wa_hint": "Your WhatsApp number. We send account updates there; reply STOP anytime."
   },
   "landing": {
     "meta_title": "VasulBook: collect customer dues on WhatsApp",
