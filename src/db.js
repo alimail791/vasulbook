@@ -164,6 +164,20 @@ const MIGRATIONS = [
      image TEXT NOT NULL,
      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
+  // Visitor counter (no IPs stored) and where each sign-up came from
+  `CREATE TABLE IF NOT EXISTS site_visits (
+     id BIGSERIAL PRIMARY KEY,
+     day DATE NOT NULL,
+     visitor TEXT NOT NULL,
+     kind TEXT NOT NULL,
+     path TEXT NOT NULL DEFAULT '/',
+     source TEXT NOT NULL DEFAULT 'Direct / typed',
+     device TEXT NOT NULL DEFAULT '',
+     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+     UNIQUE (day, visitor, kind, path)
+   )`,
+  `CREATE INDEX IF NOT EXISTS site_visits_day ON site_visits(day)`,
+  `ALTER TABLE users ADD COLUMN IF NOT EXISTS signup_source TEXT NOT NULL DEFAULT ''`,
   // Admin password set through "Forgot password", and its one-time codes
   `CREATE TABLE IF NOT EXISTS admin_settings (
      key TEXT PRIMARY KEY,

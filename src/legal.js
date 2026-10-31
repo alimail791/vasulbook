@@ -106,7 +106,7 @@ function body(key, b) {
 </ul>
 <p>We may also disclose information if required by law or to protect the rights and safety of our users.</p>
 <h2>5. Cookies and local storage</h2>
-<p>We use one essential cookie to keep you logged in, and your browser’s local storage to remember your language and keep your ledger available offline. We do not use advertising or third-party tracking cookies.</p>
+<p>We use one essential cookie to keep you logged in, and your browser’s local storage to remember your language and keep your ledger available offline. We do not use advertising or third-party tracking cookies. To count visitors we keep an anonymous, random browser ID with the page visited, the device type and the website you came from; we do not store your IP address for this, and counts are deleted after about a year.</p>
 <h2>6. Security and retention</h2>
 <p>Data is sent over HTTPS, passwords are hashed and payment keys are encrypted. We keep your data while your account is open. When you delete your account from Settings, your account and ledger are deleted from our live database; backups and payment records needed for tax and legal purposes are kept only as long as the law requires.</p>
 <h2>7. Your rights</h2>

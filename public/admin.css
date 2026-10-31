@@ -50,3 +50,19 @@
 .switch{display:inline-flex;align-items:center;gap:8px;cursor:pointer;white-space:nowrap}
 .adm-table .nowrap{white-space:nowrap}
 .adm-table .btn.sm{min-height:34px;padding:4px 10px}
+/* visitors & sign-ups */
+.t-kpis{grid-template-columns:repeat(2,1fr)}
+@media (min-width:760px){.t-kpis{grid-template-columns:repeat(4,1fr)}}
+.t-funnel{display:grid;gap:8px}
+.t-step{display:grid;grid-template-columns:150px 1fr 60px 120px;align-items:center;gap:10px;font-size:14px}
+.t-bar{height:14px;background:var(--surface-2);border-radius:7px;overflow:hidden}
+.t-bar span{display:block;height:100%;background:var(--accent);border-radius:7px}
+.t-step .amt{text-align:right;font-weight:600}
+@media (max-width:640px){.t-step{grid-template-columns:110px 1fr 44px}.t-step .sub{display:none}}
+#tChart .t-line{fill:none;stroke:var(--good, #1B7A3E);stroke-width:2.5}
+#tChart .t-dot{fill:var(--good, #1B7A3E)}
+#tChart .bar{fill:var(--accent);opacity:.55}
+.t-legend{display:flex;align-items:center;gap:6px}
+.t-legend .sw{display:inline-block;width:12px;height:12px;border-radius:3px;margin-left:8px}
+.t-legend .sw.v{background:var(--accent);opacity:.55}.t-legend .sw.s{background:var(--good, #1B7A3E)}
+.t-grid h3{font-size:15px;margin:0}

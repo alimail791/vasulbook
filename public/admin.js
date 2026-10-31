@@ -63,7 +63,7 @@
     try { const me = await api("GET", "/api/admin/me"); $("whoami").textContent = me.email; }
     catch { showLogin(); return; }
     $("loginScreen").hidden = true; $("dash").hidden = false;
-    loadCats().finally(() => { loadStats(); loadUsers(); }); loadPayments();
+    loadCats().finally(() => { loadStats(); loadUsers(); }); loadPayments(); loadTraffic();
   }
 
   // ---------- stats ----------
@@ -254,5 +254,57 @@
       closeCat(); toast("Category saved."); loadCats(); loadStats();
     } catch (err) { $("cErr").textContent = err.message; }
     finally { $("cSave").disabled = false; }
+  });
+
+  // ---------- visitors & sign-ups ----------
+  const PAGE_NAMES = { "/": "English", "/hi": "हिन्दी Hindi", "/ta": "தமிழ் Tamil", "/te": "తెలుగు Telugu", "/kn": "ಕನ್ನಡ Kannada", "/ml": "മലയാളം Malayalam", "/mr": "मराठी Marathi", "/bn": "বাংলা Bengali", "/gu": "ગુજરાતી Gujarati", "/pa": "ਪੰਜਾਬੀ Punjabi" };
+  let tDays = 30;
+  const pct = (a, b) => (b ? Math.round((a / b) * 1000) / 10 + "%" : "–");
+  async function loadTraffic() {
+    let d;
+    try { d = await api("GET", "/api/admin/traffic?days=" + tDays); } catch (err) { $("tNote").textContent = err.message; return; }
+    const t = d.totals;
+    $("tKpis").innerHTML = [
+      ["Visitors today", num(t.v_today), `${num(t.s_today)} sign-up${t.s_today === 1 ? "" : "s"} today`, ""],
+      ["Visitors, 7 days", num(t.v_7), `${num(t.s_7)} sign-up${t.s_7 === 1 ? "" : "s"} in 7 days`, ""],
+      [`Visitors, ${d.days} days`, num(t.v_n), "Real people, bots removed", ""],
+      [`Sign-ups, ${d.days} days`, num(t.s_n), `${pct(t.s_n, t.v_n)} of visitors`, t.s_n ? "good" : ""],
+    ].map(([l, v, s2, c]) => `<div class="kpi ${c}"><span class="eyebrow">${l}</span><span class="amt">${v}</span><span class="sub">${esc(s2)}</span></div>`).join("");
+    const steps = [["Visited the site", t.v_n], ["Opened sign-up form", t.o_n], ["Created account", t.s_n], ["Confirmed email", t.c_n]];
+    const top = Math.max(1, steps[0][1]);
+    $("tFunnel").innerHTML = steps.map(([l, n], i) => `<div class="t-step"><span class="t-l">${l}</span><span class="t-bar"><span style="width:${Math.max(n ? 2 : 0, (n / top) * 100)}%"></span></span><span class="amt">${num(n)}</span><span class="sub">${i ? pct(n, steps[i - 1][1]) + " of previous" : ""}</span></div>`).join("");
+    drawTraffic(d.series);
+    $("tSources").innerHTML = d.sources.length ? d.sources.map((r) => `<tr><td>${esc(r.k)}</td><td class="r">${num(r.visitors)}</td><td class="r">${num(r.opened)}</td><td class="r">${num(r.signups)}</td></tr>`).join("") : `<tr><td colspan="4" class="muted">No visitors yet</td></tr>`;
+    bars($("tDevices"), d.devices, (x) => x || "Unknown");
+    bars($("tPages"), d.pages.filter((r) => PAGE_NAMES[r.k]), (x) => PAGE_NAMES[x] || x);
+    $("tNote").textContent = t.tracking_since ? `Counting since ${day(t.tracking_since)}. Bots, crawlers and your own admin visits are not counted. Sign-ups before that date show as "Before tracking".` : "Counting starts now. Bots, crawlers and your own admin visits are not counted.";
+  }
+  function drawTraffic(series) {
+    const W = 760, H = 220, padL = 30, padB = 26, padT = 18, n = series.length;
+    const max = Math.max(1, ...series.map((s) => s.visitors), ...series.map((s) => s.signups));
+    const step = (W - padL - 8) / n, bw = Math.max(3, step * 0.62);
+    const y = (v) => H - padB - (v / max) * (H - padB - padT);
+    const ticks = [0, Math.ceil(max / 2), max].filter((v, i, a) => a.indexOf(v) === i);
+    const M = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const lab = (d) => { const [, m, dd] = d.split("-"); return `${Number(dd)} ${M[Number(m) - 1]}`; };
+    let svg = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Visitors and sign-ups per day">`;
+    ticks.forEach((tk) => { svg += `<line class="grid" x1="${padL}" x2="${W - 4}" y1="${y(tk)}" y2="${y(tk)}"/><text x="${padL - 6}" y="${y(tk) + 4}" text-anchor="end">${tk}</text>`; });
+    const every = Math.ceil(n / 7);
+    let line = "";
+    series.forEach((s, i) => {
+      const x = padL + i * step + (step - bw) / 2, cx = x + bw / 2;
+      svg += `<rect class="bar" x="${x.toFixed(1)}" y="${y(s.visitors).toFixed(1)}" width="${bw.toFixed(1)}" height="${(H - padB - y(s.visitors)).toFixed(1)}" rx="2"><title>${lab(s.d)}: ${s.visitors} visitors, ${s.opened} opened sign-up, ${s.signups} signed up</title></rect>`;
+      line += `${i ? "L" : "M"}${cx.toFixed(1)},${y(s.signups).toFixed(1)}`;
+      if (i % every === 0 || i === n - 1) svg += `<text x="${cx.toFixed(1)}" y="${H - 8}" text-anchor="middle">${lab(s.d)}</text>`;
+    });
+    svg += `<path class="t-line" d="${line}"/>`;
+    series.forEach((s, i) => { if (s.signups) { const cx = padL + i * step + step / 2; svg += `<circle class="t-dot" cx="${cx.toFixed(1)}" cy="${y(s.signups).toFixed(1)}" r="3.5"><title>${lab(s.d)}: ${s.signups} sign-ups</title></circle>`; } });
+    $("tChart").innerHTML = svg + "</svg>";
+  }
+  $("tDays").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    tDays = Number(b.dataset.d);
+    $("tDays").querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+    loadTraffic();
   });
 })();

@@ -64,6 +64,28 @@
   <main class="adm">
     <section class="adm-kpis" id="kpis" aria-label="Key numbers"></section>
 
+    <section class="card stack" id="trafficCard">
+      <div class="sec-head"><h2>Visitors &amp; sign-ups</h2>
+        <div class="filters" role="group" aria-label="Period" id="tDays">
+          <button class="chip" type="button" data-d="7" aria-pressed="false">7 days</button>
+          <button class="chip" type="button" data-d="30" aria-pressed="true">30 days</button>
+          <button class="chip" type="button" data-d="90" aria-pressed="false">90 days</button>
+        </div>
+      </div>
+      <div class="adm-kpis t-kpis" id="tKpis"></div>
+      <div class="t-funnel" id="tFunnel" aria-label="Sign-up funnel"></div>
+      <div class="adm-chart" id="tChart"></div>
+      <p class="small muted t-legend"><span class="sw v"></span>Visitors <span class="sw s"></span>Sign-ups</p>
+      <div class="adm-grid three t-grid">
+        <section class="stack"><h3>Where visitors came from</h3>
+          <div class="adm-table-wrap"><table class="adm-table"><thead><tr><th>Source</th><th class="r">Visitors</th><th class="r">Opened sign-up</th><th class="r">Signed up</th></tr></thead><tbody id="tSources"></tbody></table></div>
+        </section>
+        <section class="stack"><h3>Device</h3><ul class="adm-bars" id="tDevices"></ul></section>
+        <section class="stack"><h3>Page language</h3><ul class="adm-bars" id="tPages"></ul></section>
+      </div>
+      <p class="small muted" id="tNote"></p>
+    </section>
+
     <div class="adm-grid">
       <section class="card stack adm-chart-card">
         <div class="sec-head"><h2>Sign-ups, last 30 days</h2><span class="small muted" id="signupTotal"></span></div>

@@ -31,6 +31,7 @@ if (!SECRET || SECRET.length < 32) {
 }
 const COOKIE = "vb_session";
 const categories = require("./src/categories");
+const traffic = require("./src/traffic");
 const LANGS = VBLang.CODES;
 
 const app = express();
@@ -251,9 +252,10 @@ app.post("/api/auth/register", limit(10, 15 * 60e3), wrap(async (req, res) => {
   for (let i = 0; i < 4 && !user; i++) {
     try {
       const { rows } = await q(
-        `INSERT INTO users (email, password_hash, owner_name, shop_name, phone, business_type, trial_ends_at, email_verified, referral_code, referred_by, last_active_at, state, ui_lang, reminder_lang)
-         VALUES ($1,$2,$3,$4,$5,$6, now() + make_interval(months => $7), $8, $9, $10, now(), $11, $12, $13) RETURNING *`,
-        [e, hash, ownerName, shopName, phone, type, trialMonths, verified, newReferralCode(), referrerId, st, uiLang, st ? VBLang.STATES[st] : uiLang]);
+        `INSERT INTO users (email, password_hash, owner_name, shop_name, phone, business_type, trial_ends_at, email_verified, referral_code, referred_by, last_active_at, state, ui_lang, reminder_lang, signup_source)
+         VALUES ($1,$2,$3,$4,$5,$6, now() + make_interval(months => $7), $8, $9, $10, now(), $11, $12, $13, $14) RETURNING *`,
+        [e, hash, ownerName, shopName, phone, type, trialMonths, verified, newReferralCode(), referrerId, st, uiLang, st ? VBLang.STATES[st] : uiLang,
+         traffic.sourceOf((b.src || {}).u, (b.src || {}).r, (b.src || {}).c || b.referralCode)]);
       user = rows[0];
     } catch (err) {
       if (err.code === "23505" && String(err.message).includes("email")) return bad(res, "An account with this email already exists. Try logging in.", 409);
@@ -595,6 +597,7 @@ if (!PROD) {
 // ---------- static PWA ----------
 require("./src/seo")(app, { baseUrl: (req) => appUrl(req).replace(/\/+$/, "") });
 require("./src/legal")(app, { baseUrl: (req) => appUrl(req).replace(/\/+$/, "") });
+require("./src/traffic")(app, { limit, secret: SECRET, PROD });
 require("./src/pay")(app, { auth, wrap, bad, baseUrl: (req) => appUrl(req).replace(/\/+$/, "") });
 app.get("/admin", (req, res) => { res.setHeader("Cache-Control", "no-cache"); res.setHeader("X-Robots-Tag", "noindex, nofollow"); res.sendFile(path.join(__dirname, "public", "admin.html")); });
 app.get(["/app", "/app/*"], (req, res) => { res.setHeader("Cache-Control", "no-cache"); res.setHeader("X-Robots-Tag", "noindex"); res.sendFile(path.join(__dirname, "public", "index.html")); });

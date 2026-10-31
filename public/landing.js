@@ -11,6 +11,7 @@
 
   window.addEventListener("hashchange", () => { if (location.hash.startsWith("#/")) location.replace("/app" + location.hash); });
 
+  if (window.VBTrack) VBTrack.send("view");
   const lang = document.body.dataset.lang || "en";
   const pagePath = (c) => (c === "en" ? "/" : "/" + c);
   const remember = (c) => { try { localStorage.setItem("vb_lang", c); } catch { /* ignore */ } };

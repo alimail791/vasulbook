@@ -217,6 +217,51 @@ module.exports = function mountAdmin(app, { wrap, bad, limit, PROD, secret }) {
     res.json({ user: safe, payments: pays.rows, referrals: refs.rows, actions: acts.rows });
   }));
 
+  // ---------- visitors & sign-ups ----------
+  app.get("/api/admin/traffic", adminAuth, wrap(async (req, res) => {
+    const days = [7, 30, 90].includes(Number(req.query.days)) ? Number(req.query.days) : 30;
+    const IST = "Asia/Kolkata";
+    const since = `(now() AT TIME ZONE '${IST}')::date - ${days - 1}`;
+    const [daily, sig, src, srcSig, dev, pages, tot] = await Promise.all([
+      q(`SELECT to_char(day,'YYYY-MM-DD') AS d,
+           count(DISTINCT visitor) FILTER (WHERE kind='view')::int AS visitors,
+           count(DISTINCT visitor) FILTER (WHERE kind='reg_open')::int AS opened
+         FROM site_visits WHERE day >= ${since} GROUP BY day`),
+      q(`SELECT to_char((created_at AT TIME ZONE '${IST}')::date,'YYYY-MM-DD') AS d, count(*)::int AS n
+         FROM users WHERE (created_at AT TIME ZONE '${IST}')::date >= ${since} GROUP BY 1`),
+      q(`SELECT source AS k, count(DISTINCT visitor)::int AS visitors,
+           count(DISTINCT visitor) FILTER (WHERE kind='reg_open')::int AS opened
+         FROM site_visits WHERE day >= ${since} GROUP BY 1 ORDER BY 2 DESC LIMIT 12`),
+      q(`SELECT COALESCE(NULLIF(signup_source,''),'Before tracking') AS k, count(*)::int AS n
+         FROM users WHERE (created_at AT TIME ZONE '${IST}')::date >= ${since} GROUP BY 1`),
+      q(`SELECT device AS k, count(DISTINCT visitor)::int AS n FROM site_visits WHERE kind='view' AND day >= ${since} GROUP BY 1 ORDER BY 2 DESC`),
+      q(`SELECT path AS k, count(DISTINCT (visitor, day))::int AS n FROM site_visits WHERE kind='view' AND day >= ${since} GROUP BY 1 ORDER BY 2 DESC LIMIT 12`),
+      q(`SELECT
+           (SELECT count(DISTINCT visitor) FROM site_visits WHERE kind='view' AND day = (now() AT TIME ZONE '${IST}')::date)::int AS v_today,
+           (SELECT count(DISTINCT visitor) FROM site_visits WHERE kind='view' AND day >= (now() AT TIME ZONE '${IST}')::date - 6)::int AS v_7,
+           (SELECT count(DISTINCT visitor) FROM site_visits WHERE kind='view' AND day >= ${since})::int AS v_n,
+           (SELECT count(DISTINCT visitor) FROM site_visits WHERE kind='reg_open' AND day >= ${since})::int AS o_n,
+           (SELECT count(*) FROM users WHERE (created_at AT TIME ZONE '${IST}')::date = (now() AT TIME ZONE '${IST}')::date)::int AS s_today,
+           (SELECT count(*) FROM users WHERE (created_at AT TIME ZONE '${IST}')::date >= (now() AT TIME ZONE '${IST}')::date - 6)::int AS s_7,
+           (SELECT count(*) FROM users WHERE (created_at AT TIME ZONE '${IST}')::date >= ${since})::int AS s_n,
+           (SELECT count(*) FROM users WHERE email_verified AND (created_at AT TIME ZONE '${IST}')::date >= ${since})::int AS c_n,
+           (SELECT to_char(min(day),'YYYY-MM-DD') FROM site_visits) AS tracking_since`),
+    ]);
+    // Fill every day so the chart has no gaps.
+    const map = {}; daily.rows.forEach((r) => { map[r.d] = r; });
+    const smap = {}; sig.rows.forEach((r) => { smap[r.d] = r.n; });
+    const series = [];
+    const today = new Date(Date.now() + 5.5 * 3600e3);
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date(today.getTime() - i * 864e5).toISOString().slice(0, 10);
+      series.push({ d, visitors: (map[d] || {}).visitors || 0, opened: (map[d] || {}).opened || 0, signups: smap[d] || 0 });
+    }
+    const sMap = {}; srcSig.rows.forEach((r) => { sMap[r.k] = r.n; });
+    const sources = src.rows.map((r) => ({ ...r, signups: sMap[r.k] || 0 }));
+    srcSig.rows.forEach((r) => { if (!sources.some((x) => x.k === r.k)) sources.push({ k: r.k, visitors: 0, opened: 0, signups: r.n }); });
+    res.json({ days, totals: tot.rows[0], series, sources, devices: dev.rows, pages: pages.rows });
+  }));
+
   // ---------- business categories ----------
   function cleanNames(obj) {
     const out = {};

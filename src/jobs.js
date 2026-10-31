@@ -111,6 +111,7 @@ function start() {
   cron.schedule("0 10 * * *", () => planNotices().catch((e) => console.error("[plan notice job]", e)), opts);
   // Clean up old email codes once a day.
   cron.schedule("15 3 * * *", () => q("DELETE FROM email_codes WHERE used OR expires_at < now() - interval '1 day'").catch(() => {}), opts);
+  cron.schedule("20 3 * * *", () => q("DELETE FROM site_visits WHERE day < (now() - interval '400 days')::date").catch(() => {}), opts);
 }
 
 module.exports = { start, eveningSummaries, autoReminders, planNotices, inactiveNudges };

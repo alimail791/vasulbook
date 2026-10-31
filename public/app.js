@@ -160,6 +160,7 @@
     $("authTabs").hidden = !tabs;
     $("authTabs").querySelectorAll("button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === which)));
     $(which + "Form").hidden = false;
+    if (which === "register" && !state.regTracked && window.VBTrack) { state.regTracked = true; VBTrack.send("reg_open", "/app"); }
   }
   $("authTabs").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) showAuth(b.dataset.tab); });
   $("toForgot").addEventListener("click", () => { $("fEmail").value = $("lEmail").value; showAuth("forgot"); });
@@ -202,8 +203,9 @@
       const d = await api("POST", "/api/auth/register", {
         ownerName: $("rOwner").value, shopName: $("rShop").value, businessType: $("rType").value,
         phone: $("rPhone").value, email: $("rEmail").value, password: $("rPass").value, referralCode: $("rRef").value,
-        state: $("rState").value, uiLang: i18n.lang,
+        state: $("rState").value, uiLang: i18n.lang, src: window.VBTrack ? VBTrack.source() : {},
       });
+      if (window.VBTrack) VBTrack.send("signup", "/app");
       $("rPass").value = "";
       try { localStorage.removeItem("vb_ref"); } catch { /* ignore */ }
       if (d.user.emailVerified) { await enterApp(d.user); }

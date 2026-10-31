@@ -1,6 +1,6 @@
 /* VasulBook service worker: app shell offline, last ledger data offline, fonts cached. */
-const VERSION = "vb-v10";
-const SHELL = ["/", "/app", "/app.css", "/app.js", "/ledger.js", "/i18n/meta.js", "/landing.css", "/landing.js", "/admin", "/admin.css", "/admin.js", "/admin.webmanifest", "/manifest.webmanifest",
+const VERSION = "vb-v11";
+const SHELL = ["/", "/app", "/app.css", "/app.js", "/ledger.js", "/track.js", "/i18n/meta.js", "/landing.css", "/landing.js", "/admin", "/admin.css", "/admin.js", "/admin.webmanifest", "/manifest.webmanifest",
   "/icons/icon.svg", "/icons/icon-192.png", "/icons/icon-512.png", "/icons/maskable-512.png", "/icons/apple-touch-icon.png"];
 const DATA = "vb-data";
 
@@ -38,7 +38,7 @@ self.addEventListener("fetch", (e) => {
     }).catch(() => caches.open(DATA).then((c) => c.match(req)).then((hit) => hit || Response.error())));
     return;
   }
-  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/media/") || url.pathname === "/whatsapp") return;
+  if (url.pathname === "/api/t" || url.pathname.startsWith("/api/") || url.pathname.startsWith("/media/") || url.pathname === "/whatsapp") return;
 
   // Page navigations: network first, shell when offline
   if (req.mode === "navigate") {
