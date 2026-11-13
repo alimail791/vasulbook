@@ -14,6 +14,19 @@ app.use(express.json({ verify: (req, _res, buf) => { req.raw = buf; } }));
 app.get('/', (_req, res) => res.send(`${cfg.BRAND} WhatsApp bot is running.`));
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
+const page = (title, body) => `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} – ${cfg.BRAND}</title>
+<style>body{font-family:system-ui,sans-serif;max-width:720px;margin:0 auto;padding:24px;line-height:1.6;color:#222}h1{font-size:22px}h2{font-size:17px;margin-top:22px}</style></head><body>${body}</body></html>`;
+app.get('/privacy', (_req, res) => res.send(page('Privacy Policy', `<h1>${cfg.BRAND} – Privacy Policy</h1>
+<p>${cfg.BRAND} (operated by VasulBook, vasulbook.com) lets customers order from local shops on WhatsApp.</p>
+<h2>What we collect</h2><p>Your WhatsApp number and profile name, the messages you send to our WhatsApp number, your orders, and the delivery address you share. Shops provide their name, area, owner number, UPI ID, items, prices and stock.</p>
+<h2>How we use it</h2><p>Only to take and deliver your orders, send order updates and invoices, show shops their orders and sales, and bill shops for our service. We do not sell your data or use it for third-party advertising.</p>
+<h2>Who sees it</h2><p>The shop you order from sees your name, number, order and address. Our delivery staff see delivery details. Data is processed by Meta (WhatsApp), our hosting provider and, for shop payments, Razorpay.</p>
+<h2>Retention & deletion</h2><p>Order records are kept for accounting. To delete your data, send "delete my data" to our WhatsApp number or email info@vasulbook.com.</p>
+<h2>Contact</h2><p>info@vasulbook.com</p>`)));
+app.get('/terms', (_req, res) => res.send(page('Terms', `<h1>${cfg.BRAND} – Terms of Service</h1>
+<p>Shops listed on ${cfg.BRAND} are independent sellers responsible for their products, prices, stock and invoices. Customers pay the shop directly (UPI or cash). Shops pay a one-time setup fee of ₹${cfg.SETUP_FEE} and a service fee of ${cfg.COMM * 100}% of monthly sales. Home delivery, where offered, is provided by ${cfg.BRAND}. Contact: info@vasulbook.com</p>`)));
+app.get('/delete-data', (_req, res) => res.send(page('Data deletion', `<h1>Delete your data</h1><p>Send "delete my data" to our WhatsApp number or email info@vasulbook.com with your phone number. We delete your data within 30 days, except records the law requires us to keep.</p>`)));
+
 // --- Meta webhook verification
 app.get('/webhook', (req, res) => {
   if (req.query['hub.mode'] === 'subscribe' && req.query['hub.verify_token'] === cfg.WA_VERIFY) return res.send(req.query['hub.challenge']);
