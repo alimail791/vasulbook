@@ -487,6 +487,10 @@ async function handle(from, name, v, btn) {
     }
     const isAdmin = cfg.ADMINS.includes(from);
     c.ownShops = await db.shops.byOwner(from);
+    console.log('IN', from, isAdmin ? '(admin)' : c.ownShops.length ? '(owner)' : '(customer)', JSON.stringify(String(v).slice(0, 60)));
+    if (low === '#whoami' || low === '#id') {
+      return await out(from, `🔎 Your WhatsApp number as the bot sees it: *+${from}*\nRole: *${isAdmin ? 'Admin' : c.ownShops.length ? 'Shop owner' : 'Customer'}*\nAdmin numbers set: ${cfg.ADMINS.map((a) => '+' + a).join(', ') || 'none'}`);
+    }
     if (low === '#customer') { sess.data.mode = 'customer'; return await custWelcome(c); }
     if (low === '#admin' || low === '#shop') delete sess.data.mode;
     let role = sess.data.mode === 'customer' ? 'customer' : isAdmin ? 'admin' : c.ownShops.length ? 'owner' : 'customer';
