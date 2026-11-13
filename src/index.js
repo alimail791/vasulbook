@@ -37,6 +37,8 @@ app.post('/webhook', (req, res) => {
   res.sendStatus(200);
   for (const e of req.body.entry || []) for (const ch of e.changes || []) {
     const val = ch.value || {};
+    // Ignore events for other numbers on the same Meta app (e.g. the Raise Academy bot)
+    if (cfg.WA_PHONE_ID && val.metadata && val.metadata.phone_number_id && val.metadata.phone_number_id !== cfg.WA_PHONE_ID) continue;
     const names = Object.fromEntries((val.contacts || []).map((x) => [x.wa_id, x.profile && x.profile.name]));
     for (const m of val.messages || []) {
       if (seen.has(m.id)) continue;
