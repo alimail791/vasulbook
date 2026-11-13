@@ -1,6 +1,7 @@
 // End-to-end flow test: simulates WhatsApp messages from admin, owner, customer.
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgres://postgres@localhost:5433/bazaar';
 process.env.PUBLIC_URL = 'https://example.test';
+process.env.ADMIN_PHONES = '9003264537';
 const assert = require('assert');
 const db = require('../src/db'); const wa = require('../src/wa'); const bot = require('../src/bot');
 const ADMIN = '919003264537', OWNER = '919840011111', CUST = '919876543210';
