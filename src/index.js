@@ -109,9 +109,20 @@ async function waDiagnose() {
     return r.json().catch(() => ({ status: r.status }));
   };
   out.phone = await g(`${cfg.WA_PHONE_ID}?fields=display_phone_number,verified_name,code_verification_status,quality_rating,platform_type,status`);
-  if (process.env.WA_WABA_ID) {
-    out.subscribe = await g(`${process.env.WA_WABA_ID}/subscribed_apps`, 'POST');
-    out.subscribed_apps = await g(`${process.env.WA_WABA_ID}/subscribed_apps`);
+  // What does this token cover? (scopes + WhatsApp account IDs)
+  const dbg = await g(`debug_token?input_token=${encodeURIComponent(cfg.WA_TOKEN)}`);
+  const d = (dbg && dbg.data) || {};
+  out.token = { valid: d.is_valid, app_id: d.app_id, type: d.type, expires_at: d.expires_at, scopes: d.scopes, granular_scopes: d.granular_scopes, error: dbg.error && dbg.error.message };
+  const ids = new Set();
+  if (process.env.WA_WABA_ID) ids.add(process.env.WA_WABA_ID);
+  for (const gs of d.granular_scopes || []) if (/whatsapp/.test(gs.scope)) (gs.target_ids || []).forEach((x) => ids.add(x));
+  out.wabas = {};
+  for (const id of ids) {
+    const info = await g(`${id}?fields=id,name`);
+    const phones = await g(`${id}/phone_numbers?fields=id,display_phone_number`);
+    const sub = await g(`${id}/subscribed_apps`, 'POST');
+    const list = await g(`${id}/subscribed_apps`);
+    out.wabas[id] = { info, phones, subscribe: sub, subscribed_apps: list };
   }
   return out;
 }
