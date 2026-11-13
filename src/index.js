@@ -100,8 +100,29 @@ app.get('/admin', async (req, res) => {
   res.send(await dashboard.html(req.query.key));
 });
 
+// Checks the token and links the WhatsApp Business Account to this app's webhook.
+async function waDiagnose() {
+  const out = {};
+  if (!cfg.WA_TOKEN) return { error: 'WA_TOKEN not set' };
+  const g = async (path, method = 'GET') => {
+    const r = await fetch(`https://graph.facebook.com/${cfg.WA_API_VERSION}/${path}`, { method, headers: { Authorization: 'Bearer ' + cfg.WA_TOKEN } });
+    return r.json().catch(() => ({ status: r.status }));
+  };
+  out.phone = await g(`${cfg.WA_PHONE_ID}?fields=display_phone_number,verified_name,code_verification_status,quality_rating,platform_type,status`);
+  if (process.env.WA_WABA_ID) {
+    out.subscribe = await g(`${process.env.WA_WABA_ID}/subscribed_apps`, 'POST');
+    out.subscribed_apps = await g(`${process.env.WA_WABA_ID}/subscribed_apps`);
+  }
+  return out;
+}
+app.get('/admin/wa-check', async (req, res) => {
+  if (req.query.key !== cfg.ADMIN_KEY) return res.status(401).send('Unauthorized');
+  res.json(await waDiagnose());
+});
+
 async function start() {
   await db.init();
+  waDiagnose().then((d) => console.log('WA check:', JSON.stringify(d))).catch((e) => console.error('WA check failed', e.message));
   return app.listen(cfg.PORT, () => console.log(`${cfg.BRAND} listening on ${cfg.PORT} · admins ${cfg.ADMINS.join(',')}`));
 }
 if (require.main === module) start().catch((e) => { console.error(e); process.exit(1); });
