@@ -109,6 +109,14 @@ async function waDiagnose() {
     return r.json().catch(() => ({ status: r.status }));
   };
   out.phone = await g(`${cfg.WA_PHONE_ID}?fields=display_phone_number,verified_name,code_verification_status,quality_rating,platform_type,status`);
+  // Real numbers must be registered on Cloud API once (needs a 6-digit PIN in WA_PIN).
+  if (process.env.WA_PIN && out.phone && out.phone.status && out.phone.status !== 'CONNECTED') {
+    const r = await fetch(`https://graph.facebook.com/${cfg.WA_API_VERSION}/${cfg.WA_PHONE_ID}/register`, {
+      method: 'POST', headers: { Authorization: 'Bearer ' + cfg.WA_TOKEN, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messaging_product: 'whatsapp', pin: process.env.WA_PIN }),
+    });
+    out.register = await r.json().catch(() => ({ status: r.status }));
+  }
   // What does this token cover? (scopes + WhatsApp account IDs)
   const dbg = await g(`debug_token?input_token=${encodeURIComponent(cfg.WA_TOKEN)}`);
   const d = (dbg && dbg.data) || {};
