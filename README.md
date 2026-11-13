@@ -2,7 +2,7 @@
 
 One WhatsApp number for many local grocery shops.
 
-- **Admin** (ADMIN_PHONES, default 9003264537): adds shops and collects the ₹2,000 setup fee. Pauses or resumes shops and turns delivery on or off. Sees each shop's sales and the 2% commission, sends monthly bills and runs the delivery desk. Has a web dashboard.
+- **Admin** (ADMIN_PHONES — your personal number; the bot itself runs on 9003264537): adds shops and collects the ₹2,000 setup fee. Pauses or resumes shops and turns delivery on or off. Sees each shop's sales and the 2% commission, sends monthly bills and runs the delivery desk. Has a web dashboard.
 - **Shop owner** (the number the admin registered for the shop): adds items with `Name | Category | Price | Stock` and updates them with `price Sugar 1kg 50`, `stock Sugar 1kg 40` or `remove Sugar 1kg`. Sets `upi name@okaxis`, `delfee 30` and `minorder 200`. Gets order alerts and accepts, rejects or marks orders ready. Sees sales and invoices and can opt in to admin delivery.
 - **Customer** (anyone else): picks a shop, browses or searches, uses a cart and chooses pickup or home delivery. Pays the shop by UPI or in cash, gets a PDF invoice and receives status updates.
 
@@ -19,7 +19,7 @@ Testing tip: any number can send `#customer` to act as a customer, then `#admin`
 | `WA_PHONE_NUMBER_ID` | Phone number ID of the bot's WhatsApp number |
 | `WA_VERIFY_TOKEN` | Any secret; use the same value in Meta's webhook setup |
 | `WA_APP_SECRET` | Meta app secret (checks webhook signatures) |
-| `ADMIN_PHONES` | `9003264537` (comma-separated for more than one) |
+| `ADMIN_PHONES` | Your personal WhatsApp number (not the bot number 9003264537); comma-separated for more than one |
 | `ADMIN_KEY` | Password for `/admin?key=...` |
 | `ADMIN_UPI` | Your UPI ID for setup fees and bills if Razorpay isn't set up |
 | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | Optional payment links for the setup fee and monthly bill |
