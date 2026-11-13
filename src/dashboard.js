@@ -13,6 +13,12 @@ async function html() {
     const r = await db.one('select count(*)::int n, count(*) filter (where stock<5)::int low from items where shop_id=$1', [s.id]);
     s.items = r.n; s.low = r.low;
   }
+  const areas = await db.areas.all();
+  for (const a of areas) {
+    const sh = shops.filter((s) => s.area_id === a.id);
+    a.n = sh.length; a.sales = sh.reduce((t, s) => t + s.ms, 0); a.paid = sh.filter((s) => s.paid).length;
+    a.share = (a.sales * a.comm_pct) / 100 + a.paid * cfg.SETUP_FEE * a.setup_share;
+  }
   const orders = await db.all(`select o.*, s.name shop_name from orders o join shops s on s.id=o.shop_id order by o.id desc limit 100`);
   const del = (await db.one(`select coalesce(sum(del_fee),0) s from orders where status='Completed' and created_at >= date_trunc('month', now() at time zone 'Asia/Kolkata') at time zone 'Asia/Kolkata'`)).s;
   const month = new Date().toLocaleString('en-IN', { month: 'long', timeZone: 'Asia/Kolkata' });
@@ -32,6 +38,8 @@ th{background:#f7f8f8;color:#54656f}.tag{padding:2px 7px;border-radius:10px;font
 <div class="k"><small>Your ${cfg.COMM * 100}% commission</small><b>${rs(gmv * cfg.COMM)}</b></div>
 <div class="k"><small>Delivery charges (month)</small><b>${rs(del)}</b></div>
 <div class="k"><small>Orders (last 100)</small><b>${orders.length}</b></div></div>
+<h3>Areas & area admins</h3><div class="tw"><table><tr><th>Area</th><th>Area admin</th><th>Radius</th><th>Shops</th><th>Month sales</th><th>Area admin share (${cfg.AREA_COMM_PCT}% + ${Math.round(cfg.AREA_SETUP_SHARE * 100)}% setup)</th><th>Status</th></tr>
+${areas.map((a) => `<tr><td><b>${esc(a.name)}</b></td><td>${a.admin_phone ? '+' + a.admin_phone : '—'}</td><td>${a.lat != null ? a.radius_km + ' km' : 'no location'}</td><td>${a.n}</td><td>${rs(a.sales)}</td><td>${rs(a.share)}</td><td>${a.active ? '<span class="tag g">Active</span>' : '<span class="tag r">Paused</span>'}</td></tr>`).join('') || '<tr><td colspan="7">No areas yet — add one from WhatsApp: menu → Areas & admins.</td></tr>'}</table></div>
 <h3>Shops</h3><div class="tw"><table><tr><th>Shop</th><th>Area</th><th>Owner</th><th>Status</th><th>Delivery</th><th>Items</th><th>Low stock</th><th>Month sales</th><th>${cfg.COMM * 100}% due</th><th>Setup fee</th></tr>
 ${shops.map((s) => `<tr><td><b>${esc(s.name)}</b> <span style="color:#889">${s.code}</span></td><td>${esc(s.area)}</td><td>+${s.owner_phone}</td><td>${!s.paid ? '<span class="tag y">Pending</span>' : s.active ? '<span class="tag g">Live</span>' : '<span class="tag r">Paused</span>'}</td><td>${s.delivery ? '🛵 ' + rs(s.del_fee) : 'Pickup only'}</td><td>${s.items}</td><td>${s.low}</td><td>${rs(s.ms)}</td><td>${rs(s.ms * cfg.COMM)}</td><td>${s.paid ? '✅' : '⏳'}</td></tr>`).join('') || '<tr><td colspan="10">No shops yet — add one from WhatsApp.</td></tr>'}</table></div>
 <h3>Orders & invoices</h3><div class="tw"><table><tr><th>#</th><th>Date</th><th>Shop</th><th>Invoice</th><th>Customer</th><th>Mode</th><th>Total</th><th>Payment</th><th>Status</th></tr>

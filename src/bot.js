@@ -37,6 +37,29 @@ async function notify(to, text, btns = []) {
   }
 }
 const notifyAdmins = (text, btns) => Promise.all(cfg.ADMINS.map((a) => notify(a, text, btns)));
+// The area admin of a shop's locality (if any)
+async function areaAdminOf(s) { if (!s || !s.area_id) return null; const a = await db.areas.get(s.area_id); return a && a.admin_phone ? a.admin_phone : null; }
+// Main admins + that shop's area admin
+async function notifyShopAdmins(s, text, btns) {
+  const to = new Set(cfg.ADMINS); const aa = await areaAdminOf(s); if (aa) to.add(aa);
+  await Promise.all([...to].map((p) => notify(p, text, btns)));
+}
+// Deliveries: area admin handles them; main admins only if the area has no admin
+async function notifyDelivery(s, text, btns) {
+  const aa = await areaAdminOf(s);
+  if (aa) return notify(aa, text, btns);
+  return notifyAdmins(text, btns);
+}
+const km = (a, b) => {
+  const R = 6371, r = (x) => (x * Math.PI) / 180;
+  const dLat = r(b.lat - a.lat), dLng = r(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(r(a.lat)) * Math.cos(r(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+};
+const fmtKm = (d) => (d < 1 ? `${Math.round(d * 1000)} m` : `${d.toFixed(1)} km`);
+// Shops this admin may manage (main admin: all; area admin: own areas)
+async function scopedShops(c) { const all = await db.shops.all(); return c.isSuper ? all : all.filter((s) => c.areaIds.includes(s.area_id)); }
+const inScope = (c, s) => !!s && (c.isSuper || c.areaIds.includes(s.area_id));
 
 async function sendInvoice(to, o, s, btns = []) {
   if (cfg.PUBLIC_URL) {
@@ -58,8 +81,8 @@ async function setStatus(o, st) {
   if (st === 'Ready') {
     if (o.mode === 'pickup') await notify(ck, `📦 Order #${n} is *ready for pickup* at ${s.name}, ${s.area}.\nShow order number #${n} at the counter.${o.paid ? '' : ' Pay ' + rs(o.total) + ' at the shop.'}`);
     else {
-      await notify(ck, `📦 Order #${n} is packed. A ${cfg.BRAND} rider will pick it up shortly.`);
-      await notifyAdmins(`📦 *Pickup ready* — order #${n}\nFrom: ${s.name}, ${s.area}\nTo: ${o.addr}\nCustomer: +${o.cust_phone}\nCollect: ${o.paid ? 'Prepaid' : rs(o.total) + ' cash'}`,
+      await notify(ck, `📦 Order #${n} is packed. A delivery partner will pick it up shortly.`);
+      await notifyDelivery(s, `📦 *Pickup ready* — order #${n}\nFrom: ${s.name}, ${s.area}\nTo: ${o.addr}\nCustomer: +${o.cust_phone}\nCollect: ${o.paid ? 'Prepaid' : rs(o.total) + ' cash'}`,
         [[`🛵 Dispatch #${n}`, 'disp:' + n], ['🛵 Delivery desk', 'deliv']]);
     }
   }
@@ -103,76 +126,171 @@ async function activate(s) {
   const n = await itemCount(s.id);
   await notify(s.owner_phone, `🎉 Payment of ${rs(cfg.SETUP_FEE)} received.\n*${s.name} is now LIVE* — customers can order from you on WhatsApp.\n\nBilling: ${cfg.COMM * 100}% of monthly sales, sent at the start of every month.${n ? '' : '\n\n👉 Add your items to start getting orders.'}`,
     [['➕ Add items', 'additem'], ['Menu', 'menu']]);
-  await notifyAdmins(`💰 Setup fee ${rs(cfg.SETUP_FEE)} received from *${s.name}*. Shop is now live.`, [['🏪 Manage shops', 'list']]);
+  await notifyShopAdmins(s, `💰 Setup fee ${rs(cfg.SETUP_FEE)} received from *${s.name}*. Shop is now live.`, [['🏪 Manage shops', 'list']]);
   return true;
 }
 
 async function adminMenu(c) {
   c.sess.state = null;
-  return c.reply(`👑 *${cfg.BRAND} — Admin*\nWhat would you like to do?`, [['➕ Add new shop', 'add'], ['🏪 Manage shops', 'list'], ['📊 Sales & commission', 'sales'], ['🛵 Delivery desk', 'deliv'], ['🌐 Web dashboard', 'web']]);
+  const title = c.isSuper ? `👑 *${cfg.BRAND} — Main admin*` : `🗺 *${cfg.BRAND} — Area admin*\n${c.myAreas.map((a) => a.name).join(', ')}`;
+  const b = [['➕ Add new shop', 'add'], ['🏪 Manage shops', 'list'], ['📊 Sales & earnings', 'sales'], ['🛵 Delivery desk', 'deliv']];
+  if (c.isSuper) b.push(['🗺 Areas & admins', 'areas'], ['🌐 Web dashboard', 'web']);
+  return c.reply(`${title}\nWhat would you like to do?`, b);
+}
+
+// ---- areas (main admin only)
+async function areaLine(a) {
+  const n = (await db.one('select count(*)::int c from shops where area_id=$1', [a.id])).c;
+  return `*${a.name}* ${a.active ? '' : '⏸'}\n   👤 Admin: ${a.admin_phone ? '+' + a.admin_phone : 'not set'} · ${n} shops · ${a.lat != null ? `📍 ${a.radius_km} km radius` : '📍 location not set'}`;
+}
+async function areaMoney(a) {
+  const shops = await db.all('select * from shops where area_id=$1', [a.id]);
+  let sales = 0; for (const s of shops) sales += await db.shops.monthSales(s.id);
+  const paid = shops.filter((s) => s.paid).length;
+  const setupTotal = paid * cfg.SETUP_FEE, setupArea = setupTotal * a.setup_share;
+  const comm = sales * cfg.COMM, commArea = (sales * a.comm_pct) / 100;
+  return { shops: shops.length, paid, sales, setupTotal, setupArea, comm, commArea };
+}
+async function newAreaAdminWelcome(a) {
+  await notify(a.admin_phone, `🗺 You are now the *area admin* for *${a.name}* on ${cfg.BRAND}.\n\nYou can add and manage shops in your area, handle home deliveries, and see your earnings.\nYour share: *${Math.round(a.setup_share * 100)}% of each ₹${cfg.SETUP_FEE} setup fee + ${a.comm_pct}% of your shops' sales*.\n\nType *menu* to start.`, [['Menu', 'menu']]);
+}
+
+async function createShop(c, ns, areaId) {
+  const a = areaId ? await db.areas.get(areaId) : null;
+  const s = await db.one('insert into shops(code,name,owner_phone,area,delivery,area_id) values($1,$2,$3,$4,$5,$6) returning *',
+    [await mkCode(ns.name), ns.name, ns.owner, ns.area, ns.delivery, areaId || null]);
+  await c.reply(`✅ *${s.name}* added (code ${s.code})\n📍 ${s.area}${a ? ' · 🗺 ' + a.name : ''} · 📱 +${s.owner_phone}\n${s.delivery ? '🛵 Home delivery: ON' : '🏃 Pickup only'}\n\n📩 Welcome message + ${rs(cfg.SETUP_FEE)} setup-fee request sent to the owner. Ask the owner to share the shop's 📍 location from *Settings* so nearby customers can find it.\n_If the owner has never messaged this bot, ask them to send *hi* to this number once._`,
+    [[`✅ Mark ${rs(cfg.SETUP_FEE)} received`, 'paid:' + s.id], ['🏪 Manage shops', 'list'], ['Menu', 'menu']]);
+  if (c.isSuper && a && a.admin_phone && a.admin_phone !== c.from) await notify(a.admin_phone, `🏪 New shop added in *${a.name}*: ${s.name} (+${s.owner_phone}).`);
+  else if (!c.isSuper) await notifyAdmins(`🏪 Area admin +${c.from} added *${s.name}* in ${a ? a.name : s.area}.`);
+  return ownerWelcome(s);
 }
 
 async function admin(c, v, btn) {
   const S = c.sess, low = v.trim().toLowerCase();
   let m;
   if (MENU_WORDS.includes(low)) return adminMenu(c);
+  // --- add shop flow
   if (!btn && S.state === 'a_name') { S.data.ns = { name: v.trim() }; S.state = 'a_owner'; return c.reply(`Shop: *${S.data.ns.name}*\nSend the owner's WhatsApp number.`); }
   if (!btn && S.state === 'a_owner') {
     const n = v.replace(/\D/g, '');
     if (n.length < 10) return c.reply('Please send a valid 10-digit mobile number.');
     S.data.ns.owner = cfg.norm(n.slice(-10)); S.state = 'a_area';
-    return c.reply('Area / locality of the shop?');
+    return c.reply('Street / locality name of the shop? (shown to customers)');
   }
-  if (!btn && S.state === 'a_area') { S.data.ns.area = v.trim(); S.state = 'a_del'; return c.reply('Will this shop use *your home-delivery service*?', [['🛵 Yes, opt in', 'del:y'], ['🏃 No, pickup only', 'del:n']]); }
+  if (!btn && S.state === 'a_area') { S.data.ns.area = v.trim(); S.state = 'a_del'; return c.reply('Will this shop offer *home delivery* (by the area delivery team)?', [['🛵 Yes, opt in', 'del:y'], ['🏃 No, pickup only', 'del:n']]); }
   if ((m = v.match(/^del:(y|n)$/)) && S.state === 'a_del' && S.data.ns) {
+    S.data.ns.delivery = m[1] === 'y';
+    const choices = c.isSuper ? await db.areas.active() : c.myAreas;
+    if (choices.length > 1 || (c.isSuper && choices.length === 1)) {
+      S.state = 'a_pick';
+      return c.reply('Which area does this shop belong to?', choices.map((a) => ['🗺 ' + a.name, 'sa:' + a.id]).concat(c.isSuper ? [['No area', 'sa:0']] : []));
+    }
     const ns = S.data.ns; S.state = null; delete S.data.ns;
-    const s = await db.one('insert into shops(code,name,owner_phone,area,delivery) values($1,$2,$3,$4,$5) returning *', [await mkCode(ns.name), ns.name, ns.owner, ns.area, m[1] === 'y']);
-    await c.reply(`✅ *${s.name}* added (code ${s.code})\n📍 ${s.area} · 📱 +${s.owner_phone}\n${s.delivery ? '🛵 Home delivery by you: ON' : '🏃 Pickup only'}\n\n📩 Welcome message + ${rs(cfg.SETUP_FEE)} setup-fee request sent to the owner.\n_If the owner has never messaged this bot, ask them to send *hi* to this number once._`,
-      [[`✅ Mark ${rs(cfg.SETUP_FEE)} received`, 'paid:' + s.id], ['🏪 Manage shops', 'list'], ['Menu', 'menu']]);
-    return ownerWelcome(s);
+    return createShop(c, ns, choices[0] ? choices[0].id : null);
+  }
+  if ((m = v.match(/^sa:(\d+)$/)) && S.state === 'a_pick' && S.data.ns) {
+    const id = +m[1];
+    if (id && !c.isSuper && !c.areaIds.includes(id)) return c.reply('Not your area.');
+    const ns = S.data.ns; S.state = null; delete S.data.ns;
+    return createShop(c, ns, id || null);
   }
   if (v === 'add') { S.state = 'a_name'; return c.reply('➕ *New shop*\nSend the shop name.'); }
-  if (v === 'web') return c.reply(cfg.PUBLIC_URL ? `🌐 Dashboard:\n${cfg.PUBLIC_URL}/admin?key=${encodeURIComponent(cfg.ADMIN_KEY)}` : 'Set PUBLIC_URL to enable the web dashboard.', [['Menu', 'menu']]);
+  if (v === 'web' && c.isSuper) return c.reply(cfg.PUBLIC_URL ? `🌐 Dashboard:\n${cfg.PUBLIC_URL}/admin?key=${encodeURIComponent(cfg.ADMIN_KEY)}` : 'Set PUBLIC_URL to enable the web dashboard.', [['Menu', 'menu']]);
+
+  // --- areas (main admin)
+  if (c.isSuper) {
+    if (v === 'areas') {
+      const as = await db.areas.all();
+      const lines = []; for (const a of as) lines.push(await areaLine(a));
+      return c.reply(`🗺 *Areas & area admins*\nArea admin share: ${Math.round(cfg.AREA_SETUP_SHARE * 100)}% of setup fee + ${cfg.AREA_COMM_PCT}% of sales\n\n${lines.join('\n\n') || 'No areas yet.'}`,
+        [['➕ Add area', 'ar_add']].concat(as.map((a) => ['⚙️ ' + a.name, 'ar:' + a.id]), [['Menu', 'menu']]));
+    }
+    if (v === 'ar_add') { S.state = 'ar_name'; S.data.na = {}; return c.reply('🗺 *New area*\nSend the area / locality name (e.g. Anna Nagar).'); }
+    if (!btn && S.state === 'ar_name') { S.data.na = { name: v.trim() }; S.state = 'ar_admin'; return c.reply(`Area: *${S.data.na.name}*\nSend the area admin's WhatsApp number (or *skip* to manage it yourself).`); }
+    if (!btn && S.state === 'ar_admin') {
+      if (low !== 'skip') { const n = v.replace(/\D/g, ''); if (n.length < 10) return c.reply('Send a valid 10-digit number, or *skip*.'); S.data.na.admin = cfg.norm(n.slice(-10)); }
+      S.state = 'ar_loc';
+      return c.reply('📍 Share the *centre location* of this area: tap 📎 → *Location* → send a location at the centre of the area.\nOr type *skip* (customers can still pick the area from a list).');
+    }
+    if (S.state === 'ar_loc' && (c.loc || low === 'skip')) {
+      if (c.loc) { S.data.na.lat = c.loc.lat; S.data.na.lng = c.loc.lng; }
+      S.state = 'ar_rad';
+      return c.reply('How far should customers be able to order from (radius)?', [['2 km', 'rad:2'], ['3 km', 'rad:3'], ['5 km', 'rad:5']]);
+    }
+    if ((m = v.match(/^rad:(\d+)$/)) && S.state === 'ar_rad' && S.data.na) {
+      const na = S.data.na; S.state = null; delete S.data.na;
+      const a = await db.one('insert into areas(name,admin_phone,lat,lng,radius_km) values($1,$2,$3,$4,$5) returning *', [na.name, na.admin || null, na.lat ?? null, na.lng ?? null, +m[1]]);
+      if (a.admin_phone) await newAreaAdminWelcome(a);
+      return c.reply(`✅ Area *${a.name}* created.\n${a.admin_phone ? `👤 Area admin +${a.admin_phone} has been notified.` : '👤 No area admin — you manage it.'}\n📍 ${a.lat != null ? a.radius_km + ' km radius' : 'No centre location'}`, [['🗺 Areas & admins', 'areas'], ['Menu', 'menu']]);
+    }
+    if ((m = v.match(/^ar:(\d+)$/))) {
+      const a = await db.areas.get(+m[1]); if (!a) return c.reply('Area not found.');
+      const x = await areaMoney(a);
+      return c.reply(`${await areaLine(a)}\n\n💰 *${MONTH()}*\nShop sales: ${rs(x.sales)}\n${cfg.COMM * 100}% commission: ${rs(x.comm)}\n  → Area admin ${a.comm_pct}%: *${rs(x.commArea)}*\n  → You: *${rs(x.comm - x.commArea)}*\n\n💳 Setup fees (all time): ${x.paid} × ${rs(cfg.SETUP_FEE)} = ${rs(x.setupTotal)}\n  → Area admin ${Math.round(a.setup_share * 100)}%: *${rs(x.setupArea)}*\n  → You: *${rs(x.setupTotal - x.setupArea)}*`,
+        [['👤 Change area admin', 'ar_chg:' + a.id], [a.active ? '⏸ Pause area' : '▶️ Resume area', 'ar_tog:' + a.id], ['📍 Set centre location', 'ar_loc:' + a.id], ['🗺 All areas', 'areas'], ['Menu', 'menu']]);
+    }
+    if ((m = v.match(/^ar_chg:(\d+)$/))) { S.state = 'ar_chg'; S.data.aid = +m[1]; return c.reply('Send the new area admin\'s WhatsApp number (or *none* to remove).'); }
+    if (!btn && S.state === 'ar_chg') {
+      let ph = null;
+      if (low !== 'none') { const n = v.replace(/\D/g, ''); if (n.length < 10) return c.reply('Send a valid 10-digit number, or *none*.'); ph = cfg.norm(n.slice(-10)); }
+      const a = await db.areas.set(S.data.aid, { admin_phone: ph }); S.state = null; delete S.data.aid;
+      if (ph) await newAreaAdminWelcome(a);
+      return c.reply(`✅ ${a.name}: area admin ${ph ? 'set to +' + ph : 'removed'}.`, [['⚙️ ' + a.name, 'ar:' + a.id], ['Menu', 'menu']]);
+    }
+    if ((m = v.match(/^ar_tog:(\d+)$/))) { let a = await db.areas.get(+m[1]); a = await db.areas.set(a.id, { active: !a.active }); return c.reply(`${a.name} is now ${a.active ? '🟢 active' : '⏸ paused (hidden from customers)'}.`, [['🗺 All areas', 'areas']]); }
+    if ((m = v.match(/^ar_loc:(\d+)$/))) { S.state = 'ar_setloc'; S.data.aid = +m[1]; return c.reply('📍 Send the centre location: tap 📎 → *Location*.'); }
+    if (S.state === 'ar_setloc' && c.loc) { const a = await db.areas.set(S.data.aid, { lat: c.loc.lat, lng: c.loc.lng }); S.state = null; delete S.data.aid; return c.reply(`✅ Centre location saved for ${a.name}.`, [['⚙️ ' + a.name, 'ar:' + a.id]]); }
+  }
+
+  // --- shops (scoped)
   if (v === 'list') {
-    const shops = await db.shops.all();
+    const shops = await scopedShops(c);
     if (!shops.length) return c.reply('No shops yet.', [['➕ Add new shop', 'add']]);
     const lines = [];
     for (const [i, s] of shops.entries()) lines.push(`${i + 1}. ` + shopLine(s, await itemCount(s.id)));
-    return c.reply('🏪 *Your shops*\n\n' + lines.join('\n\n'), shops.map((s) => ['⚙️ ' + s.name, 'shop:' + s.id]).concat([['Menu', 'menu']]));
+    return c.reply('🏪 *Shops*\n\n' + lines.join('\n\n'), shops.map((s) => ['⚙️ ' + s.name, 'shop:' + s.id]).concat([['Menu', 'menu']]));
   }
-  if ((m = v.match(/^shop:(\d+)$/))) {
-    const s = await db.shops.get(+m[1]); if (!s) return c.reply('Shop not found.');
-    const b = [];
-    if (!s.paid) b.push([`✅ Mark ${rs(cfg.SETUP_FEE)} received`, 'paid:' + s.id]);
-    else b.push([s.active ? '⏸ Pause shop' : '▶️ Resume shop', 'tog:' + s.id]);
-    b.push([s.delivery ? '🛵 Turn delivery OFF' : '🛵 Turn delivery ON', 'dtog:' + s.id], ['🏪 All shops', 'list'], ['Menu', 'menu']);
-    const ms = await db.shops.monthSales(s.id);
-    return c.reply(shopLine(s, await itemCount(s.id)) + `\n\n📱 Owner: +${s.owner_phone}\n💳 UPI: ${s.upi || 'not set'}\n💰 ${MONTH()} sales: ${rs(ms)}\n🧾 Your ${cfg.COMM * 100}%: ${rs(ms * cfg.COMM)}\n🛵 Delivery charge: ${rs(s.del_fee)} · Min order ${rs(s.min_order)}`, b);
-  }
-  if ((m = v.match(/^paid:(\d+)$/))) {
-    const s = await db.shops.get(+m[1]); if (!s) return c.reply('Shop not found.');
-    if (!(await activate(s))) return c.reply('✅ Setup fee was already received.', [['Menu', 'menu']]);
-    return;
-  }
-  if ((m = v.match(/^tog:(\d+)$/))) {
-    let s = await db.shops.get(+m[1]); s = await db.shops.set(s.id, { active: !s.active });
-    await notify(s.owner_phone, s.active ? `▶️ Your shop is live again on ${cfg.BRAND}.` : '⏸ Your shop has been paused by the admin. Contact admin to resume.');
-    return c.reply(`${s.name} is now ${s.active ? '🟢 live' : '⏸ paused'}.`, [['🏪 Manage shops', 'list']]);
-  }
-  if ((m = v.match(/^dtog:(\d+)$/))) {
-    let s = await db.shops.get(+m[1]); s = await db.shops.set(s.id, { delivery: !s.delivery });
-    await notify(s.owner_phone, `🛵 Home delivery by ${cfg.BRAND} is now *${s.delivery ? 'ON' : 'OFF'}* for your shop.`);
+  if ((m = v.match(/^(shop|paid|tog|dtog):(\d+)$/))) {
+    let s = await db.shops.get(+m[2]);
+    if (!inScope(c, s)) return c.reply('Shop not found in your area.', [['Menu', 'menu']]);
+    if (m[1] === 'shop') {
+      const b = [];
+      if (!s.paid) b.push([`✅ Mark ${rs(cfg.SETUP_FEE)} received`, 'paid:' + s.id]);
+      else b.push([s.active ? '⏸ Pause shop' : '▶️ Resume shop', 'tog:' + s.id]);
+      b.push([s.delivery ? '🛵 Turn delivery OFF' : '🛵 Turn delivery ON', 'dtog:' + s.id], ['🏪 All shops', 'list'], ['Menu', 'menu']);
+      const ms = await db.shops.monthSales(s.id);
+      const a = s.area_id ? await db.areas.get(s.area_id) : null;
+      return c.reply(shopLine(s, await itemCount(s.id)) + `\n\n🗺 Area: ${a ? a.name : '—'}\n📍 Location: ${s.lat != null ? 'set' : 'not set'}\n📱 Owner: +${s.owner_phone}\n💳 UPI: ${s.upi || 'not set'}\n💰 ${MONTH()} sales: ${rs(ms)}\n🧾 ${cfg.COMM * 100}% fee: ${rs(ms * cfg.COMM)}\n🛵 Delivery charge: ${rs(s.del_fee)} · Min order ${rs(s.min_order)}`, b);
+    }
+    if (m[1] === 'paid') { if (!(await activate(s))) return c.reply('✅ Setup fee was already received.', [['Menu', 'menu']]); return; }
+    if (m[1] === 'tog') {
+      s = await db.shops.set(s.id, { active: !s.active });
+      await notify(s.owner_phone, s.active ? `▶️ Your shop is live again on ${cfg.BRAND}.` : '⏸ Your shop has been paused by the admin. Contact admin to resume.');
+      return c.reply(`${s.name} is now ${s.active ? '🟢 live' : '⏸ paused'}.`, [['🏪 Manage shops', 'list']]);
+    }
+    s = await db.shops.set(s.id, { delivery: !s.delivery });
+    await notify(s.owner_phone, `🛵 Home delivery is now *${s.delivery ? 'ON' : 'OFF'}* for your shop.`);
     return c.reply(`🛵 Delivery for ${s.name}: *${s.delivery ? 'ON' : 'OFF'}*`, [['⚙️ ' + s.name, 'shop:' + s.id], ['Menu', 'menu']]);
   }
   if (v === 'sales') {
-    const shops = await db.shops.all();
-    let tot = 0, gmv = 0; const lines = [];
-    for (const s of shops) { const ms = await db.shops.monthSales(s.id); gmv += ms; tot += ms * cfg.COMM; lines.push(`*${s.name}*\n   Sales ${rs(ms)} → ${cfg.COMM * 100}% = *${rs(ms * cfg.COMM)}* · Setup ${s.paid ? '✅' : '⏳'}`); }
-    const setup = shops.filter((s) => s.paid).length * cfg.SETUP_FEE;
-    const del = (await db.one(`select coalesce(sum(del_fee),0) s from orders where status='Completed' and mode='delivery' and created_at >= date_trunc('month', now() at time zone 'Asia/Kolkata') at time zone 'Asia/Kolkata'`)).s;
-    return c.reply(`📊 *${MONTH()} summary*\n\n${lines.join('\n') || 'No shops yet.'}\n\nTotal shop sales: ${rs(gmv)}\n💰 Commission due to you: *${rs(tot)}*\n🛵 Delivery charges: ${rs(del)}\n💳 Setup fees collected (all time): ${rs(setup)}`, [['📩 Send commission bills', 'bills'], ['Menu', 'menu']]);
+    const shops = await scopedShops(c);
+    let gmv = 0; const lines = [];
+    for (const s of shops) { const ms = await db.shops.monthSales(s.id); gmv += ms; lines.push(`*${s.name}*\n   Sales ${rs(ms)} → ${cfg.COMM * 100}% = ${rs(ms * cfg.COMM)} · Setup ${s.paid ? '✅' : '⏳'}`); }
+    const del = (await db.one(`select coalesce(sum(o.del_fee),0) s from orders o join shops s on s.id=o.shop_id where o.status='Completed' and o.mode='delivery' and ($1::int[] is null or s.area_id = any($1))
+      and o.created_at >= date_trunc('month', now() at time zone 'Asia/Kolkata') at time zone 'Asia/Kolkata'`, [c.isSuper ? null : c.areaIds])).s;
+    let split = '';
+    const areaList = c.isSuper ? await db.areas.all() : c.myAreas;
+    let areaComm = 0, areaSetup = 0;
+    for (const a of areaList) { const x = await areaMoney(a); if (!x.shops) continue; areaComm += x.commArea; areaSetup += x.setupArea; split += `\n🗺 ${a.name}: sales ${rs(x.sales)} · area admin ${rs(x.commArea)} + setup ${rs(x.setupArea)}`; }
+    const comm = gmv * cfg.COMM, setup = shops.filter((s) => s.paid).length * cfg.SETUP_FEE;
+    if (c.isSuper) {
+      return c.reply(`📊 *${MONTH()} summary — all areas*\n\n${lines.join('\n') || 'No shops yet.'}\n\nTotal shop sales: ${rs(gmv)}\n💰 ${cfg.COMM * 100}% commission: ${rs(comm)}\n💳 Setup fees (all time): ${rs(setup)}\n🛵 Delivery charges: ${rs(del)}\n${split ? `\n*Area admin shares*${split}\nPayable to area admins: *${rs(areaComm + areaSetup)}*\n` : ''}\n👑 *Your net: ${rs(comm - areaComm + setup - areaSetup)}*`,
+        [['📩 Send commission bills', 'bills'], ['🗺 Areas & admins', 'areas'], ['Menu', 'menu']]);
+    }
+    return c.reply(`📊 *${MONTH()} — ${c.myAreas.map((a) => a.name).join(', ')}*\n\n${lines.join('\n') || 'No shops yet.'}\n\nShop sales: ${rs(gmv)}\n🛵 Delivery charges: ${rs(del)}\n\n💰 *Your earnings*\n${c.myAreas[0] ? c.myAreas[0].comm_pct : cfg.AREA_COMM_PCT}% of sales: *${rs(areaComm)}*\nSetup fee share (all time): *${rs(areaSetup)}*`, [['Menu', 'menu']]);
   }
-  if (v === 'bills') {
+  if (v === 'bills' && c.isSuper) {
     const live = (await db.shops.all()).filter((s) => s.paid);
     let sent = 0;
     for (const s of live) {
@@ -185,7 +303,7 @@ async function admin(c, v, btn) {
     return c.reply(`📩 Commission bills sent to ${sent} shop(s) on WhatsApp.`, [['Menu', 'menu']]);
   }
   if (v === 'deliv') {
-    const ds = await db.orders.activeDeliveries();
+    const ds = (await db.orders.activeDeliveries()).filter((o) => c.isSuper || c.areaIds.includes(o.area_id));
     if (!ds.length) return c.reply('🛵 No active delivery orders right now.', [['Menu', 'menu']]);
     const b = [];
     for (const o of ds) { if (o.status === 'Ready') b.push([`🛵 Dispatch #${o.id}`, 'disp:' + o.id]); if (o.status === 'Out for delivery') b.push([`✅ Delivered #${o.id}`, 'dlv:' + o.id]); }
@@ -193,13 +311,13 @@ async function admin(c, v, btn) {
     return c.reply('🛵 *Delivery desk*\n\n' + ds.map((o) => `#${o.id} · ${o.shop_name} (${o.shop_area}) → ${o.addr}\n   📱 +${o.cust_phone} · ${rs(o.total)} ${o.paid ? '(prepaid)' : '(collect cash)'} · *${o.status}*`).join('\n\n'), b);
   }
   if ((m = v.match(/^disp:(\d+)$/))) {
-    const o = await db.orders.get(+m[1]); if (!o) return c.reply('Order not found.');
+    const o = await db.orders.get(+m[1]); if (!o || !inScope(c, await db.shops.get(o.shop_id))) return c.reply('Order not found.');
     if (o.status !== 'Ready') return c.reply(`Order #${o.id} is ${o.status}.`, [['🛵 Delivery desk', 'deliv']]);
     await setStatus(o, 'Out for delivery');
     return c.reply(`🛵 Rider dispatched for #${o.id}.`, [[`✅ Delivered #${o.id}`, 'dlv:' + o.id], ['🛵 Delivery desk', 'deliv']]);
   }
   if ((m = v.match(/^dlv:(\d+)$/))) {
-    const o = await db.orders.get(+m[1]); if (!o) return c.reply('Order not found.');
+    const o = await db.orders.get(+m[1]); if (!o || !inScope(c, await db.shops.get(o.shop_id))) return c.reply('Order not found.');
     if (o.status !== 'Out for delivery') return c.reply(`Order #${o.id} is ${o.status}.`, [['🛵 Delivery desk', 'deliv']]);
     await setStatus(o, 'Completed');
     return c.reply(`✅ #${o.id} delivered.${o.del_fee ? ' Delivery charge ' + rs(o.del_fee) + ' earned.' : ''}`, [['🛵 Delivery desk', 'deliv'], ['Menu', 'menu']]);
@@ -305,6 +423,11 @@ async function owner(c, v, btn) {
   if (!btn && (m = v.match(/^\s*delfee\s+(\d+)\s*$/i))) { await db.shops.set(s.id, { del_fee: +m[1] }); return c.reply(`✅ Delivery charge set to ${rs(+m[1])}`, [['⚙️ Settings', 'settings'], ['Menu', 'menu']]); }
   if (!btn && (m = v.match(/^\s*minorder\s+(\d+)\s*$/i))) { await db.shops.set(s.id, { min_order: +m[1] }); return c.reply(`✅ Minimum order for delivery set to ${rs(+m[1])}`, [['⚙️ Settings', 'settings'], ['Menu', 'menu']]); }
   if (!btn && (m = v.match(/^\s*upi\s+([\w.\-]+@[\w.\-]+)\s*$/i))) { await db.shops.set(s.id, { upi: m[1] }); return c.reply(`✅ UPI ID saved: *${m[1]}*\nCustomers choosing "Pay now (UPI)" will pay to this ID.`, [['⚙️ Settings', 'settings'], ['Menu', 'menu']]); }
+  if (v === 'setloc') { S.state = 'shoploc'; return c.reply('📍 Stand at your shop and send its location: tap 📎 → *Location* → *Send your current location*.\nNearby customers will then see your shop.'); }
+  if (c.loc) {
+    await db.shops.set(s.id, { lat: c.loc.lat, lng: c.loc.lng }); S.state = null;
+    return c.reply(`✅ Shop location saved. Customers within the area radius will now see *${s.name}* when they share their location.`, [['⚙️ Settings', 'settings'], ['Menu', 'menu']]);
+  }
   if (v === 'stock') return stockMsg(c, s, false);
   if (v === 'low') return stockMsg(c, s, true);
   if (v === 'orders') return ordersMsg(c, s);
@@ -315,23 +438,53 @@ async function owner(c, v, btn) {
       rec.map((o) => ['📄 ' + o.inv, 'inv:' + o.id]).concat([['Menu', 'menu']]));
   }
   if ((m = v.match(/^inv:(\d+)$/))) { const o = await db.orders.get(+m[1]); if (o && o.shop_id === s.id) return sendInvoice(c.from, o, s); return c.reply('Invoice not found.'); }
-  if (v === 'settings') return c.reply(`⚙️ *Settings*\n\n🛵 Home delivery by ${cfg.BRAND}: *${s.delivery ? 'ON' : 'OFF'}*\nDelivery charge: ${rs(s.del_fee)}\nMin order for delivery: ${rs(s.min_order)}\n💳 UPI ID: ${s.upi || 'not set'}\n\nChange: _delfee 30_ · _minorder 200_ · _upi name@okaxis_`,
-    [[s.delivery ? '🛵 Delivery OFF' : '🛵 Opt in delivery', 'dtog'], ['Menu', 'menu']]);
+  if (v === 'settings') return c.reply(`⚙️ *Settings*\n\n🛵 Home delivery by ${cfg.BRAND}: *${s.delivery ? 'ON' : 'OFF'}*\nDelivery charge: ${rs(s.del_fee)}\nMin order for delivery: ${rs(s.min_order)}\n💳 UPI ID: ${s.upi || 'not set'}\n📍 Shop location: ${s.lat != null ? 'set ✅' : 'not set — customers nearby can\'t find you'}\n\nChange: _delfee 30_ · _minorder 200_ · _upi name@okaxis_`,
+    [[s.delivery ? '🛵 Delivery OFF' : '🛵 Opt in delivery', 'dtog'], ['📍 Set shop location', 'setloc'], ['Menu', 'menu']]);
   if (v === 'dtog') {
     s = await db.shops.set(s.id, { delivery: !s.delivery });
-    await notifyAdmins(`🛵 *${s.name}* turned home delivery *${s.delivery ? 'ON' : 'OFF'}*.`);
+    await notifyShopAdmins(s, `🛵 *${s.name}* turned home delivery *${s.delivery ? 'ON' : 'OFF'}*.`);
     return c.reply(`🛵 Home delivery by ${cfg.BRAND} is now *${s.delivery ? 'ON' : 'OFF'}*.`, [['⚙️ Settings', 'settings'], ['Menu', 'menu']]);
   }
   return c.reply("Sorry, I didn't get that. Type *menu* for options.\n_Tip: send *#customer* to shop as a customer, *#shop* to come back._", [['Menu', 'menu']]);
 }
 
 /* ============================================================== CUSTOMER */
+// Shops near a point: shop location if set, else its area's centre; within the area radius (default radius if no area)
+async function nearbyShops(loc) {
+  const live = await db.shops.live();
+  const areas = Object.fromEntries((await db.areas.all()).map((a) => [a.id, a]));
+  const out = [];
+  for (const s of live) {
+    const a = s.area_id ? areas[s.area_id] : null;
+    if (a && !a.active) continue;
+    const p = s.lat != null ? { lat: s.lat, lng: s.lng } : a && a.lat != null ? { lat: a.lat, lng: a.lng } : null;
+    if (!p) continue;
+    const d = km(loc, p), r = a ? Number(a.radius_km) : cfg.DEFAULT_RADIUS_KM;
+    if (d <= r) out.push({ s, d });
+  }
+  return out.sort((x, y) => x.d - y.d);
+}
+const shopBtn = (s, d) => [`🏪 ${s.name}${d != null ? ' · ' + fmtKm(d) : ' · ' + s.area}${s.delivery ? ' · 🛵' : ''}`, 'shop:' + s.id];
+async function showNearby(c) {
+  const near = await nearbyShops(c.sess.data.loc);
+  if (!near.length) return c.reply('😔 No shops deliver to your location yet.\nYou can pick an area instead, or share a different location.', [['🗺 Choose area', 'areas_c'], ['📦 My orders', 'my']]);
+  return c.reply(`📍 *Shops near you* (${near.length})\nTap a shop to start ordering:`, near.map(({ s, d }) => shopBtn(s, d)).concat([['📍 Change location', 'newloc'], ['📦 My orders', 'my']]));
+}
 async function custWelcome(c) {
   c.sess.state = null; c.sess.data.cart = {}; delete c.sess.data.shop;
   const live = await db.shops.live();
   if (!live.length) return c.reply(`🙏 Welcome to *${cfg.BRAND}*!\nNo shops are live yet. Please check back soon.`);
-  return c.reply(`🙏 Welcome to *${cfg.BRAND}*!\nOrder from shops near you on WhatsApp — pickup or home delivery.\n\nChoose a shop:`,
-    live.map((s) => [`🏪 ${s.name} · ${s.area}${s.delivery ? ' · 🛵' : ''}`, 'shop:' + s.id]).concat([['📦 My orders', 'my']]));
+  const areas = await db.areas.active();
+  if (!areas.length) {
+    return c.reply(`🙏 Welcome to *${cfg.BRAND}*!\nOrder from shops near you on WhatsApp — pickup or home delivery.\n\nChoose a shop:`,
+      live.map((s) => shopBtn(s)).concat([['📦 My orders', 'my']]));
+  }
+  if (c.sess.data.loc) {
+    const near = await nearbyShops(c.sess.data.loc);
+    if (near.length) return c.reply(`🙏 Welcome back to *${cfg.BRAND}*!\n📍 Shops near you:`, near.map(({ s, d }) => shopBtn(s, d)).concat([['📍 Change location', 'newloc'], ['📦 My orders', 'my']]));
+  }
+  return c.reply(`🙏 Welcome to *${cfg.BRAND}*!\nOrder from shops near you on WhatsApp — pickup or home delivery.\n\n📍 *Share your location* to see nearby shops:\ntap 📎 → *Location* → *Send your current location*.`,
+    [['🗺 Choose area instead', 'areas_c'], ['📦 My orders', 'my']]);
 }
 const cartCount = (c) => Object.values(c.sess.data.cart || {}).reduce((a, q) => a + q, 0);
 async function cartLines(c) {
@@ -395,7 +548,7 @@ async function placeOrder(c, s, payMode) {
   [[`✅ Accept #${n}`, 'acc:' + n], [`❌ Reject #${n}`, 'rej:' + n]]);
   const low = lines.filter((l) => l.left < 5);
   if (low.length) await notify(s.owner_phone, '⚠️ *Low stock alert*\n' + low.map((l) => `• ${l.name}: ${l.left} left`).join('\n') + '\nReply _stock Item qty_ to update.');
-  if (o.mode === 'delivery') await notifyAdmins(`🛵 *New delivery order #${n}*\n${s.name} → ${o.addr}\n${rs(o.total)} ${payMode === 'UPI' ? '(UPI)' : '(collect cash)'} · waiting for shop to pack.`, [['🛵 Delivery desk', 'deliv']]);
+  if (o.mode === 'delivery') await notifyDelivery(s, `🛵 *New delivery order #${n}*\n${s.name} → ${o.addr}\n${rs(o.total)} ${payMode === 'UPI' ? '(UPI)' : '(collect cash)'} · waiting for shop to pack.`, [['🛵 Delivery desk', 'deliv']]);
 }
 
 async function customer(c, v, btn) {
@@ -404,9 +557,23 @@ async function customer(c, v, btn) {
   let low = v.trim().toLowerCase(), m;
   if (MENU_WORDS.includes(low) || low === 'shops') return custWelcome(c);
   if (!btn) { if (low === 'cart') v = 'cart'; if (low === 'checkout') v = 'checkout'; if (low === 'orders' || low === 'my orders') v = 'my'; }
-  if (!btn && S.state === 'addr') {
-    if (v.trim().length < 8) return c.reply('Please send the full address (house no, street, landmark).');
-    D.addr = v.trim(); S.state = null; return askPay(c, await db.shops.get(D.shop));
+  if (S.state === 'addr' && (c.loc || !btn)) {
+    if (c.loc) D.addr = `${c.loc.label ? c.loc.label + ' · ' : ''}📍 https://maps.google.com/?q=${c.loc.lat},${c.loc.lng}`;
+    else { if (v.trim().length < 8) return c.reply('Please send the full address (house no, street, landmark).'); D.addr = v.trim(); }
+    S.state = null; return askPay(c, await db.shops.get(D.shop));
+  }
+  if (c.loc) { D.loc = { lat: c.loc.lat, lng: c.loc.lng }; D.cart = {}; delete D.shop; return showNearby(c); }
+  if (v === 'newloc') return c.reply('📍 Send your location: tap 📎 → *Location* → *Send your current location*.', [['🗺 Choose area instead', 'areas_c']]);
+  if (v === 'areas_c') {
+    const as = await db.areas.active();
+    if (!as.length) return custWelcome(c);
+    return c.reply('🗺 Choose your area:', as.map((a) => ['🗺 ' + a.name, 'ac:' + a.id]));
+  }
+  if ((m = v.match(/^ac:(\d+)$/))) {
+    const a = await db.areas.get(+m[1]);
+    const shops = (await db.shops.live()).filter((s) => s.area_id === +m[1]);
+    if (!a || !shops.length) return c.reply('No shops live in this area yet.', [['🗺 Other areas', 'areas_c']]);
+    return c.reply(`🗺 *${a.name}* — choose a shop:`, shops.map((s) => shopBtn(s)).concat([['🗺 Other areas', 'areas_c']]));
   }
   if (v === 'rate') return c.reply('⭐ Thanks for rating! See you again.', [['🏠 Shops', 'menu']]);
   if (v === 'my') {
@@ -485,11 +652,16 @@ async function handle(from, name, v, btn) {
       const mrow = await db.one('select * from menus where phone=$1', [from]);
       if (mrow) return await sendPage(from, mrow.text, mrow.items, +v.slice(3));
     }
-    const isAdmin = cfg.ADMINS.includes(from);
+    const lm = String(v).match(/^loc:(-?[\d.]+),(-?[\d.]+)\|?(.*)$/s);
+    if (lm) { c.loc = { lat: +lm[1], lng: +lm[2], label: lm[3] || '' }; v = 'loc'; }
+    c.isSuper = cfg.ADMINS.includes(from);
+    c.myAreas = await db.areas.byAdmin(from);
+    c.areaIds = c.myAreas.map((a) => a.id);
+    const isAdmin = c.isSuper || c.myAreas.length > 0;
     c.ownShops = await db.shops.byOwner(from);
     console.log('IN', from, isAdmin ? '(admin)' : c.ownShops.length ? '(owner)' : '(customer)', JSON.stringify(String(v).slice(0, 60)));
     if (low === '#whoami' || low === '#id') {
-      return await out(from, `🔎 Your WhatsApp number as the bot sees it: *+${from}*\nRole: *${isAdmin ? 'Admin' : c.ownShops.length ? 'Shop owner' : 'Customer'}*\nAdmin numbers set: ${cfg.ADMINS.map((a) => '+' + a).join(', ') || 'none'}`);
+      return await out(from, `🔎 Your WhatsApp number as the bot sees it: *+${from}*\nRole: *${c.isSuper ? 'Main admin' : isAdmin ? 'Area admin (' + c.myAreas.map((a) => a.name).join(', ') + ')' : c.ownShops.length ? 'Shop owner' : 'Customer'}*\nMain admin numbers: ${cfg.ADMINS.map((a) => '+' + a).join(', ') || 'none'}`);
     }
     if (low === '#customer') { sess.data.mode = 'customer'; return await custWelcome(c); }
     if (low === '#admin' || low === '#shop') delete sess.data.mode;
@@ -508,4 +680,4 @@ async function handle(from, name, v, btn) {
   }
 }
 
-module.exports = { handle, activate, notify, notifyAdmins, rs };
+module.exports = { handle, activate, notify, notifyAdmins, notifyShopAdmins, rs };

@@ -39,4 +39,8 @@ module.exports = {
   SETUP_FEE: Number(process.env.SETUP_FEE || 2000),
   COMM: Number(process.env.COMMISSION_PCT || 2) / 100,
   DEFAULT_DEL_FEE: Number(process.env.DEFAULT_DELIVERY_FEE || 25),
+  // Area admin's share: 50% of setup fee + 1% of sales (out of the 2% commission)
+  AREA_SETUP_SHARE: Number(process.env.AREA_SETUP_SHARE || 0.5),
+  AREA_COMM_PCT: Number(process.env.AREA_COMM_PCT || 1),
+  DEFAULT_RADIUS_KM: Number(process.env.DEFAULT_RADIUS_KM || 3),
 };

@@ -35,3 +35,10 @@ npm install
 DATABASE_URL=postgres://... npm start   # without WA_TOKEN, messages are printed (dry run)
 npm test                                 # full admin → owner → customer flow
 ```
+
+## Multiple localities (area admins)
+- **Main admin** (ADMIN_PHONES): menu → **Areas & admins** → add an area. Give it a name, the area admin's number, a centre location and a radius.
+- **Area admin**: sees only their own area's shops, deliveries and earnings. By default they get 50% of the setup fee and 1% of their shops' sales. Change the defaults with `AREA_SETUP_SHARE` and `AREA_COMM_PCT`.
+- **Shop owner**: Settings → **Set shop location**, so nearby customers can find the shop.
+- **Customer**: shares a location and sees shops within the area radius, nearest first. They can also choose an area from a list instead.
+- **Deliveries** go to that area's admin, or to the main admin if the area has no admin.

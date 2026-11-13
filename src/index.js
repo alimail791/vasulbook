@@ -60,7 +60,7 @@ app.post('/webhook', (req, res) => {
       if (m.type === 'text') v = m.text.body;
       else if (m.type === 'interactive') { const r = m.interactive.button_reply || m.interactive.list_reply; v = r && r.id; btn = true; }
       else if (m.type === 'button') { v = m.button.payload || m.button.text; btn = !!m.button.payload; }
-      else if (m.type === 'location') { const L = m.location; v = [L.name, L.address, `https://maps.google.com/?q=${L.latitude},${L.longitude}`].filter(Boolean).join(', '); }
+      else if (m.type === 'location') { const L = m.location; v = `loc:${L.latitude},${L.longitude}|${[L.name, L.address].filter(Boolean).join(', ')}`; btn = true; }
       if (!v) { enqueue(m.from, () => wa.sendText(m.from, 'Please send a text message, or type *menu*.')); continue; }
       wa.markRead(m.id);
       enqueue(m.from, () => bot.handle(m.from, names[m.from] || '', v, btn));

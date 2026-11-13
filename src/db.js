@@ -30,6 +30,13 @@ async function init() {
   create table if not exists payments(
     id serial primary key, kind text, ref int, month text, amount numeric, link_id text, link_url text,
     status text default 'created', created_at timestamptz default now(), paid_at timestamptz);
+  create table if not exists areas(
+    id serial primary key, name text not null, admin_phone text, lat double precision, lng double precision,
+    radius_km numeric default 3, setup_share numeric default ${cfg.AREA_SETUP_SHARE}, comm_pct numeric default ${cfg.AREA_COMM_PCT},
+    active boolean default true, created_at timestamptz default now());
+  alter table shops add column if not exists area_id int references areas(id);
+  alter table shops add column if not exists lat double precision;
+  alter table shops add column if not exists lng double precision;
   create index if not exists items_shop on items(shop_id);
   create index if not exists orders_shop on orders(shop_id, created_at);
   create index if not exists orders_cust on orders(cust_phone, created_at);
@@ -73,8 +80,18 @@ const orders = {
   openByShop: (sid) => all(`select * from orders where shop_id=$1 and status not in ('Completed','Cancelled') order by id`, [sid]),
   recentByShop: (sid, n = 4) => all(`select * from orders where shop_id=$1 and status<>'Cancelled' order by id desc limit $2`, [sid, n]),
   byCustomer: (p, n = 5) => all('select * from orders where cust_phone=$1 order by id desc limit $2', [p, n]),
-  activeDeliveries: () => all(`select o.*, s.name shop_name, s.area shop_area from orders o join shops s on s.id=o.shop_id
+  activeDeliveries: () => all(`select o.*, s.name shop_name, s.area shop_area, s.area_id from orders o join shops s on s.id=o.shop_id
     where o.mode='delivery' and o.status not in ('Completed','Cancelled') order by o.id`),
+};
+const areas = {
+  all: () => all('select * from areas order by name'),
+  active: () => all('select * from areas where active order by name'),
+  get: (id) => one('select * from areas where id=$1', [id]),
+  byAdmin: (phone) => all('select * from areas where admin_phone=$1 order by name', [phone]),
+  set: (id, f) => {
+    const k = Object.keys(f);
+    return one(`update areas set ${k.map((x, i) => `${x}=$${i + 2}`).join(',')} where id=$1 returning *`, [id, ...k.map((x) => f[x])]);
+  },
 };
 const sessions = {
   get: async (phone) => (await one('select state, data from sessions where phone=$1', [phone])) || { state: null, data: {} },
@@ -82,4 +99,4 @@ const sessions = {
     on conflict(phone) do update set state=$2, data=$3, updated_at=now()`, [phone, s.state || null, JSON.stringify(s.data || {})]),
 };
 
-module.exports = { pool, q, one, all, init, shops, items, orders, sessions };
+module.exports = { pool, q, one, all, init, shops, items, orders, sessions, areas };
