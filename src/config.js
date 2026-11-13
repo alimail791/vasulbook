@@ -23,7 +23,7 @@ module.exports = {
   WA_TEMPLATE_LANG: process.env.WA_NOTIFY_TEMPLATE_LANG || 'en',
 
   // Admin(s): comma-separated phone numbers
-  // Bot's own WhatsApp number is 9003264537 (set in Meta). Admins are separate numbers.
+  // Bot's own WhatsApp number is 9445775305 (set in Meta). Admins are separate numbers.
   ADMINS: (process.env.ADMIN_PHONES || '').split(',').map(norm).filter(Boolean),
   ADMIN_KEY: process.env.ADMIN_KEY || 'change-me',
   ADMIN_UPI: process.env.ADMIN_UPI || '',
