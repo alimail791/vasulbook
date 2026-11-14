@@ -130,11 +130,25 @@ async function activate(s) {
   return true;
 }
 
+async function sendBills() {
+  const live = (await db.shops.all()).filter((s) => s.paid);
+  let sent = 0;
+  for (const s of live) {
+    const ms = await db.shops.monthSales(s.id), amt = Math.round(ms * cfg.COMM * 100) / 100;
+    if (amt <= 0) continue;
+    const p = await pay.createLink({ kind: 'bill', ref: s.id, month: MONTH_KEY(), amount: amt, description: `${cfg.BRAND} ${MONTH()} service fee – ${s.name}`, phone: s.owner_phone, name: s.name });
+    await notify(s.owner_phone, `🧾 *${cfg.BRAND} — ${MONTH()} bill*\nYour sales: ${rs(ms)}\nService fee (${cfg.COMM * 100}%): *${rs(amt)}*\n\n${pay.payText(p)}`);
+    sent++;
+  }
+  return sent;
+}
+
 async function adminMenu(c) {
   c.sess.state = null;
   const title = c.isSuper ? `👑 *${cfg.BRAND} — Main admin*` : `🗺 *${cfg.BRAND} — Area admin*\n${c.myAreas.map((a) => a.name).join(', ')}`;
   const b = [['➕ Add new shop', 'add'], ['🏪 Manage shops', 'list'], ['📊 Sales & earnings', 'sales'], ['🛵 Delivery desk', 'deliv']];
-  if (c.isSuper) b.push(['🗺 Areas & admins', 'areas'], ['🌐 Web dashboard', 'web']);
+  if (c.isSuper) b.push(['🗺 Areas & admins', 'areas']);
+  b.push(['🌐 Web admin panel', 'web']);
   return c.reply(`${title}\nWhat would you like to do?`, b);
 }
 
@@ -196,7 +210,7 @@ async function admin(c, v, btn) {
     return createShop(c, ns, id || null);
   }
   if (v === 'add') { S.state = 'a_name'; return c.reply('➕ *New shop*\nSend the shop name.'); }
-  if (v === 'web' && c.isSuper) return c.reply(cfg.PUBLIC_URL ? `🌐 Dashboard:\n${cfg.PUBLIC_URL}/admin?key=${encodeURIComponent(cfg.ADMIN_KEY)}` : 'Set PUBLIC_URL to enable the web dashboard.', [['Menu', 'menu']]);
+  if (v === 'web') return c.reply(cfg.PUBLIC_URL ? `🌐 Web admin panel:\n${cfg.PUBLIC_URL}/panel\nLog in with your WhatsApp number — the code comes here.` : 'Set PUBLIC_URL to enable the web dashboard.', [['Menu', 'menu']]);
 
   // --- areas (main admin)
   if (c.isSuper) {
@@ -291,15 +305,7 @@ async function admin(c, v, btn) {
     return c.reply(`📊 *${MONTH()} — ${c.myAreas.map((a) => a.name).join(', ')}*\n\n${lines.join('\n') || 'No shops yet.'}\n\nShop sales: ${rs(gmv)}\n🛵 Delivery charges: ${rs(del)}\n\n💰 *Your earnings*\n${c.myAreas[0] ? c.myAreas[0].comm_pct : cfg.AREA_COMM_PCT}% of sales: *${rs(areaComm)}*\nSetup fee share (all time): *${rs(areaSetup)}*`, [['Menu', 'menu']]);
   }
   if (v === 'bills' && c.isSuper) {
-    const live = (await db.shops.all()).filter((s) => s.paid);
-    let sent = 0;
-    for (const s of live) {
-      const ms = await db.shops.monthSales(s.id), amt = Math.round(ms * cfg.COMM * 100) / 100;
-      if (amt <= 0) continue;
-      const p = await pay.createLink({ kind: 'bill', ref: s.id, month: MONTH_KEY(), amount: amt, description: `${cfg.BRAND} ${MONTH()} service fee – ${s.name}`, phone: s.owner_phone, name: s.name });
-      await notify(s.owner_phone, `🧾 *${cfg.BRAND} — ${MONTH()} bill*\nYour sales: ${rs(ms)}\nService fee (${cfg.COMM * 100}%): *${rs(amt)}*\n\n${pay.payText(p)}`);
-      sent++;
-    }
+    const sent = await sendBills();
     return c.reply(`📩 Commission bills sent to ${sent} shop(s) on WhatsApp.`, [['Menu', 'menu']]);
   }
   if (v === 'deliv') {
@@ -680,4 +686,4 @@ async function handle(from, name, v, btn) {
   }
 }
 
-module.exports = { handle, activate, notify, notifyAdmins, notifyShopAdmins, rs };
+module.exports = { handle, activate, notify, notifyAdmins, notifyShopAdmins, rs, setStatus, ownerWelcome, mkCode, newAreaAdminWelcome, sendBills, areaMoney, out };

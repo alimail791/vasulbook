@@ -94,6 +94,9 @@ app.get('/inv/:token.pdf', async (req, res) => {
   res.type('application/pdf').set('Content-Disposition', `inline; filename="${o.inv}.pdf"`).send(await invoice.pdf(o, s));
 });
 
+// --- web admin panel (WhatsApp OTP login)
+app.use('/panel', require('./panel'));
+
 // --- web dashboard for the admin
 app.get('/admin', async (req, res) => {
   if (req.query.key !== cfg.ADMIN_KEY) return res.status(401).send('Unauthorized');

@@ -42,3 +42,12 @@ npm test                                 # full admin → owner → customer flo
 - **Shop owner**: Settings → **Set shop location**, so nearby customers can find the shop.
 - **Customer**: shares a location and sees shops within the area radius, nearest first. They can also choose an area from a list instead.
 - **Deliveries** go to that area's admin, or to the main admin if the area has no admin.
+
+## Web admin panel
+Open `https://emart.vasulbook.com/panel`. Main admins and area admins log in with their WhatsApp number; the bot sends them a 6-digit code on WhatsApp. Pages:
+- **Dashboard:** live shops, month sales, commission, area shares, your net, and open orders.
+- **Areas** (main admin only): create areas, set the area admin, centre (a Maps link or lat,lng), radius and revenue shares, and pause areas.
+- **Shops:** add a shop (the owner gets a WhatsApp welcome), mark the setup fee paid, and edit settings (UPI, delivery, charges, location, pause). Edit items one by one or paste many lines.
+- **Orders:** filter by status, then accept, mark ready, dispatch, deliver or reject. The customer is messaged on WhatsApp automatically.
+- **Bills** (main admin only): this month's 2% bills, send them on WhatsApp, and view payment requests.
+Area admins only see and change shops and orders in their own areas.
