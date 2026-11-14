@@ -130,10 +130,11 @@ async function waDiagnose() {
   if (!cfg.WA_TOKEN) return { error: 'WA_TOKEN not set' };
   const out = {};
   const g = (p, method = 'GET', body) => wa.graph(p, { method, ...(body ? { body: JSON.stringify(body) } : {}) }).catch((e) => ({ error: e.message }));
-  out.phone = await g(`${cfg.WA_PHONE_ID}?fields=display_phone_number,verified_name,code_verification_status,quality_rating,status`);
+  if (!cfg.WA_PHONE_ID) out.phone = 'WA_PHONE_NUMBER_ID not set – bot runs in dry-run until EDeal has its own number';
+  else out.phone = await g(`${cfg.WA_PHONE_ID}?fields=display_phone_number,verified_name,code_verification_status,quality_rating,status`);
   if (process.env.WA_PIN && out.phone && out.phone.status && out.phone.status !== 'CONNECTED') out.register = await g(`${cfg.WA_PHONE_ID}/register`, 'POST', { messaging_product: 'whatsapp', pin: process.env.WA_PIN });
   // Point just this phone number's webhook at this server (Meta "webhook override")
-  if (process.env.WA_WEBHOOK_OVERRIDE === '1' && cfg.PUBLIC_URL) {
+  if (process.env.WA_WEBHOOK_OVERRIDE === '1' && cfg.PUBLIC_URL && cfg.WA_PHONE_ID) {
     out.webhook_override = await g(cfg.WA_PHONE_ID, 'POST', { webhook_configuration: { override_callback_uri: `${cfg.PUBLIC_URL}/webhook`, verify_token: cfg.WA_VERIFY } });
   }
   const w = process.env.WA_WABA_ID;
@@ -147,7 +148,7 @@ async function waDiagnose() {
     if (cfg.WA_TEMPLATE) out.template = await ensure(cfg.WA_TEMPLATE, 'UTILITY', `${cfg.BRAND} update: {{1}}\n\nReply here to see your menu.`, 'Your ad “Weekend sale” is now live for people within 2 km.');
     if (cfg.WA_DIGEST_TEMPLATE) out.digest_template = await ensure(cfg.WA_DIGEST_TEMPLATE, 'MARKETING', `☀️ Good morning! Top offers near you today: {{1}}\n\nReply HI to see all offers. Reply STOP to stop these messages.`, '1. Weekend grocery sale – Flat 20% off on oils (Fresh Mart, 600 m) | 2. Lunch combo – Meals at ₹99 (Annapoorna, 1.2 km)');
   }
-  if (process.env.WA_SET_PROFILE !== '0') {
+  if (process.env.WA_SET_PROFILE !== '0' && cfg.WA_PHONE_ID) {
     out.profile = await g(`${cfg.WA_PHONE_ID}/whatsapp_business_profile`, 'POST', {
       messaging_product: 'whatsapp', about: 'Local offers, events, classes & homes near you'.slice(0, 139),
       description: `${cfg.BRAND}: sales, discounts, tuition & schools, events and houses for rent or sale within 2–5 km of you – on WhatsApp. Businesses: send "business" to advertise.`,
