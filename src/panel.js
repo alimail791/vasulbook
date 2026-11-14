@@ -30,7 +30,12 @@ async function who(phone) {
   return { phone, isMain, myLocs, locIds: myLocs.map((l) => l.id) };
 }
 async function auth(req, res, next) {
-  if (req.query.key && req.query.key === cfg.ADMIN_KEY && cfg.ADMINS[0]) { req.u = await who(cfg.ADMINS[0]); return next(); }
+  if (req.query.key && req.query.key === cfg.ADMIN_KEY && cfg.ADMINS[0]) {
+    // Key link logs the main admin in (cookie), so the menu links keep working
+    const phone = cfg.ADMINS[0], exp = String(Date.now() + 30 * 864e5);
+    res.setHeader('Set-Cookie', `ed_s=${encodeURIComponent(phone + '.' + exp + '.' + sign(phone + '.' + exp))}; Path=/panel; HttpOnly; Secure; SameSite=Lax; Max-Age=${30 * 86400}`);
+    req.u = await who(phone); return next();
+  }
   const c = readCookie(req, 'ed_s');
   if (c) {
     const [phone, exp, sig] = c.split('.');
