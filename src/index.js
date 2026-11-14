@@ -132,6 +132,32 @@ async function waDiagnose() {
     const list = await g(`${id}/subscribed_apps`);
     out.wabas[id] = { info, phones, subscribe: sub, subscribed_apps: list };
   }
+  const post = async (path, body) => {
+    const r = await fetch(`https://graph.facebook.com/${cfg.WA_API_VERSION}/${path}`, { method: 'POST', headers: { Authorization: 'Bearer ' + cfg.WA_TOKEN, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    return r.json().catch(() => ({ status: r.status }));
+  };
+  // Alert template for messages outside WhatsApp's 24-hour window (created once, then Meta reviews it)
+  if (cfg.WA_TEMPLATE && process.env.WA_WABA_ID) {
+    const w = process.env.WA_WABA_ID;
+    const found = await g(`${w}/message_templates?name=${cfg.WA_TEMPLATE}&fields=name,status,category,language`);
+    if (found && found.data && found.data.length) out.template = found.data;
+    else {
+      out.template_create = await post(`${w}/message_templates`, {
+        name: cfg.WA_TEMPLATE, language: cfg.WA_TEMPLATE_LANG, category: 'UTILITY',
+        components: [{ type: 'BODY', text: `${cfg.BRAND} update: {{1}}\n\nReply here to see your menu.`, example: { body_text: [['Your order #1023 is ready for pickup at Fresh Mart.']] } }],
+      });
+    }
+  }
+  // WhatsApp business profile (about, description, category, website)
+  if (process.env.WA_SET_PROFILE !== '0') {
+    out.profile = await post(`${cfg.WA_PHONE_ID}/whatsapp_business_profile`, {
+      messaging_product: 'whatsapp',
+      about: `Order from local shops on WhatsApp – ${cfg.BRAND}`.slice(0, 139),
+      description: `${cfg.BRAND}: order groceries from shops near you on WhatsApp. Pickup or home delivery, pay by UPI or cash, invoice in chat.`,
+      vertical: 'GROCERY',
+      websites: [process.env.BRAND_WEBSITE || 'https://emart.vasulbook.com'],
+    });
+  }
   return out;
 }
 app.get('/admin/wa-check', async (req, res) => {
