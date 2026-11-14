@@ -78,8 +78,26 @@ const STAT = { New: 'y', Accepted: 'b', Ready: 'b', 'Out for delivery': 'b', Com
 
 // ---------- login with WhatsApp code
 r.get('/login', (req, res) => res.send(page(req, 'Log in', `<div class="login card"><h1>Admin log in</h1>
-<form method="post" action="/panel/login"><label>Your WhatsApp number</label><input name="phone" inputmode="tel" placeholder="9003264537" required>
-<p class="muted">We'll send a 6-digit code to this number from ${esc(cfg.BRAND)} on WhatsApp.</p><button>Send code</button></form></div>`)));
+<form method="post" action="/panel/keylogin"><label>Admin key</label><input name="key" type="password" autocomplete="current-password" required autofocus>
+<p></p><button>Log in</button></form>
+<hr style="border:0;border-top:1px solid #e2e8e4;margin:20px 0">
+<form method="post" action="/panel/login"><label>Or log in with your WhatsApp number</label><input name="phone" inputmode="tel" placeholder="9003264537" required>
+<p class="muted">A 6-digit code is sent by ${esc(cfg.BRAND)} on WhatsApp. Area admins use this.</p><button class="ghost">Send code</button></form></div>`)));
+const keyTries = new Map();
+r.post('/keylogin', async (req, res) => {
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || '';
+  const t = keyTries.get(ip) || { n: 0, at: Date.now() };
+  if (Date.now() - t.at > 15 * 60e3) { t.n = 0; t.at = Date.now(); }
+  const bad = () => res.status(401).send(page(req, 'Log in', `<div class="login card"><h1>Wrong admin key</h1><p>Check the key and try again.</p><a class="btn" href="/panel/login">Back</a></div>`));
+  if (t.n >= 10) return bad();
+  const k = String(req.body.key || '');
+  const ok = k.length && cfg.ADMIN_KEY && k.length === cfg.ADMIN_KEY.length && crypto.timingSafeEqual(Buffer.from(k), Buffer.from(cfg.ADMIN_KEY));
+  if (!ok || !cfg.ADMINS[0]) { t.n++; keyTries.set(ip, t); return bad(); }
+  keyTries.delete(ip);
+  const phone = cfg.ADMINS[0], exp = String(Date.now() + 30 * 864e5);
+  res.setHeader('Set-Cookie', `em_s=${encodeURIComponent(phone + '.' + exp + '.' + sign(phone + '.' + exp))}; Path=/panel; HttpOnly; Secure; SameSite=Lax; Max-Age=${30 * 86400}`);
+  res.redirect('/panel');
+});
 r.post('/login', async (req, res) => {
   const phone = cfg.norm(req.body.phone);
   const u = phone.length >= 12 ? await who(phone) : null;

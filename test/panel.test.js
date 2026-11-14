@@ -50,6 +50,9 @@ const { app } = require('../src/index');
   x = await go('/panel/shops/' + other.id); assert.equal(x.status, 404);
   x = await go('/panel/shops/' + other.id + '/paid', {}); assert(decodeURIComponent(x.loc).includes('not found'));
   x = await go('/panel/logout'); x = await go('/panel'); assert.equal(x.loc, '/panel/login');
+  // admin key login form
+  cookie = ''; x = await go('/panel/keylogin', { key: 'wrong' }); assert.equal(x.status, 401);
+  x = await go('/panel/keylogin', { key: 'k1' }); assert.equal(x.loc, '/panel'); x = await go('/panel'); assert(x.text.includes('Main admin'));
   // key fallback
   cookie = ''; x = await go('/panel?key=k1'); assert(x.text.includes('Main admin'));
   console.log('✅ PANEL TESTS PASSED'); srv.close(); process.exit(0);
