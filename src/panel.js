@@ -34,6 +34,7 @@ async function auth(req, res, next) {
     // Key link logs the main admin in (cookie), so the menu links keep working
     const phone = cfg.ADMINS[0], exp = String(Date.now() + 30 * 864e5);
     res.setHeader('Set-Cookie', `ed_s=${encodeURIComponent(phone + '.' + exp + '.' + sign(phone + '.' + exp))}; Path=/panel; HttpOnly; Secure; SameSite=Lax; Max-Age=${30 * 86400}`);
+    if (req.method === 'GET' && req.path === '/') return res.redirect('/panel');
     req.u = await who(phone); return next();
   }
   const c = readCookie(req, 'ed_s');
@@ -84,7 +85,8 @@ const tag = (s) => `<span class="tag ${STAT[s] || 'b'}">${esc(s)}</span>`;
 // ---------- login with WhatsApp code
 r.get('/login', (req, res) => res.send(page(req, 'Log in', `<div class="login card"><p style="text-align:center"><img src="/edeal-logo.svg" style="height:56px" alt="${esc(cfg.BRAND)}"></p><h1>Admin log in</h1>
 <form method="post" action="/panel/login"><label>Your WhatsApp number</label><input name="phone" inputmode="tel" placeholder="98xxxxxxxx" required>
-<p class="muted">We'll send a 6-digit code to this number from ${esc(cfg.BRAND)} on WhatsApp.</p><button>Send code</button></form></div>`)));
+<p class="muted">We'll send a 6-digit code to this number from ${esc(cfg.BRAND)} on WhatsApp.</p><button>Send code</button></form>
+<hr style="margin:20px 0;border:0;border-top:1px solid #e5ece7"><form method="get" action="/panel"><label>Or log in with the admin key</label><input name="key" type="password" autocomplete="current-password" required><p></p><button class="ghost">Log in with key</button></form></div>`)));
 r.post('/login', async (req, res) => {
   const phone = cfg.norm(req.body.phone);
   const u = phone.length >= 12 ? await who(phone) : null;
