@@ -474,7 +474,7 @@ const shopBtn = (s, d) => [`🏪 ${s.name}${d != null ? ' · ' + fmtKm(d) : ' ·
 async function showNearby(c) {
   const near = await nearbyShops(c.sess.data.loc);
   if (!near.length) return c.reply('😔 No shops deliver to your location yet.\nYou can pick an area instead, or share a different location.', [['🗺 Choose area', 'areas_c'], ['📦 My orders', 'my']]);
-  return c.reply(`📍 *Shops near you* (${near.length})\nTap a shop to start ordering:`, near.map(({ s, d }) => shopBtn(s, d)).concat([['📍 Change location', 'newloc'], ['📦 My orders', 'my']]));
+  return c.reply(`📍 *Shops near you* (${near.length})\nTap a shop to start ordering:${await webLine(c.from)}`, near.map(({ s, d }) => shopBtn(s, d)).concat([['📍 Change location', 'newloc'], ['📦 My orders', 'my']]));
 }
 async function custWelcome(c) {
   c.sess.state = null; c.sess.data.cart = {}; delete c.sess.data.shop;
@@ -482,12 +482,12 @@ async function custWelcome(c) {
   if (!live.length) return c.reply(`🙏 Welcome to *${cfg.BRAND}*!\nNo shops are live yet. Please check back soon.`);
   const areas = await db.areas.active();
   if (!areas.length) {
-    return c.reply(`🙏 Welcome to *${cfg.BRAND}*!\nOrder from shops near you on WhatsApp — pickup or home delivery.\n\nChoose a shop:`,
+    return c.reply(`🙏 Welcome to *${cfg.BRAND}*!\nOrder from shops near you on WhatsApp — pickup or home delivery.\n\nChoose a shop:${await webLine(c.from)}`,
       live.map((s) => shopBtn(s)).concat([['📦 My orders', 'my']]));
   }
   if (c.sess.data.loc) {
     const near = await nearbyShops(c.sess.data.loc);
-    if (near.length) return c.reply(`🙏 Welcome back to *${cfg.BRAND}*!\n📍 Shops near you:`, near.map(({ s, d }) => shopBtn(s, d)).concat([['📍 Change location', 'newloc'], ['📦 My orders', 'my']]));
+    if (near.length) return c.reply(`🙏 Welcome back to *${cfg.BRAND}*!\n📍 Shops near you:${await webLine(c.from)}`, near.map(({ s, d }) => shopBtn(s, d)).concat([['📍 Change location', 'newloc'], ['📦 My orders', 'my']]));
   }
   return c.reply(`🙏 Welcome to *${cfg.BRAND}*!\nOrder from shops near you on WhatsApp — pickup or home delivery.\n\n📍 *Share your location* to see nearby shops:\ntap 📎 → *Location* → *Send your current location*.`,
     [['🗺 Choose area instead', 'areas_c'], ['📦 My orders', 'my']]);
@@ -506,7 +506,7 @@ async function showCats(c, s) {
   const its = await db.items.byShop(s.id);
   const cats = [...new Set(its.map((i) => i.cat))];
   if (!cats.length) return c.reply(`*${s.name}* hasn't added items yet.`, [['🏠 Other shops', 'menu']]);
-  return c.reply(`🏪 *${s.name}* · ${s.area}\n${s.delivery ? `🛵 Home delivery ${rs(s.del_fee)}${s.min_order ? ` (min ${rs(s.min_order)})` : ''} · 🏃 Pickup` : '🏃 Store pickup only'}\n\nTap a category or *type an item name* to search.`,
+  return c.reply(`🏪 *${s.name}* · ${s.area}\n${s.delivery ? `🛵 Home delivery ${rs(s.del_fee)}${s.min_order ? ` (min ${rs(s.min_order)})` : ''} · 🏃 Pickup` : '🏃 Store pickup only'}\n\nTap a category or *type an item name* to search.${await webLine(c.from, s.id)}`,
     cats.map((ct) => [`${ct} (${its.filter((i) => i.cat === ct).length})`, 'cat:' + ct]).concat([[`🛒 Cart (${cartCount(c)})`, 'cart']]));
 }
 async function showCart(c, s) {
@@ -522,53 +522,89 @@ async function askPay(c, s) {
   b.push([D.mode === 'delivery' ? '💵 Cash on delivery' : '💵 Pay at shop', 'pay:Cash']);
   return c.reply(`🧾 *Order summary*\nItems: ${rs(sub)}${del ? `\nDelivery: ${rs(del)}` : ''}\n*Total: ${rs(sub + del)}*\n${D.mode === 'delivery' ? '🛵 Deliver to: ' + D.addr : '🏃 Pickup at ' + s.name + ', ' + s.area}\n\nHow would you like to pay?`, b);
 }
-async function placeOrder(c, s, payMode) {
-  const D = c.sess.data;
+// Creates the order and reduces stock in one transaction. Used by WhatsApp and the website.
+// Returns { o, lines } or { err } (err is a message for the customer).
+async function createOrder({ s, phone, name, cart, mode, addr, payMode }) {
   const client = await db.pool.connect();
-  let o, lines;
+  let o; const lines = [];
   try {
     await client.query('begin');
-    lines = [];
-    for (const [id, q] of Object.entries(D.cart || {})) {
+    for (const [id, q] of Object.entries(cart || {})) {
+      if (!(q > 0)) continue;
       const i = (await client.query('select * from items where id=$1 and shop_id=$2 for update', [+id, s.id])).rows[0];
       if (!i) continue;
-      if (i.stock < q) { await client.query('rollback'); return c.reply(`Sorry, *${i.name}* now has only ${i.stock} left. Please update your cart.`, [['🛒 Cart', 'cart']]); }
+      if (i.stock < q) { await client.query('rollback'); return { err: `Sorry, *${i.name}* now has only ${i.stock} left. Please update your cart.` }; }
       await client.query('update items set stock=stock-$2 where id=$1', [i.id, q]);
       lines.push({ id: i.id, name: i.name, price: i.price, q, left: i.stock - q });
     }
-    if (!lines.length) { await client.query('rollback'); return c.reply('Your cart is empty.', [['⬅ Categories', 'cats']]); }
-    const sub = lines.reduce((a, l) => a + l.q * l.price, 0), del = D.mode === 'delivery' ? s.del_fee : 0;
+    if (!lines.length) { await client.query('rollback'); return { err: 'Your cart is empty.' }; }
+    const sub = lines.reduce((a, l) => a + l.q * l.price, 0), del = mode === 'delivery' ? s.del_fee : 0;
     const seq = (await client.query('update shops set inv_seq=inv_seq+1 where id=$1 returning inv_seq', [s.id])).rows[0].inv_seq;
     o = (await client.query(`insert into orders(shop_id,cust_phone,cust_name,lines,subtotal,del_fee,total,mode,addr,pay,inv,token)
       values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning *`,
-    [s.id, c.from, c.name, JSON.stringify(lines.map(({ left, ...l }) => l)), sub, del, sub + del, D.mode, D.mode === 'delivery' ? D.addr : '', payMode,
+    [s.id, phone, name, JSON.stringify(lines.map(({ left, ...l }) => l)), sub, del, sub + del, mode, mode === 'delivery' ? addr : '', payMode,
       `INV-${s.code}-${String(seq).padStart(4, '0')}`, crypto.randomBytes(12).toString('hex')])).rows[0];
     await client.query('commit');
   } catch (e) { await client.query('rollback').catch(() => {}); throw e; } finally { client.release(); }
+  return { o, lines };
+}
+async function placeOrder(c, s, payMode) {
+  const D = c.sess.data;
+  const r = await createOrder({ s, phone: c.from, name: c.name, cart: D.cart, mode: D.mode, addr: D.addr, payMode });
+  if (r.err) return c.reply(r.err, r.err.includes('empty') ? [['⬅ Categories', 'cats']] : [['🛒 Cart', 'cart']]);
   D.cart = {}; c.sess.state = null;
+  return orderPlaced(r.o, s, r.lines, payMode, (t, b) => c.reply(t, b));
+}
+// Messages after an order: customer confirmation + invoice, shop owner, low stock, delivery desk
+async function orderPlaced(o, s, lines, payMode, toCust) {
+  toCust = toCust || ((t, b) => notify(o.cust_phone, t, b));
   const n = o.id;
-  await c.reply(`🎉 *Order #${n} placed* with ${s.name}!${payMode === 'UPI' ? `\n\n💳 Please pay *${rs(o.total)}* to UPI ID:\n*${s.upi}*\n(write "Order ${n}" in the note). The shop confirms once they see it.` : ''}\nYou'll get updates right here.`);
-  await sendInvoice(c.from, o, s, [['📦 My orders', 'my'], ['🏠 Shops', 'menu']]);
+  await toCust(`🎉 *Order #${n} placed* with ${s.name}!${payMode === 'UPI' ? `\n\n💳 Please pay *${rs(o.total)}* to UPI ID:\n*${s.upi}*\n(write "Order ${n}" in the note). The shop confirms once they see it.` : ''}\nYou'll get updates right here.`);
+  try { await sendInvoice(o.cust_phone, o, s, [['📦 My orders', 'my'], ['🏠 Shops', 'menu']]); } catch (e) { console.error('invoice send', e.message); }
   await notify(s.owner_phone, `🔔 *New order #${n}*\n${o.cust_name || ''} · +${o.cust_phone}\n\n` + lines.map((l) => `${l.q} × ${l.name} = ${rs(l.q * l.price)}`).join('\n') +
     `\n\nTotal: *${rs(o.total)}* · ${payMode === 'UPI' ? 'UPI to you – check your UPI app before accepting' : 'Cash'}\n${o.mode === 'delivery' ? `🛵 Home delivery (${cfg.BRAND} rider)\n📍 ${o.addr}` : '🏃 Customer will pick up'}`,
   [[`✅ Accept #${n}`, 'acc:' + n], [`❌ Reject #${n}`, 'rej:' + n]]);
   const low = lines.filter((l) => l.left < 5);
   if (low.length) await notify(s.owner_phone, '⚠️ *Low stock alert*\n' + low.map((l) => `• ${l.name}: ${l.left} left`).join('\n') + '\nReply _stock Item qty_ to update.');
   if (o.mode === 'delivery') await notifyDelivery(s, `🛵 *New delivery order #${n}*\n${s.name} → ${o.addr}\n${rs(o.total)} ${payMode === 'UPI' ? '(UPI)' : '(collect cash)'} · waiting for shop to pack.`, [['🛵 Delivery desk', 'deliv']]);
+  return o;
 }
+
+// Personal website link for a customer (opens shops near their saved location, or one shop)
+async function webLink(phone, shopId) {
+  if (!cfg.PUBLIC_URL) return '';
+  let row = await db.one('select token from cust_links where phone=$1', [phone]);
+  if (!row) row = await db.one(`insert into cust_links(phone,token) values($1,$2) on conflict(phone) do update set updated_at=now() returning token`, [phone, crypto.randomBytes(6).toString('base64url')]);
+  return `${cfg.PUBLIC_URL}/u/${row.token}${shopId ? '?shop=' + shopId : ''}`;
+}
+const webLine = async (phone, shopId) => { const l = await webLink(phone, shopId); return l ? `\n\n🌐 Shop on the website (photos, full list, easy cart):\n${l}` : ''; };
 
 async function customer(c, v, btn) {
   const S = c.sess, D = S.data;
   D.cart = D.cart || {};
   let low = v.trim().toLowerCase(), m;
   if (MENU_WORDS.includes(low) || low === 'shops') return custWelcome(c);
+  if ((m = low.match(/^order\s+(w[a-z0-9]{5,8})\b/))) {
+    const w = await db.one('select * from web_orders where code=$1', [m[1].toUpperCase()]);
+    if (!w) return c.reply('That website order code has expired. Please open the shop link again.', [['🏠 Shops', 'menu']]);
+    const s = await db.shops.get(w.shop_id);
+    if (!s || !s.active || !s.paid) return c.reply('Sorry, this shop is not taking orders right now.', [['🏠 Shops', 'menu']]);
+    const r = await createOrder({ s, phone: c.from, name: c.name, cart: w.cart, mode: w.mode, addr: w.addr, payMode: w.pay });
+    if (r.err) return c.reply(r.err + `\nOpen the shop again: ${cfg.PUBLIC_URL}/s/${s.id}`);
+    await db.q('delete from web_orders where code=$1', [w.code]);
+    return orderPlaced(r.o, s, r.lines, w.pay, (t, b) => c.reply(t, b));
+  }
   if (!btn) { if (low === 'cart') v = 'cart'; if (low === 'checkout') v = 'checkout'; if (low === 'orders' || low === 'my orders') v = 'my'; }
   if (S.state === 'addr' && (c.loc || !btn)) {
     if (c.loc) D.addr = `${c.loc.label ? c.loc.label + ' · ' : ''}📍 https://maps.google.com/?q=${c.loc.lat},${c.loc.lng}`;
     else { if (v.trim().length < 8) return c.reply('Please send the full address (house no, street, landmark).'); D.addr = v.trim(); }
     S.state = null; return askPay(c, await db.shops.get(D.shop));
   }
-  if (c.loc) { D.loc = { lat: c.loc.lat, lng: c.loc.lng }; D.cart = {}; delete D.shop; return showNearby(c); }
+  if (c.loc) {
+    D.loc = { lat: c.loc.lat, lng: c.loc.lng }; D.cart = {}; delete D.shop;
+    await webLink(c.from); await db.q('update cust_links set lat=$2, lng=$3, updated_at=now() where phone=$1', [c.from, c.loc.lat, c.loc.lng]);
+    return showNearby(c);
+  }
   if (v === 'newloc') return c.reply('📍 Send your location: tap 📎 → *Location* → *Send your current location*.', [['🗺 Choose area instead', 'areas_c']]);
   if (v === 'areas_c') {
     const as = await db.areas.active();
@@ -672,6 +708,7 @@ async function handle(from, name, v, btn) {
     if (low === '#customer') { sess.data.mode = 'customer'; return await custWelcome(c); }
     if (low === '#admin' || low === '#shop') delete sess.data.mode;
     let role = sess.data.mode === 'customer' ? 'customer' : isAdmin ? 'admin' : c.ownShops.length ? 'owner' : 'customer';
+    if (/^order\s+w[a-z0-9]{5,8}\b/.test(low)) role = 'customer';
     if (low === '#shop' && c.ownShops.length) role = 'owner';
     if (role === 'admin' && low === '#shop' && !c.ownShops.length) return await adminMenu(c);
     if (sess.data.role !== role) { sess.state = null; sess.data.role = role; }
@@ -686,4 +723,4 @@ async function handle(from, name, v, btn) {
   }
 }
 
-module.exports = { handle, activate, notify, notifyAdmins, notifyShopAdmins, rs, setStatus, ownerWelcome, mkCode, newAreaAdminWelcome, sendBills, areaMoney, out };
+module.exports = { createOrder, orderPlaced, webLink, nearbyShops, handle, activate, notify, notifyAdmins, notifyShopAdmins, rs, setStatus, ownerWelcome, mkCode, newAreaAdminWelcome, sendBills, areaMoney, out };

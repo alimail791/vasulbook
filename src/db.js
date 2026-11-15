@@ -38,6 +38,8 @@ async function init() {
   alter table shops add column if not exists lat double precision;
   alter table shops add column if not exists lng double precision;
   create table if not exists otps(phone text primary key, code_hash text, tries int default 0, expires_at timestamptz, created_at timestamptz default now());
+  create table if not exists cust_links(phone text primary key, token text unique not null, lat double precision, lng double precision, updated_at timestamptz default now());
+  create table if not exists web_orders(code text primary key, shop_id int references shops(id) on delete cascade, cart jsonb, mode text, addr text, pay text, created_at timestamptz default now());
   create index if not exists items_shop on items(shop_id);
   create index if not exists orders_shop on orders(shop_id, created_at);
   create index if not exists orders_cust on orders(cust_phone, created_at);

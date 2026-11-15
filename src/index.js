@@ -11,7 +11,7 @@ const dashboard = require('./dashboard');
 const app = express();
 app.use(express.json({ verify: (req, _res, buf) => { req.raw = buf; } }));
 
-app.get('/', (_req, res) => res.send(`${cfg.BRAND} WhatsApp bot is running.`));
+app.get('/', (_req, res) => res.redirect('/shops'));
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 const page = (title, body) => `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} – ${cfg.BRAND}</title>
@@ -93,6 +93,9 @@ app.get('/inv/:token.pdf', async (req, res) => {
   const s = await db.shops.get(o.shop_id);
   res.type('application/pdf').set('Content-Disposition', `inline; filename="${o.inv}.pdf"`).send(await invoice.pdf(o, s));
 });
+
+// --- website shop: browse shops, cart and order in the browser
+app.use('/', require('./web'));
 
 // --- web admin panel (WhatsApp OTP login)
 app.use('/panel', require('./panel'));

@@ -90,5 +90,39 @@ const tap = (p, label) => bot.handle(p, p === CUST ? 'Priya' : 'X', find(p, labe
   await loc(CUST2, 13.20, 80.30); assert(txt(last(CUST2)).includes('No shops'));
   const inv = require('../src/invoice'); const pdf = await inv.pdf(o, await db.shops.get(1)); assert(pdf.slice(0, 4).toString() === '%PDF');
   const dash = await require('../src/dashboard').html(); assert(dash.includes('INV-SMS-0001'));
+  // ---- website shop + personal link from WhatsApp
+  process.env.BOT_PHONE = '6383087827';
+  const tok = (await db.one('select token, lat from cust_links where phone=$1', [CUST2]));
+  assert(tok && tok.lat, 'location saved for web link');
+  await loc(CUST2, 13.0420, 80.2020); assert(txt(last(CUST2)).includes('/u/' + tok.token), 'nearby list has web link');
+  const { app } = require('../src/index'); const srv = app.listen(0); const base = `http://127.0.0.1:${srv.address().port}`;
+  let r = await fetch(`${base}/u/${tok.token}`, { redirect: 'manual' }); assert.equal(r.status, 302);
+  const ck = r.headers.get('set-cookie').split(';')[0]; assert(r.headers.get('location').startsWith('/shops?lat='));
+  let h = await (await fetch(base + r.headers.get('location'))).text(); assert(h.includes('Fresh Mart') && !h.includes('Sri Murugan'), 'nearby shops only');
+  h = await (await fetch(`${base}/shops`)).text(); assert(h.includes('Sri Murugan') && h.includes('Fresh Mart'));
+  h = await (await fetch(`${base}/s/${fm.id}`)).text(); assert(h.includes('Tomato 1kg') && h.includes('Vegetables'));
+  const tom = await db.one("select * from items where name='Tomato 1kg'");
+  // known customer (cookie): order placed directly, shop owner notified
+  const ownerBefore = box[OWNER2].length;
+  r = await fetch(`${base}/s/${fm.id}/order`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: ck }, body: JSON.stringify({ cart: { [tom.id]: 2 }, mode: 'pickup', pay: 'UPI' }) });
+  let j = await r.json(); assert(j.done, JSON.stringify(j));
+  const o3 = await db.one('select * from orders order by id desc limit 1'); assert.equal(o3.cust_phone, CUST2); assert.equal(Number(o3.total), 64); assert.equal(o3.pay, 'UPI');
+  assert(box[OWNER2].slice(ownerBefore).some((m) => txt(m).includes('New order #' + o3.id)), 'owner told');
+  assert(box[CUST2].some((m) => txt(m).includes('Order #' + o3.id + ' placed')), 'customer told on WhatsApp');
+  h = await (await fetch(base + j.done)).text(); assert(h.includes('upi://pay') && h.includes('#' + o3.id));
+  assert.equal((await db.items.get(tom.id)).stock, tom.stock - 2, 'stock reduced');
+  // too many
+  j = await (await fetch(`${base}/s/${fm.id}/order`, { method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: ck }, body: JSON.stringify({ cart: { [tom.id]: 999 }, mode: 'pickup', pay: 'Cash' }) })).json();
+  assert(j.error && j.error.includes('only'));
+  // unknown visitor: gets a WhatsApp code; sending it places the order
+  j = await (await fetch(`${base}/s/${fm.id}/order`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cart: { [tom.id]: 1 }, mode: 'delivery', addr: '12, Lake View Road, near temple', pay: 'Cash' }) })).json();
+  assert(j.wa && j.wa.includes('wa.me/916383087827'), JSON.stringify(j));
+  const code = decodeURIComponent(j.wa.split('text=')[1]); const NEWC = '919811112222';
+  await bot.handle(NEWC, 'Ravi', code, false); assert(box[NEWC].some((m) => txt(m).includes('placed* with Fresh Mart')), 'web code order');
+  const o4 = await db.one('select * from orders order by id desc limit 1'); assert.equal(o4.cust_phone, NEWC); assert.equal(o4.mode, 'delivery'); assert(o4.addr.includes('Lake View'));
+  await bot.handle(NEWC, 'Ravi', code, false); assert(txt(last(NEWC)).includes('expired'), 'code used once');
+  await bot.handle(OWNER2, 'X', code, false); // owner sending a code goes to customer flow, not owner commands
+  srv.close();
+  console.log('✔ website shop: personal link, nearby shops, cart order, WhatsApp code order');
   console.log('\n✅ ALL FLOWS PASSED'); process.exit(0);
 })().catch((e) => { console.error('❌', e); process.exit(1); });
