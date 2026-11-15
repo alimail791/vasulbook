@@ -48,7 +48,8 @@ async function runDigest(force = false, localityIds = null) {
     const lines = top.map((a, i) => `${i + 1}. ${a.title} – ${a.offer} (${a.shop}, ${a.dist < 1 ? Math.round(a.dist * 1000) + ' m' : a.dist.toFixed(1) + ' km'})`);
     const recent = cu.last_seen && Date.now() - new Date(cu.last_seen).getTime() < 23 * 3600e3;
     try {
-      if (recent) await wa.send(cu.phone, `☀️ *Good morning! Top offers near you today*\n\n${lines.join('\n')}\n\nReply *STOP* to stop these.`, [["🔥 See all offers", 'offers'], ['🔕 Stop daily offers', 'alerts']]);
+      const web = await bot.webLink(cu.phone);
+      if (recent) await wa.send(cu.phone, `☀️ *Good morning! Top offers near you today*\n\n${lines.join('\n')}${web ? `\n\n🌐 All with photos: ${web}` : ''}\n\nReply *STOP* to stop these.`, [["🔥 See all offers", 'offers'], ['🔕 Stop daily offers', 'alerts']]);
       else if (cfg.WA_DIGEST_TEMPLATE) await wa.sendTemplate(cu.phone, lines.join(' | '), cfg.WA_DIGEST_TEMPLATE);
       else continue;
       await db.q('update customers set last_digest=$2 where phone=$1', [cu.phone, todayIST()]);

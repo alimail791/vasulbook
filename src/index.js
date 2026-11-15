@@ -30,7 +30,7 @@ app.get('/', async (_req, res) => {
   res.send(page(`${cfg.BRAND} – Local offers on WhatsApp`, `<p><img src="/edeal-logo.svg" alt="${esc(cfg.BRAND)}" style="height:64px"></p>
 <h1>Offers, events, classes and homes near you – on WhatsApp</h1>
 <p>Say <b>Hi</b> on WhatsApp, share your location and see today's sales, discounts, tuition &amp; schools, local events, and houses for rent or sale within 2–5 km. No app, no login.</p>
-${wa_link ? `<p><a class="btn" href="${wa_link}">💬 Open ${esc(cfg.BRAND)} on WhatsApp</a></p>` : ''}
+<p><a class="btn" href="/offers">🔥 See offers near you</a> ${wa_link ? `<a class="btn" style="background:#25d366" href="${wa_link}">💬 Open ${esc(cfg.BRAND)} on WhatsApp</a>` : ''}</p>
 <h2>For businesses</h2><p>Shops, restaurants, salons, tutors, coaching centres, schools, house owners and brokers: reach people near you every day. Send <b>business</b> to the bot to start with a <b>${P.trial.days}-day free trial</b>.</p>
 <table><tr><th>Plan</th><th>Price</th><th>What you get</th></tr>
 <tr><td>Free trial</td><td>₹0 · ${P.trial.days} days</td><td>1 ad, 2 km</td></tr><tr><td>1 Day</td><td>₹${P.day.price}</td><td>1 ad for a day, 2 km</td></tr>
@@ -120,6 +120,9 @@ app.post('/razorpay/webhook', async (req, res) => {
     if (p) await bot.confirmPayment(p.id);
   } catch (e) { console.error('razorpay webhook', e); }
 });
+
+// ---------- public offer pages
+app.use('/', require('./web'));
 
 // ---------- web admin panel
 app.use('/panel', require('./panel'));

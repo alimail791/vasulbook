@@ -115,7 +115,8 @@ async function showList(c, list, title, page = 0) {
     await c.reply(cardText(a, a.dist), adButtons(a), imgOf(a));
   }
   const more = (page + 1) * PER_PAGE < list.length;
-  return c.reply(more ? `Showing ${page * PER_PAGE + 1}–${page * PER_PAGE + slice.length} of ${list.length}` : 'That’s all for now 👆', more ? [['More ▶', 'more'], ['🏠 Menu', 'menu']] : [['🗂 Categories', 'cats'], ['🏠 Menu', 'menu']]);
+  const web = await webLink(c.from);
+  return c.reply((more ? `Showing ${page * PER_PAGE + 1}–${page * PER_PAGE + slice.length} of ${list.length}` : 'That’s all for now 👆') + (web ? `\n🌐 All on one page: ${web}` : ''), more ? [['More ▶', 'more'], ['🏠 Menu', 'menu']] : [['🗂 Categories', 'cats'], ['🏠 Menu', 'menu']]);
 }
 async function moreList(c) {
   const L = c.sess.data.list; if (!L) return custMenu(c);
@@ -124,6 +125,15 @@ async function moreList(c) {
 }
 
 /* ================================================================ CUSTOMER */
+// Personal website link: opens the offers page near this customer's saved location
+async function webLink(phone, filter) {
+  if (!cfg.PUBLIC_URL) return '';
+  let row = await db.one('select web_token from customers where phone=$1', [phone]);
+  let t = row && row.web_token;
+  if (!t) { t = crypto.randomBytes(6).toString('base64url'); await db.q('update customers set web_token=$2 where phone=$1', [phone, t]); }
+  return `${cfg.PUBLIC_URL}/u/${t}${filter ? '?f=' + encodeURIComponent(filter) : ''}`;
+}
+const WEB_ACTION = { offer: 'cp', coupon: 'cp', enquiry: 'enq', contact: 'enq', visit: 'visit', interested: 'int', demo: 'demo', admission: 'demo' };
 async function custWelcome(c) {
   await wa.askLocation(c.from, `👋 *Welcome to ${cfg.BRAND}!*\nSales, discounts, offers, events, tuition & schools, and homes for rent or sale within *2–5 km* of you – fresh every day.\n\nTap *Send location* below to begin 👇`);
   const ls = (await db.localities.active()).filter((l) => l.lat != null);
@@ -138,7 +148,8 @@ async function custMenu(c) {
   const all = await nearby(cust);
   const n = (f) => all.filter(f).length;
   const area = cust.locality_id ? (await db.localities.get(cust.locality_id) || {}).name : null;
-  return c.reply(`*${cfg.BRAND}* · 📍 ${area || 'your location'} · ${cust.radius_km} km\n🔥 ${n((a) => a.type === 'deal' && !EDU.includes(a.cat))} offers · 🎓 ${n((a) => EDU.includes(a.cat))} education · 🎉 ${n((a) => a.type === 'event')} events · 🏠 ${n((a) => a.type === 'property')} homes\n\n_Tip: type what you need, e.g. "tuition" or "2 bhk rent"._`, [
+  const web = await webLink(c.from);
+  return c.reply(`*${cfg.BRAND}* · 📍 ${area || 'your location'} · ${cust.radius_km} km\n🔥 ${n((a) => a.type === 'deal' && !EDU.includes(a.cat))} offers · 🎓 ${n((a) => EDU.includes(a.cat))} education · 🎉 ${n((a) => a.type === 'event')} events · 🏠 ${n((a) => a.type === 'property')} homes${web ? `\n\n🌐 See all with photos on the web:\n${web}` : ''}\n\n_Tip: type what you need, e.g. "tuition" or "2 bhk rent"._`, [
     ["🔥 Today's offers", 'offers'], ['🗂 Categories', 'cats'], ['🎓 Tuition, coaching & schools', 'edu'], ['🎉 Local events', 'events'], ['🏠 Rent & property', 'props'],
     ['🎟 My coupons', 'mine'], [cust.subscribed ? '🔕 Stop daily offers' : '🔔 Daily 9 AM offers', 'alerts'], ['📏 Change distance', 'radius'], ['📍 Change location', 'setloc'], ['🏪 Advertise your business', 'biz']]);
 }
@@ -176,7 +187,9 @@ async function customer(c, v, btn) {
     c.cust = await db.customers.set(c.from, { lat: L.lat, lng: L.lng, locality_id: L.id });
     return c.reply(`✅ Area set: *${L.name}*. How far should I look?`, [['2 km', 'rad:2'], ['3 km', 'rad:3'], ['5 km', 'rad:5']]);
   }
-  if (c.cust.lat == null && !['biz'].includes(v)) return custWelcome(c);
+  if ((m = v.trim().match(/^(offer|coupon|enquiry|contact|visit|interested|demo|admission)\s*#\s*(\d+)/i))) { v = `${WEB_ACTION[m[1].toLowerCase()]}:${m[2]}`; btn = true; }
+  const isAdAction = /^(cp|dir|call|demo|enq|int|visit):\d+$/.test(v) || /^vt:/.test(v);
+  if (c.cust.lat == null && !['biz'].includes(v) && !isAdAction) return custWelcome(c);
   if ((m = v.match(/^rad:(\d)$/))) { c.cust = await db.customers.set(c.from, { radius_km: Math.min(cfg.MAX_RADIUS_KM, +m[1]) }); return custMenu(c); }
   if (v === 'radius') return c.reply('How far should I look?', [['2 km', 'rad:2'], ['3 km', 'rad:3'], ['5 km', 'rad:5']]);
   if (v === 'setloc') return wa.askLocation(c.from, 'Tap *Send location* to update where you are 👇');
@@ -511,7 +524,7 @@ async function approveAd(id, byPhone) {
   const a = await db.ads.get(id);
   if (!a || a.status !== 'pending') return null;
   await db.ads.set(id, { status: 'live', approved_at: new Date() });
-  await notify(a.adv_phone, `🎉 Your ad “*${a.title}*” is now *LIVE* for people within ${a.radius_km} km.`, [['📊 My ads & leads', 'myads'], ['🏪 Business menu', 'menu']]);
+  await notify(a.adv_phone, `🎉 Your ad “*${a.title}*” is now *LIVE* for people within ${a.radius_km} km.${cfg.PUBLIC_URL ? `\n\n🔗 Share it on your WhatsApp status and groups to get more customers:\n${cfg.PUBLIC_URL}/ad/${a.id}` : ''}`, [['📊 My ads & leads', 'myads'], ['🏪 Business menu', 'menu']]);
   return a;
 }
 const REASONS = { unclear: 'Offer is not clear', cat: 'Wrong category', content: 'Content not allowed', photo: 'Photo problem', other: 'Please contact the admin' };
@@ -664,6 +677,7 @@ async function handle(from, name, v, btn) {
       await db.q('delete from customers where phone=$1', [from]); await db.q('delete from coupons where phone=$1 and redeemed_at is null', [from]);
       return await c.say('🗑 Your customer data has been deleted. Businesses can contact info@vasulbook.com to close their account.');
     }
+    if (/^(offer|coupon|enquiry|contact|visit|interested|demo|admission)\s*#\s*\d+/i.test(v.trim())) return await customer(c, v, false);
     let role = sess.data.as || (isAdmin ? 'admin' : c.adv ? 'business' : 'customer');
     if (role === 'admin' && !isAdmin) role = 'customer';
     if (role === 'business' || (role === 'customer' && v === 'biz')) { sess.data.as = 'business'; return await advertiser(c, v, btn); }
@@ -677,4 +691,4 @@ async function handle(from, name, v, btn) {
   }
 }
 
-module.exports = { handle, notify, notifyAdmins, approveAd, rejectAd, confirmPayment, activatePlan, welcomeAreaAdmin, nearby, cardText, imgOf, rs, km, istDate, planActive, REASONS, CATS, EMO, EDU, SUBS };
+module.exports = { webLink, handle, notify, notifyAdmins, approveAd, rejectAd, confirmPayment, activatePlan, welcomeAreaAdmin, nearby, cardText, imgOf, rs, km, istDate, planActive, REASONS, CATS, EMO, EDU, SUBS };

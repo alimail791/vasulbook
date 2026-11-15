@@ -43,6 +43,7 @@ async function init() {
   create table if not exists sessions(phone text primary key, state text, data jsonb default '{}', updated_at timestamptz default now());
   create table if not exists menus(phone text primary key, text text, items jsonb);
   create table if not exists otps(phone text primary key, code_hash text, tries int default 0, expires_at timestamptz, created_at timestamptz default now());
+  alter table customers add column if not exists web_token text unique;
   create index if not exists ads_status on ads(status);
   create index if not exists ads_adv on ads(adv_id);
   create index if not exists leads_ad on leads(ad_id);
