@@ -272,7 +272,7 @@ async function advMenu(c) {
   c.sess.state = null; c.sess.data.d = null;
   const a = c.adv, P = await db.plans(), L = a.locality_id ? await db.localities.get(a.locality_id) : null;
   const plan = planActive(a) ? `${P[a.plan].name} · valid till ${istDate(a.plan_until)}` : '⚠️ No active plan';
-  const post = a.cat === 'Property' ? [['🏠 Post a property', 'post:property']] : [['➕ Post an offer', 'post:deal'], ['🎉 Post an event', 'post:event'], ['🏠 Post a property', 'post:property']];
+  const post = a.cat === 'Property' ? [['🏠 Post a property', 'post:property'], ['➕ Post an offer', 'post:deal'], ['🎉 Post an event', 'post:event']] : [['➕ Post an offer', 'post:deal'], ['🎉 Post an event', 'post:event'], ['🏠 Post a property', 'post:property']];
   return c.reply(`🏪 *${a.name}*${L ? ' · 📍 ' + L.name : ''}\n🏷 ${a.cat === 'Property' ? 'Property owner / broker' : a.cat}\nPlan: ${plan}`, post.concat([['📊 My ads & leads', 'myads'], ['✅ Redeem a coupon', 'redeem'], ['💳 Plans & renew', 'plans'], [`🏷 Category: ${a.cat}`, 'acat'], ['📍 Update location', 'aloc'], ['🛍 Browse offers', '#customer']]));
 }
 async function activatePlan(adv, planKey, payment) {
@@ -337,6 +337,13 @@ async function askReach(c) {
   return previewAd(c);
 }
 
+// Category for one offer: any category, the business's own one listed first
+function askAdCat(c, text) {
+  const own = CATS.includes(c.adv.cat) ? c.adv.cat : null, cur = c.sess.data.d.cat || own;
+  const order = own ? [own, ...CATS.filter((k) => k !== own)] : CATS;
+  c.sess.state = 'd_cat';
+  return c.reply(`🏷 ${text}\nYou can post in any category.`, order.map((k) => [`${EMO[k]} ${k}${k === cur ? ' ✓' : ''}`, 'dcat:' + k]));
+}
 async function advertiser(c, v, btn) {
   const S = c.sess, low = v.trim().toLowerCase();
   let m;
@@ -419,10 +426,14 @@ async function advertiser(c, v, btn) {
     S.data.oldcat = null; await c.say(`✅ ${r2.rowCount} offer${r2.rowCount === 1 ? '' : 's'} moved to *${a.cat}*.`); return advMenu(c);
   }
   // ---- choose a different category for just this ad (from the preview)
-  if (v === 'dcat' && S.data.d && S.data.d.type === 'deal') {
-    return c.reply('🏷 Category for this ad only (your business category stays the same):', CATS.map((k) => [`${EMO[k]} ${k}${k === (S.data.d.cat || a.cat) ? ' ✓' : ''}`, 'dcat:' + k]));
+  if (v === 'dcat' && S.data.d && S.data.d.type === 'deal') return askAdCat(c, 'Category for this ad (your business category stays the same):');
+  if ((m = v.match(/^dcat:(.+)$/)) && S.data.d && S.data.d.type === 'deal' && CATS.includes(m[1])) {
+    const d = S.data.d; d.cat = m[1];
+    if (d.valid) return previewAd(c);
+    S.state = 'd_title';
+    return c.reply(`${EMO[d.cat]} *${d.cat}* offer.\n✍️ Headline – what are you offering?\n_e.g. "${(SAMPLE[d.cat] || SAMPLE._)[0]}"_`);
   }
-  if ((m = v.match(/^dcat:(.+)$/)) && S.data.d && S.data.d.type === 'deal' && CATS.includes(m[1])) { S.data.d.cat = m[1]; return previewAd(c); }
+  if (S.state === 'd_cat' && !btn) return c.reply('Please pick a category from the list 👆');
   if (v === 'aloc') { S.state = 'a_loc'; return wa.askLocation(c.from, 'Tap *Send location* to update your shop location 👇'); }
   if ((m = v.match(/^loc:(-?[\d.]+),(-?[\d.]+)\|?(.*)$/)) && S.state === 'a_loc') {
     const L = await nearestLocality(+m[1], +m[2]);
@@ -436,9 +447,9 @@ async function advertiser(c, v, btn) {
     if (lim === 'limit') { const P = await db.plans(); return c.reply(`Your *${P[a.plan].name}* plan covers 1 ad. Upgrade to post more:`, [[`⭐ Monthly – ${rs(P.month.price)}`, 'plan:month'], [`👑 Premium – ${rs(P.premium.price)}`, 'plan:premium'], ['🏪 Business menu', 'menu']]); }
     S.data.d = { type: m[1] };
     if (m[1] === 'property') { S.state = 'd_sub'; return c.reply('What are you listing?', Object.keys(SUBS).map((k) => [SUBS[k], 'dsub:' + k])); }
+    if (m[1] === 'deal') return askAdCat(c, 'Which category is this offer for?');
     S.state = 'd_title';
-    const sm = SAMPLE[a.cat] || SAMPLE._;
-    return c.reply(m[1] === 'event' ? '✍️ Event name? (e.g. "Free health camp")' : `✍️ Headline – what are you offering?\n_e.g. "${sm[0]}"_`);
+    return c.reply('✍️ Event name? (e.g. "Free health camp")');
   }
   if ((m = v.match(/^dsub:(.+)$/)) && S.data.d && SUBS[m[1]]) {
     S.data.d.sub = m[1]; S.state = 'd_title';
@@ -448,7 +459,7 @@ async function advertiser(c, v, btn) {
     const d = S.data.d; d.title = v.trim().slice(0, 80); S.state = 'd_offer';
     if (d.type === 'property') return c.reply(d.sub === 'Rent' ? '💰 Monthly rent? (e.g. "₹10,000/month")' : '💰 Asking price? (e.g. "₹55 lakh, negotiable")');
     if (d.type === 'event') return c.reply('📝 Event details – day, time, entry? (e.g. "Saturday 6–8 pm · free entry")');
-    return c.reply(`🏷 The offer – discount, price or freebie?\n_e.g. "${(SAMPLE[a.cat] || SAMPLE._)[1]}"_`);
+    return c.reply(`🏷 The offer – discount, price or freebie?\n_e.g. "${(SAMPLE[d.cat || a.cat] || SAMPLE._)[1]}"_`);
   }
   if (S.state === 'd_offer' && !btn && S.data.d) {
     const d = S.data.d; d.offer = v.trim().slice(0, 120);

@@ -50,7 +50,7 @@ const ok = (name) => console.log('✔', name);
   assert(txt(last(TUTOR)).includes('registered in *Gandhi Nagar*'));
   assert(has(ADMIN, 'New advertiser: *Bright Minds Tuition*'));
   await tap(TUTOR, 'free trial'); assert(has(TUTOR, 'Free trial started'));
-  await tap(TUTOR, 'Post an offer'); await say(TUTOR, 'Maths & Science tuition, Class 6–10'); await say(TUTOR, 'First month 50% off + free demo class');
+  await tap(TUTOR, 'Post an offer'); assert(txt(last(TUTOR)).includes('any category')); await tap(TUTOR, 'Tuition'); await say(TUTOR, 'Maths & Science tuition, Class 6–10'); await say(TUTOR, 'First month 50% off + free demo class');
   await tap(TUTOR, 'Skip photo'); await tap(TUTOR, '7 days');
   assert(has(TUTOR, 'shows ads within *2 km*')); assert(txt(last(TUTOR)).includes('Preview'));
   await tap(TUTOR, 'Submit'); assert(txt(last(TUTOR)).includes('Submitted'));
@@ -88,7 +88,7 @@ const ok = (name) => console.log('✔', name);
   assert(txt(last(ADMIN)).includes('Payment to confirm') && txt(last(ADMIN)).includes('412345678901'));
   await tap(ADMIN, 'Confirm'); assert(has(SHOP, 'Monthly* plan is active'));
   assert(has(AREA, '₹299 received from *Style Point Boutique*'));
-  await tap(SHOP, 'Post an ad'); await say(SHOP, 'Season clearance'); await say(SHOP, 'Buy 2 get 1 free on kurtis'); await tap(SHOP, 'Skip photo'); await tap(SHOP, '30 days');
+  await tap(SHOP, 'Post an ad'); await tap(SHOP, 'Electronics'); assert(txt(last(SHOP)).includes('*Electronics* offer')); await say(SHOP, 'Season clearance'); await say(SHOP, 'Buy 2 get 1 free on kurtis'); await tap(SHOP, 'Skip photo'); await tap(SHOP, '30 days');
   await tap(SHOP, 'Change category'); await tap(SHOP, 'Kids'); assert(txt(last(SHOP)).includes('🏷 Kids'));
   await tap(SHOP, 'Change category'); await tap(SHOP, 'Fashion'); await tap(SHOP, 'Submit');
   assert.equal((await db.one(`select cat from ads where title='Season clearance'`)).cat, 'Fashion');
@@ -104,6 +104,8 @@ const ok = (name) => console.log('✔', name);
   await say(OWNER, '2 BHK house near bus stand'); await say(OWNER, '₹12,000/month'); await say(OWNER, 'Ground floor · 900 sq ft · bike parking');
   await bot.handle(OWNER, 'X', 'img:FAKE', true); await tap(OWNER, '15 days'); await tap(OWNER, 'Submit');
   await tap(ADMIN, 'Approve');
+  // property owner can also post an offer in any category (trial = 1 ad, so check the menu + category list only)
+  await say(OWNER, 'menu'); assert(opts(last(OWNER)).some(([l]) => l.includes('Post an offer')) && opts(last(OWNER)).some(([l]) => l.includes('Post an event')));
   ok('property listing');
 
   // ---- customer near Gandhi Nagar
