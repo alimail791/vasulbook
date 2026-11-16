@@ -705,11 +705,12 @@ async function handle(from, name, v, btn) {
     if (/^(offer|coupon|enquiry|contact|visit|interested|demo|admission)\s*#\s*\d+/i.test(v.trim())) return await customer(c, v, false);
     let role = sess.data.as || (isAdmin ? 'admin' : c.adv ? 'business' : 'customer');
     if (role === 'admin' && !isAdmin) role = 'customer';
+    // Buttons from alerts work in any view: admin actions (approve, payments, localities)…
+    if (isAdmin && btn && /^(ap|rj|rr|pc|pr|lo|lch|lpa|lw):|^(apend|apays|alocs|aadd|arev|adigest|aweb)$/.test(v)) return await admin(c, v, btn);
+    // …and an admin's own business buttons while in admin view
+    if (role !== 'business' && c.adv && btn && /^(myads|plans|redeem|acat|acatmv|dcat|dskip|dsubmit|okVisit)$|^(post|paid|plan|ad|adp|adr|add|adl|acat|dcat|dsub|dval|drad):/.test(v)) { sess.data.as = 'business'; return await advertiser(c, v, btn); }
     if (role === 'business' || (role === 'customer' && v === 'biz')) { sess.data.as = 'business'; return await advertiser(c, v, btn); }
     if (role === 'admin') return await admin(c, v, btn);
-    // customer view – an admin/advertiser browsing can still tap approve/payment buttons from alerts
-    if (isAdmin && /^(ap|rj|rr|pc|pr):/.test(v)) return await admin(c, v, btn);
-    if (c.adv && /^(myads|plans|redeem|post:|paid:|plan:)/.test(v)) return await advertiser(c, v, btn);
     return await customer(c, v, btn);
   } finally {
     await db.sessions.save(from, sess);

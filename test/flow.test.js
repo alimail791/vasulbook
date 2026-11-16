@@ -69,6 +69,16 @@ const ok = (name) => console.log('✔', name);
   await say(TUTOR, 'menu'); await tap(TUTOR, 'Category: Coaching'); await tap(TUTOR, 'Tuition'); await tap(TUTOR, 'Yes, move them');
   assert.equal((await db.one(`select cat from ads where title like 'Maths%'`)).cat, 'Tuition');
   ok('advertiser changes category (and moves running offers)');
+  // ---- main admin posts their own ad from business view and approves it from there
+  await say(ADMIN, '#business'); await say(ADMIN, 'Akbar Rentals'); await tap(ADMIN, 'Property owner'); await loc(ADMIN, 13.0402, 80.2002);
+  await tap(ADMIN, 'free trial'); await tap(ADMIN, 'Post a property'); await tap(ADMIN, 'Houses for rent');
+  await say(ADMIN, '1 BHK near market'); await say(ADMIN, '₹7,000/month'); await say(ADMIN, 'First floor · 600 sq ft');
+  await tap(ADMIN, 'Skip photo'); await tap(ADMIN, '7 days'); await tap(ADMIN, 'Submit');
+  assert(has(ADMIN, 'Ad waiting for approval'));
+  await tap(ADMIN, 'Approve'); assert(has(ADMIN, 'Approved – “1 BHK near market” is live'), 'approve works from business view');
+  assert.equal((await db.one(`select status from ads where title='1 BHK near market'`)).status, 'live');
+  await say(ADMIN, '#admin');
+  ok('main admin can approve own ad from business view');
 
   // ---- shop in Anna Nagar pays Monthly by direct UPI; admin confirms
   await say(SHOP, 'advertise'); await say(SHOP, 'Style Point Boutique'); await tap(SHOP, 'Fashion'); await loc(SHOP, 13.0860, 80.2110);
@@ -99,7 +109,7 @@ const ok = (name) => console.log('✔', name);
   // ---- customer near Gandhi Nagar
   await say(CUST, 'hi'); assert.equal(msgs(CUST)[0].interactive.type, 'location_request_message');
   await loc(CUST, 13.0405, 80.2005); await tap(CUST, '2 km');
-  assert(txt(last(CUST)).includes('🎓 1 education') && txt(last(CUST)).includes('🏠 1 homes'), txt(last(CUST)));
+  assert(txt(last(CUST)).includes('🎓 1 education') && txt(last(CUST)).includes('🏠 2 homes'), txt(last(CUST)));
   await tap(CUST, 'Tuition, coaching'); await tap(CUST, 'Tuition (1)');
   assert(msgs(CUST).some((m) => txt(m).includes('First month 50% off')));
   await tap(CUST, 'Book free demo'); assert(has(TUTOR, 'New demo class request'));
