@@ -77,7 +77,7 @@ r.get('/s/:id', async (req, res) => {
   const s = await db.shops.get(+req.params.id || 0);
   if (!s || !s.active || !s.paid) return res.status(404).send(layout('Shop not available', `<div class="box">This shop isn't taking orders right now.<br><br><a class="btn" href="/shops">See other shops</a></div>`));
   const its = await db.items.byShop(s.id), who = await me(req);
-  const cats = [...new Set(its.map((i) => i.cat))];
+  const cats = await require('./catalog').sortCats(s, [...new Set(its.map((i) => i.cat))]);
   const chips = `<button class="chip on" onclick="window.scrollTo({top:0,behavior:'smooth'})">All</button>` + cats.map((c, k) => `<a class="chip" href="#c${k}">${esc(c)}</a>`).join('');
   const sections = cats.map((c, k) => `<h2 id="c${k}">${esc(c)}</h2>` + its.filter((i) => i.cat === c).map((i) => `<div class="it"><div class="nm"><b>${esc(i.name)}</b><span class="pr">${rs(i.price)}</span>${i.stock === 0 ? ' <span class="out">Out of stock</span>' : i.stock < 5 ? ` <span class="out">Only ${i.stock} left</span>` : ''}</div>
 ${i.stock > 0 ? `<div class="qty" data-id="${i.id}"></div>` : ''}</div>`).join('')).join('');

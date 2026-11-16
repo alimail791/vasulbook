@@ -51,3 +51,9 @@ Open `https://emart.vasulbook.com/panel`. Main admins and area admins log in wit
 - **Orders:** filter by status, then accept, mark ready, dispatch, deliver or reject. The customer is messaged on WhatsApp automatically.
 - **Bills** (main admin only): this month's 2% bills, send them on WhatsApp, and view payment requests.
 Area admins only see and change shops and orders in their own areas.
+
+## Shop types, categories and Excel upload
+- **Panel → Shop types** (main admin): add shop types such as Grocery, Vegetables & Fruits or Dairy & Bakery, and list each type's item categories in display order. Five types come preloaded.
+- Each shop has a type, set when it's added on WhatsApp or the panel, or later in its settings. Items must use one of that type's categories; upper/lower case and "&"/"and" don't matter. A shop without a type accepts any category.
+- **Shop page → Upload items from Excel:** download the shop's sheet (current items plus a category drop-down), edit it, and upload it back as `.xlsx` or `.csv`. The same name updates an item, a new name adds one. "Remove items not in the file" replaces the whole list, but only if every row is valid. Header names like Item / Rate / Qty are also understood.
+- Customers with more than 3 nearby shops of different types are first asked "What are you shopping for?".

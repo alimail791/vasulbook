@@ -46,6 +46,7 @@ async function init() {
   `);
   const c = await one('select count(*)::int c from orders');
   if (c.c === 0) await q("select setval('orders_id_seq', 1000, true)");
+  await require('./catalog').init();
 }
 
 // ---- domain helpers

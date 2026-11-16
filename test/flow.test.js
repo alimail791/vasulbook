@@ -22,9 +22,9 @@ const say = (p, t) => bot.handle(p, p === CUST ? 'Priya' : 'X', t, false);
 const loc = (p, lat, lng, label = '') => bot.handle(p, 'X', `loc:${lat},${lng}|${label}`, true);
 const tap = (p, label) => bot.handle(p, p === CUST ? 'Priya' : 'X', find(p, label), true);
 (async () => {
-  await db.q('drop table if exists shops, items, orders, sessions, menus, payments, areas cascade'); await db.init();
+  await db.q('drop table if exists shops, items, orders, sessions, menus, payments, areas, otps, cust_links, web_orders, categories, shop_types cascade'); await db.init();
   await say(ADMIN, 'hi'); assert(/admin/i.test(txt(last(ADMIN))));
-  await tap(ADMIN, 'Add new shop'); await say(ADMIN, 'Sri Murugan Stores'); await say(ADMIN, '98400 11111'); await say(ADMIN, 'Anna Nagar'); await tap(ADMIN, 'Yes, opt in');
+  await tap(ADMIN, 'Add new shop'); await say(ADMIN, 'Sri Murugan Stores'); await say(ADMIN, '98400 11111'); await say(ADMIN, 'Anna Nagar'); await tap(ADMIN, 'Yes, opt in'); await tap(ADMIN, 'Other / not listed');
   assert(txt(box[OWNER][0]).includes('Welcome'));
   await say(OWNER, 'Ponni Rice 5kg | Rice & Grains | 320 | 25; Toor Dal 1kg | Pulses | 165 | 6; Ghee 500ml | Oil & Ghee | 340 | 6; Sugar 1kg | Essentials | 48 | 30');
   assert(txt(last(OWNER)).includes('4 item(s) saved'));
@@ -61,7 +61,7 @@ const tap = (p, label) => bot.handle(p, p === CUST ? 'Priya' : 'X', find(p, labe
   await say(ADMIN, 'KK Nagar'); await say(ADMIN, '91111 22222'); await loc(ADMIN, 13.0400, 80.2000); await tap(ADMIN, '3 km');
   assert(txt(box[AADMIN][0]).includes('area admin'));
   await say(AADMIN, 'hi'); assert(/Area admin/.test(txt(last(AADMIN))));
-  await tap(AADMIN, 'Add new shop'); await say(AADMIN, 'Fresh Mart'); await say(AADMIN, '92222 33333'); await say(AADMIN, 'KK Nagar Main Rd'); await tap(AADMIN, 'Yes, opt in');
+  await tap(AADMIN, 'Add new shop'); await say(AADMIN, 'Fresh Mart'); await say(AADMIN, '92222 33333'); await say(AADMIN, 'KK Nagar Main Rd'); await tap(AADMIN, 'Yes, opt in'); await tap(AADMIN, 'Vegetables & Fruits');
   assert(txt(last(OWNER2)).includes('Welcome'));
   const fm = await db.one("select * from shops where name='Fresh Mart'"); assert(fm.area_id);
   await say(OWNER2, 'Tomato 1kg | Vegetables | 32 | 40'); await say(OWNER2, 'upi fresh@okaxis');
@@ -88,6 +88,20 @@ const tap = (p, label) => bot.handle(p, p === CUST ? 'Priya' : 'X', find(p, labe
   await say(ADMIN, 'menu'); await tap(ADMIN, 'Sales'); console.log('MAIN SALES:', txt(last(ADMIN)));
   // far-away customer sees no shops
   await loc(CUST2, 13.20, 80.30); assert(txt(last(CUST2)).includes('No shops'));
+  // ---------- shop types: customer chooses what to shop for when many nearby shops
+  const groc = await db.one(`select id from shop_types where name='Grocery'`), vegT = await db.one(`select id from shop_types where name='Vegetables & Fruits'`);
+  for (const [nm, t] of [['G1', groc.id], ['G2', groc.id], ['V1', vegT.id], ['V2', vegT.id]]) {
+    const sh = await db.one(`insert into shops(code,name,owner_phone,area,paid,active,type_id,lat,lng) values($1,$1,'91900000${nm === 'G1' ? '0001' : nm === 'G2' ? '0002' : nm === 'V1' ? '0003' : '0004'}','Near',true,true,$2,13.5,80.5) returning id`, [nm, t]);
+    await db.q(`insert into items(shop_id,name,cat,price,stock) values($1,'Thing','Others',10,5)`, [sh.id]);
+  }
+  const C3 = '919555566666';
+  await say(C3, 'hi'); await loc(C3, 13.501, 80.501, 'Home');
+  assert(txt(last(C3)).includes('What are you shopping for?'), txt(last(C3)));
+  assert(opts(last(C3)).some(([l]) => l.includes('Grocery (2)')));
+  await tap(C3, 'Vegetables & Fruits'); const shown = opts(last(C3)).map(([l]) => l).join('|');
+  assert(shown.includes('V1') && shown.includes('V2') && !shown.includes('G1'), shown);
+  await tap(C3, 'Change location'); assert(txt(last(C3)).includes('Send your location'));
+  console.log('✔ shop types: customer filter by type');
   const inv = require('../src/invoice'); const pdf = await inv.pdf(o, await db.shops.get(1)); assert(pdf.slice(0, 4).toString() === '%PDF');
   const dash = await require('../src/dashboard').html(); assert(dash.includes('INV-SMS-0001'));
   // ---- website shop + personal link from WhatsApp

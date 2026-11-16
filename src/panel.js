@@ -5,6 +5,10 @@ const express = require('express');
 const cfg = require('./config');
 const db = require('./db');
 const bot = require('./bot');
+const catalog = require('./catalog');
+const ExcelJS = require('exceljs');
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
 
 const r = express.Router();
 r.use(express.urlencoded({ extended: false }));
@@ -67,7 +71,7 @@ button.ghost,.btn.ghost{background:#fff;color:#166534}button.warn{background:#ff
 .login{max-width:380px;margin:60px auto}`;
 function page(req, title, body, tab) {
   const u = req.u;
-  const nav = u ? [['', 'Dashboard'], ...(u.isSuper ? [['/areas', 'Areas']] : []), ['/shops', 'Shops'], ['/orders', 'Orders'], ...(u.isSuper ? [['/bills', 'Bills']] : [])]
+  const nav = u ? [['', 'Dashboard'], ...(u.isSuper ? [['/areas', 'Areas']] : []), ['/shops', 'Shops'], ...(u.isSuper ? [['/catalog', 'Shop types']] : []), ['/orders', 'Orders'], ...(u.isSuper ? [['/bills', 'Bills']] : [])]
     .map(([p, n]) => `<a href="/panel${p}" class="${tab === n ? 'on' : ''}">${n}</a>`).join('') : '';
   const msg = req.query && req.query.m ? `<div class="msg">${esc(req.query.m)}</div>` : '';
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} – ${esc(cfg.BRAND)} admin</title><style>${CSS}</style></head><body>
@@ -129,6 +133,9 @@ r.get('/logout', (req, res) => { res.setHeader('Set-Cookie', 'em_s=; Path=/panel
 r.use(auth);
 
 // ---------- helpers
+async function typeOptions(selected) {
+  return `<option value="">Other / not listed</option>` + (await catalog.types(true)).filter((t) => t.active || t.id === selected).map((t) => `<option value="${t.id}"${t.id === selected ? ' selected' : ''}>${esc(t.name)}</option>`).join('');
+}
 async function shopsFor(u) { const all = await db.shops.all(); return u.isSuper ? all : all.filter((s) => u.areaIds.includes(s.area_id)); }
 async function areasFor(u) { return u.isSuper ? db.areas.all() : u.myAreas; }
 const parseLoc = (t) => { const m = String(t || '').match(/(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/); return m ? { lat: +m[1], lng: +m[2] } : null; };
@@ -188,20 +195,22 @@ r.post('/areas/:id', superOnly, async (req, res) => {
 // ---------- shops
 r.get('/shops', async (req, res) => {
   const u = req.u, shops = await shopsFor(u), areas = Object.fromEntries((await db.areas.all()).map((a) => [a.id, a]));
+  const tnames = Object.fromEntries((await catalog.types(true)).map((t) => [t.id, t.name]));
   const q = String(req.query.q || '').toLowerCase();
   let rows = '';
   for (const s of shops.filter((x) => !q || x.name.toLowerCase().includes(q) || (x.area || '').toLowerCase().includes(q) || x.owner_phone.includes(q))) {
     const ms = await db.shops.monthSales(s.id);
     const n = (await db.one('select count(*)::int c, count(*) filter (where stock<5)::int low from items where shop_id=$1', [s.id]));
-    rows += `<tr><td><a href="/panel/shops/${s.id}"><b>${esc(s.name)}</b></a> <span class="muted">${s.code}</span></td><td>${esc(s.area)}${s.area_id && areas[s.area_id] ? `<br><span class="muted">${esc(areas[s.area_id].name)}</span>` : ''}</td><td>+${s.owner_phone}</td>
+    rows += `<tr><td><a href="/panel/shops/${s.id}"><b>${esc(s.name)}</b></a> <span class="muted">${s.code}</span><br><span class="muted">${esc(tnames[s.type_id] || 'Other')}</span></td><td>${esc(s.area)}${s.area_id && areas[s.area_id] ? `<br><span class="muted">${esc(areas[s.area_id].name)}</span>` : ''}</td><td>+${s.owner_phone}</td>
 <td>${!s.paid ? '<span class="tag y">Fee pending</span>' : s.active ? '<span class="tag g">Live</span>' : '<span class="tag r">Paused</span>'}</td><td>${s.delivery ? 'Yes · ' + rs(s.del_fee) : 'Pickup only'}</td><td>${n.c}${n.low ? ` <span class="tag y">${n.low} low</span>` : ''}</td><td>${s.lat != null ? '✓' : '<span class="tag y">not set</span>'}</td><td>${rs(ms)}</td>
-<td class="row">${!s.paid ? `<form class="in" method="post" action="/panel/shops/${s.id}/paid"><button class="sm">Mark ${rs(cfg.SETUP_FEE)} paid</button></form>` : ''}<a class="btn ghost sm" href="/panel/shops/${s.id}">Open</a></td></tr>`;
+<td class="row">${!s.paid ? `<form class="in" method="post" action="/panel/shops/${s.id}/paid"><button class="sm">Mark ${rs(cfg.SETUP_FEE)} paid</button></form>` : ''}<a class="btn ghost sm" href="/panel/shops/${s.id}">Open</a><a class="btn ghost sm" href="/panel/shops/${s.id}#excel">Excel</a></td></tr>`;
   }
   const areaOpts = (await areasFor(u)).map((a) => `<option value="${a.id}">${esc(a.name)}</option>`).join('');
   res.send(page(req, 'Shops', `<h1>Shops</h1><form class="row" method="get" style="margin-bottom:10px"><input name="q" value="${esc(req.query.q || '')}" placeholder="Search name, locality or phone" style="max-width:320px"><button class="ghost">Search</button></form>
 <div class="tw"><table><tr><th>Shop</th><th>Locality / area</th><th>Owner</th><th>Status</th><th>Delivery</th><th>Items</th><th>Location</th><th>${MONTH()} sales</th><th></th></tr>${rows || '<tr><td colspan="9">No shops yet.</td></tr>'}</table></div>
 <h2 id="new">Add shop</h2><div class="card"><form method="post" action="/panel/shops"><div class="grid"><div><label>Shop name</label><input name="name" required></div><div><label>Owner WhatsApp number</label><input name="owner" required placeholder="9xxxxxxxxx"></div>
 <div><label>Street / locality (shown to customers)</label><input name="area" required></div><div><label>Area</label><select name="area_id">${u.isSuper ? '<option value="">No area</option>' : ''}${areaOpts}</select></div>
+<div><label>Shop type</label><select name="type_id">${await typeOptions(null)}</select></div>
 <div><label>Home delivery</label><select name="delivery"><option value="1">Yes</option><option value="0">No, pickup only</option></select></div><div><label>Shop location (optional: Maps link or lat,lng)</label><input name="loc"></div></div>
 <p class="muted">The owner gets a WhatsApp welcome with the ${rs(cfg.SETUP_FEE)} setup-fee request.</p><button>Add shop</button></form></div>`, 'Shops'));
 });
@@ -212,8 +221,9 @@ r.post('/shops', async (req, res) => {
   let areaId = b.area_id ? +b.area_id : null;
   if (!u.isSuper) { if (!u.areaIds.includes(areaId)) areaId = u.areaIds[0]; }
   const loc = parseLoc(b.loc);
-  const s = await db.one('insert into shops(code,name,owner_phone,area,delivery,area_id,lat,lng) values($1,$2,$3,$4,$5,$6,$7,$8) returning *',
-    [await bot.mkCode(b.name), b.name.trim(), owner, b.area.trim(), b.delivery === '1', areaId, loc ? loc.lat : null, loc ? loc.lng : null]);
+  const typeId = b.type_id && await catalog.type(+b.type_id) ? +b.type_id : null;
+  const s = await db.one('insert into shops(code,name,owner_phone,area,delivery,area_id,lat,lng,type_id) values($1,$2,$3,$4,$5,$6,$7,$8,$9) returning *',
+    [await bot.mkCode(b.name), b.name.trim(), owner, b.area.trim(), b.delivery === '1', areaId, loc ? loc.lat : null, loc ? loc.lng : null, typeId]);
   await bot.ownerWelcome(s);
   if (!u.isSuper) await bot.notifyAdmins(`🏪 Area admin +${u.phone} added *${s.name}* (web panel).`);
   back(res, '/panel/shops/' + s.id, `${s.name} added. Welcome message sent to +${s.owner_phone}.`);
@@ -221,23 +231,33 @@ r.post('/shops', async (req, res) => {
 r.get('/shops/:id', async (req, res) => {
   const u = req.u, s = await db.shops.get(+req.params.id);
   if (!inScope(u, s)) return res.status(404).send(page(req, 'Not found', '<p>Shop not found in your area.</p>', 'Shops'));
-  const items = await db.items.byShop(s.id), ms = await db.shops.monthSales(s.id);
+  const ms = await db.shops.monthSales(s.id), stype = s.type_id ? await catalog.type(s.type_id) : null, cats = await catalog.categories(s.type_id);
+  const order = await catalog.sortCats(s, [...new Set((await db.items.byShop(s.id)).map((i) => i.cat))]);
+  const items = (await db.items.byShop(s.id)).sort((a, b) => order.indexOf(a.cat) - order.indexOf(b.cat) || a.name.localeCompare(b.name));
   const areaOpts = (await areasFor(u)).map((a) => `<option value="${a.id}"${a.id === s.area_id ? ' selected' : ''}>${esc(a.name)}</option>`).join('');
-  const irows = items.map((i) => `<tr><td>${esc(i.name)}</td><td>${esc(i.cat)}</td><td colspan="3"><form class="row" method="post" action="/panel/items/${i.id}"><input name="price" type="number" step="0.01" min="0" value="${i.price}" style="width:110px" aria-label="Price"><input name="stock" type="number" min="0" value="${i.stock}" style="width:90px" aria-label="Stock">${i.stock === 0 ? '<span class="tag r">Out</span>' : i.stock < 5 ? '<span class="tag y">Low</span>' : ''}<button class="sm ghost">Save</button></form></td>
+  const okCat = (c) => !cats.length || cats.some((x) => x.name === c);
+  const irows = items.map((i) => `<tr><td>${esc(i.name)}</td><td>${esc(i.cat)}${okCat(i.cat) ? '' : ' <span class="tag y" title="Not in this shop type\'s categories">check</span>'}</td><td colspan="3"><form class="row" method="post" action="/panel/items/${i.id}"><input name="price" type="number" step="0.01" min="0" value="${i.price}" style="width:110px" aria-label="Price"><input name="stock" type="number" min="0" value="${i.stock}" style="width:90px" aria-label="Stock">${i.stock === 0 ? '<span class="tag r">Out</span>' : i.stock < 5 ? '<span class="tag y">Low</span>' : ''}<button class="sm ghost">Save</button></form></td>
 <td><form class="in" method="post" action="/panel/items/${i.id}/delete" onsubmit="return confirm('Remove ${esc(i.name)}?')"><button class="sm warn">Remove</button></form></td></tr>`).join('');
   const recent = await db.all('select * from orders where shop_id=$1 order by id desc limit 10', [s.id]);
-  res.send(page(req, s.name, `<h1>${esc(s.name)} <span class="muted">${s.code}</span></h1>
+  res.send(page(req, s.name, `<h1>${esc(s.name)} <span class="muted">${s.code}${stype ? ' · ' + esc(stype.name) : ''}</span></h1>
 <div class="kp"><div class="k"><small>Status</small><b>${!s.paid ? 'Fee pending' : s.active ? 'Live' : 'Paused'}</b></div><div class="k"><small>${MONTH()} sales</small><b>${rs(ms)}</b></div><div class="k"><small>${cfg.COMM * 100}% fee</small><b>${rs(ms * cfg.COMM)}</b></div><div class="k"><small>Items</small><b>${items.length}</b></div></div>
 <div class="row" style="margin-bottom:12px">${!s.paid ? `<form class="in" method="post" action="/panel/shops/${s.id}/paid"><button>Mark ${rs(cfg.SETUP_FEE)} setup fee received</button></form>` : ''}<a class="btn ghost" href="/panel/orders?shop=${s.id}">Orders</a></div>
 <h2>Shop settings</h2><div class="card"><form method="post" action="/panel/shops/${s.id}"><div class="grid">
 <div><label>Shop name</label><input name="name" value="${esc(s.name)}"></div><div><label>Owner WhatsApp</label><input name="owner" value="${esc(s.owner_phone.slice(2))}"></div><div><label>Street / locality</label><input name="area" value="${esc(s.area)}"></div>
-<div><label>Area</label><select name="area_id">${u.isSuper ? `<option value="">No area</option>` : ''}${areaOpts}</select></div><div><label>Shop UPI ID</label><input name="upi" value="${esc(s.upi || '')}" placeholder="shop@okaxis"></div>
+<div><label>Area</label><select name="area_id">${u.isSuper ? `<option value="">No area</option>` : ''}${areaOpts}</select></div>
+<div><label>Shop type (sets the item categories)</label><select name="type_id">${await typeOptions(s.type_id)}</select></div><div><label>Shop UPI ID</label><input name="upi" value="${esc(s.upi || '')}" placeholder="shop@okaxis"></div>
 <div><label>Shop location (Maps link or lat,lng)</label><input name="loc" value="${s.lat != null ? s.lat + ',' + s.lng : ''}"></div>
 <div><label>Home delivery</label><select name="delivery"><option value="1"${s.delivery ? ' selected' : ''}>Yes</option><option value="0"${s.delivery ? '' : ' selected'}>No, pickup only</option></select></div>
 <div><label>Delivery charge (₹)</label><input name="del_fee" type="number" min="0" value="${s.del_fee}"></div><div><label>Min order for delivery (₹)</label><input name="min_order" type="number" min="0" value="${s.min_order}"></div>
 ${s.paid ? `<div><label>Shop status</label><select name="active"><option value="1"${s.active ? ' selected' : ''}>Live</option><option value="0"${s.active ? '' : ' selected'}>Paused</option></select></div>` : ''}</div><p></p><button>Save settings</button></form></div>
 <h2>Items (${items.length})</h2><div class="tw"><table><tr><th>Item</th><th>Category</th><th colspan="3">Price (₹) · Stock</th><th></th></tr>${irows || '<tr><td colspan="6">No items yet.</td></tr>'}</table></div>
-<h2>Add or update items in bulk</h2><div class="card"><form method="post" action="/panel/shops/${s.id}/items"><label>One item per line: Name | Category | Price | Stock</label><textarea name="lines" placeholder="Ponni Rice 5kg | Rice &amp; Grains | 320 | 25&#10;Toor Dal 1kg | Pulses | 165 | 30"></textarea><p class="muted">An existing item name is updated instead of duplicated.</p><button>Save items</button></form></div>
+<h2 id="excel">Upload items from Excel</h2><div class="card">
+<ol style="margin:0 0 10px;padding-left:20px;line-height:1.7"><li><a href="/panel/shops/${s.id}/items.xlsx"><b>Download this shop's Excel sheet</b></a>${items.length ? ` (has its ${items.length} items)` : ' (empty template)'}.</li>
+<li>Fill or edit the columns <b>Name, Category, Price, Stock</b>.${cats.length ? ` The Category column has a drop-down of this shop type's categories.` : ''}</li><li>Upload it here. Items with the same name are updated; new names are added.</li></ol>
+<form method="post" action="/panel/shops/${s.id}/upload" enctype="multipart/form-data"><input type="file" name="file" accept=".xlsx,.csv" required>
+<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" name="replace" value="1" style="width:auto"> Remove items that are not in the file (full price-list replace)</label><p></p><button>Upload</button></form>
+${cats.length ? `<p class="muted">Allowed categories for ${esc(stype.name)}: ${cats.map((c) => esc(c.name)).join(', ')}</p>` : '<p class="muted">This shop has no shop type, so any category name is accepted. Set a shop type above to use fixed categories.</p>'}</div>
+<h2>Or paste items</h2><div class="card"><form method="post" action="/panel/shops/${s.id}/items"><label>One item per line: Name | Category | Price | Stock</label><textarea name="lines" placeholder="Ponni Rice 5kg | Rice &amp; Grains | 320 | 25&#10;Toor Dal 1kg | Pulses &amp; Dals | 165 | 30"></textarea><p class="muted">An existing item name is updated instead of duplicated.</p><button>Save items</button></form></div>
 <h2>Recent orders</h2><div class="tw"><table><tr><th>#</th><th>Customer</th><th>Total</th><th>Mode</th><th>Status</th><th>Invoice</th></tr>${recent.map((o) => `<tr><td>${o.id}</td><td>${esc(o.cust_name)} +${o.cust_phone}</td><td>${rs(o.total)}</td><td>${o.mode === 'delivery' ? 'Delivery' : 'Pickup'}</td><td><span class="tag ${STAT[o.status] || 'y'}">${o.status}</span></td><td><a href="/inv/${o.token}.pdf" target="_blank">${o.inv}</a></td></tr>`).join('') || '<tr><td colspan="6">No orders yet.</td></tr>'}</table></div>`, 'Shops'));
 });
 r.post('/shops/:id', async (req, res) => {
@@ -248,6 +268,7 @@ r.post('/shops/:id', async (req, res) => {
   const f = { name: (b.name || s.name).trim(), owner_phone: owner, area: (b.area || s.area).trim(), area_id: areaId, upi: /^[\w.\-]+@[\w.\-]+$/.test(String(b.upi || '').trim()) ? b.upi.trim() : s.upi,
     delivery: b.delivery === '1', del_fee: Math.max(0, Number(b.del_fee) || 0), min_order: Math.max(0, Number(b.min_order) || 0) };
   if (loc) { f.lat = loc.lat; f.lng = loc.lng; }
+  if (b.type_id !== undefined) f.type_id = b.type_id && await catalog.type(+b.type_id) ? +b.type_id : null;
   if (s.paid && b.active != null) f.active = b.active === '1';
   const n = await db.shops.set(s.id, f);
   if (n.active !== s.active) await bot.notify(n.owner_phone, n.active ? `▶️ Your shop is live again on ${cfg.BRAND}.` : '⏸ Your shop has been paused by the admin. Contact admin to resume.');
@@ -260,17 +281,114 @@ r.post('/shops/:id/paid', async (req, res) => {
 });
 r.post('/shops/:id/items', async (req, res) => {
   const s = await db.shops.get(+req.params.id); if (!inScope(req.u, s)) return back(res, '/panel/shops', 'Shop not found.');
-  const list = await db.items.byShop(s.id); let ok = 0; const bad = [];
-  for (const line of String(req.body.lines || '').split(/\n|;/).map((x) => x.trim()).filter(Boolean)) {
-    const p = line.split('|').map((x) => x.trim()); const price = parseFloat(p[2]), stock = parseInt(p[3], 10);
-    if (p.length < 3 || !p[0] || !p[1] || isNaN(price) || price < 0) { bad.push(line); continue; }
-    const cat = (list.find((i) => i.cat.toLowerCase() === p[1].toLowerCase()) || { cat: p[1] }).cat;
-    const ex = list.find((i) => i.name.toLowerCase() === p[0].toLowerCase());
-    if (ex) await db.q('update items set cat=$2, price=$3, stock=$4 where id=$1', [ex.id, cat, price, isNaN(stock) ? ex.stock : stock]);
-    else list.push(await db.one('insert into items(shop_id,name,cat,price,stock) values($1,$2,$3,$4,$5) returning *', [s.id, p[0], cat, price, isNaN(stock) ? 0 : stock]));
-    ok++;
+  const r2 = await catalog.importItems(s, catalog.parseLines(req.body.lines));
+  res.send(resultPage(req, s, r2, 'Paste'));
+});
+
+// ---------- Excel: download a shop's sheet, upload it back
+function cellText(v) {
+  if (v == null) return '';
+  if (typeof v === 'object') {
+    if (v.result != null) return cellText(v.result);
+    if (Array.isArray(v.richText)) return v.richText.map((t) => t.text).join('');
+    if (v.text != null) return cellText(v.text);
+    if (v instanceof Date) return v.toISOString().slice(0, 10);
+    return '';
   }
-  back(res, '/panel/shops/' + s.id, `${ok} item(s) saved.${bad.length ? ` ${bad.length} line(s) skipped — use Name | Category | Price | Stock.` : ''}`);
+  return String(v).trim();
+}
+function parseCsv(text) {
+  const rows = []; let row = [], cur = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) { if (ch === '"' && text[i + 1] === '"') { cur += '"'; i++; } else if (ch === '"') q = false; else cur += ch; continue; }
+    if (ch === '"') q = true; else if (ch === ',') { row.push(cur); cur = ''; } else if (ch === '\n' || ch === '\r') { if (ch === '\r' && text[i + 1] === '\n') i++; row.push(cur); rows.push(row); row = []; cur = ''; } else cur += ch;
+  }
+  if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+  return rows.map((r) => r.map((x) => x.trim()));
+}
+const HEAD = { name: ['name', 'item', 'itemname', 'product', 'productname', 'items'], cat: ['category', 'cat', 'section', 'group'], price: ['price', 'rate', 'sellingprice', 'mrp', 'amount', 'priceinr', 'price₹', 'sp'], stock: ['stock', 'qty', 'quantity', 'stockqty', 'available', 'inventory'] };
+const hkey = (h) => String(h || '').toLowerCase().replace(/\(.*?\)/g, '').replace(/[^a-z₹]/g, '');
+function rowsFromGrid(grid) {
+  // find the header row in the first 10 rows
+  for (let h = 0; h < Math.min(10, grid.length); h++) {
+    const cols = {};
+    grid[h].forEach((v, i) => { const k = hkey(v); for (const [f, names] of Object.entries(HEAD)) if (cols[f] == null && names.includes(k)) cols[f] = i; });
+    if (cols.name != null && cols.price != null) {
+      const out = [];
+      for (let r = h + 1; r < grid.length; r++) {
+        const g = grid[r]; if (!g || g.every((x) => !String(x || '').trim())) continue;
+        out.push({ row: r + 1, name: g[cols.name], cat: cols.cat != null ? g[cols.cat] : '', price: g[cols.price], stock: cols.stock != null ? g[cols.stock] : '' });
+      }
+      return { rows: out };
+    }
+  }
+  return { err: 'Could not find the header row. The first row must have the columns Name, Category, Price and Stock.' };
+}
+function resultPage(req, s, r2, source) {
+  const ok = r2.added.length + r2.updated.length;
+  return page(req, 'Items saved', `<h1>${esc(s.name)}: items ${source === 'Paste' ? 'pasted' : 'uploaded'}</h1>
+<div class="kp"><div class="k"><small>Added</small><b>${r2.added.length}</b></div><div class="k"><small>Updated</small><b>${r2.updated.length}</b></div><div class="k"><small>Removed</small><b>${r2.removed}</b></div><div class="k"><small>Problems</small><b>${r2.errors.length}</b></div></div>
+${r2.errors.length ? `<div class="card"><b>These rows were not saved</b> — fix them and upload again (rows already saved are fine):<ul>${r2.errors.slice(0, 100).map((e) => `<li>${esc(e)}</li>`).join('')}</ul>${r2.errors.length > 100 ? `<p class="muted">…and ${r2.errors.length - 100} more.</p>` : ''}${r2.allowed.length ? `<p class="muted">Allowed categories: ${r2.allowed.map(esc).join(', ')}</p>` : ''}${req.body && req.body.replace ? '<p class="muted">Because some rows had problems, no items were removed.</p>' : ''}</div>` : ''}
+<div class="row"><a class="btn" href="/panel/shops/${s.id}">Back to ${esc(s.name)}</a>${ok ? `<a class="btn ghost" href="/panel/shops/${s.id}/items.xlsx">Download updated sheet</a>` : ''}</div>`, 'Shops');
+}
+r.get('/shops/:id/items.xlsx', async (req, res) => {
+  const s = await db.shops.get(+req.params.id); if (!inScope(req.u, s)) return res.status(404).send('Not found');
+  const cats = await catalog.categories(s.type_id), items = await db.items.byShop(s.id);
+  const order = await catalog.sortCats(s, [...new Set(items.map((i) => i.cat))]);
+  items.sort((a, b) => order.indexOf(a.cat) - order.indexOf(b.cat) || a.name.localeCompare(b.name));
+  const wb = new ExcelJS.Workbook(); wb.creator = cfg.BRAND;
+  const ws = wb.addWorksheet('Items', { views: [{ state: 'frozen', ySplit: 1 }] });
+  ws.columns = [{ header: 'Name', key: 'name', width: 38 }, { header: 'Category', key: 'cat', width: 26 }, { header: 'Price', key: 'price', width: 12 }, { header: 'Stock', key: 'stock', width: 10 }];
+  ws.getRow(1).eachCell((c) => { c.font = { bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF166534' } }; });
+  items.forEach((i) => ws.addRow({ name: i.name, cat: i.cat, price: i.price, stock: i.stock }));
+  if (!items.length) ws.addRow({ name: 'Example item 1kg', cat: cats[0] ? cats[0].name : 'Category', price: 100, stock: 10 });
+  ws.getColumn('price').numFmt = '0.00';
+  const last = Math.max(items.length + 1, 2) + 1000;
+  for (let r = 2; r <= last; r++) {
+    ws.getCell('C' + r).dataValidation = { type: 'decimal', operator: 'greaterThanOrEqual', formulae: [0], showErrorMessage: true, errorTitle: 'Price', error: 'Enter a price of 0 or more' };
+    ws.getCell('D' + r).dataValidation = { type: 'whole', operator: 'greaterThanOrEqual', formulae: [0], showErrorMessage: true, errorTitle: 'Stock', error: 'Enter a whole number of 0 or more' };
+  }
+  if (cats.length) {
+    const cs = wb.addWorksheet('Categories');
+    cs.columns = [{ header: 'Allowed categories', key: 'n', width: 30 }];
+    cs.getRow(1).font = { bold: true };
+    cats.forEach((c) => cs.addRow({ n: c.name }));
+    for (let r = 2; r <= last; r++) ws.getCell('B' + r).dataValidation = { type: 'list', allowBlank: false, formulae: [`Categories!$A$2:$A$${cats.length + 1}`], showErrorMessage: true, errorStyle: 'stop', errorTitle: 'Category', error: 'Pick a category from the list' };
+  }
+  const hs = wb.addWorksheet('How to');
+  hs.getColumn(1).width = 100;
+  [`${cfg.BRAND} item sheet for ${s.name}`, '', '1. One item per row on the Items sheet. Keep the header row as it is.', '2. Name: what customers see, e.g. "Toor Dal 1kg". Same name = the item is updated, not duplicated.',
+    cats.length ? '3. Category: pick from the drop-down (list on the Categories sheet).' : '3. Category: any group name, e.g. Pulses.', '4. Price: selling price in rupees. Stock: how many are available now.', '5. Save as .xlsx and upload it on the shop page in the admin panel.']
+    .forEach((t, i) => { const c = hs.getCell('A' + (i + 1)); c.value = t; if (i === 0) c.font = { bold: true, size: 13 }; });
+  const fname = `${s.code}-items.xlsx`;
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${fname}"`);
+  await wb.xlsx.write(res); res.end();
+});
+r.post('/shops/:id/upload', (req, res, next) => upload.single('file')(req, res, (e) => {
+  if (e) return back(res, '/panel/shops/' + req.params.id + '#excel', e.code === 'LIMIT_FILE_SIZE' ? 'File is larger than 5 MB.' : 'Upload failed: ' + e.message);
+  next();
+}), async (req, res) => {
+  const s = await db.shops.get(+req.params.id); if (!inScope(req.u, s)) return back(res, '/panel/shops', 'Shop not found.');
+  const f = req.file; if (!f) return back(res, '/panel/shops/' + s.id + '#excel', 'Choose a file first.');
+  const ext = (f.originalname.split('.').pop() || '').toLowerCase();
+  let grid;
+  try {
+    if (ext === 'csv') grid = parseCsv(f.buffer.toString('utf8').replace(/^\uFEFF/, ''));
+    else if (ext === 'xlsx') {
+      const wb = new ExcelJS.Workbook(); await wb.xlsx.load(f.buffer);
+      const ws = wb.getWorksheet('Items') || wb.worksheets[0];
+      grid = []; ws.eachRow({ includeEmpty: true }, (row, n) => { grid[n - 1] = []; row.eachCell({ includeEmpty: true }, (c, col) => { grid[n - 1][col - 1] = cellText(c.value); }); });
+      grid = Array.from(grid, (r) => r || []);
+    } else return back(res, '/panel/shops/' + s.id + '#excel', 'Please upload an .xlsx or .csv file. (Old .xls: open it in Excel and Save As .xlsx.)');
+  } catch (e) { return back(res, '/panel/shops/' + s.id + '#excel', 'Could not read the file. Is it a real Excel (.xlsx) file?'); }
+  const g = rowsFromGrid(grid);
+  if (g.err) return back(res, '/panel/shops/' + s.id + '#excel', g.err);
+  if (!g.rows.length) return back(res, '/panel/shops/' + s.id + '#excel', 'The file has no item rows under the header.');
+  if (g.rows.length > 5000) return back(res, '/panel/shops/' + s.id + '#excel', 'Too many rows (max 5,000 per upload).');
+  const r2 = await catalog.importItems(s, g.rows, { replace: req.body.replace === '1' });
+  res.send(resultPage(req, s, r2, 'Excel'));
 });
 r.post('/items/:id', async (req, res) => {
   const i = await db.items.get(+req.params.id); const s = i && await db.shops.get(i.shop_id);
@@ -283,6 +401,47 @@ r.post('/items/:id/delete', async (req, res) => {
   if (!inScope(req.u, s)) return back(res, '/panel/shops', 'Item not found.');
   await db.q('delete from items where id=$1', [i.id]);
   back(res, '/panel/shops/' + s.id, `${i.name} removed.`);
+});
+
+// ---------- shop types and categories (main admin)
+r.get('/catalog', superOnly, async (req, res) => {
+  const ts = await catalog.types(true); let cards = '';
+  for (const t of ts) {
+    const cats = await catalog.categories(t.id);
+    cards += `<div class="card" id="t${t.id}"><form method="post" action="/panel/catalog/${t.id}"><div class="grid"><div><label>Shop type name</label><input name="name" value="${esc(t.name)}" required></div>
+<div><label>Order in lists</label><input name="sort" type="number" value="${t.sort}"></div><div><label>Status</label><select name="active"><option value="1"${t.active ? ' selected' : ''}>Active</option><option value="0"${t.active ? '' : ' selected'}>Hidden for new shops</option></select></div>
+<div><label>Shops of this type</label><input value="${t.shops}" disabled></div></div>
+<label>Item categories — one per line, in the order customers see them</label><textarea name="cats" rows="${Math.max(5, cats.length + 1)}">${esc(cats.map((c) => c.name).join('\n'))}</textarea>
+<p class="muted">Items must use one of these categories (upper/lower case and "&amp;" vs "and" don't matter). Renaming a category doesn't move existing items — re-upload the shop's Excel.</p>
+<div class="row"><button class="sm">Save ${esc(t.name)}</button></div></form>
+${t.shops ? '' : `<form method="post" action="/panel/catalog/${t.id}/delete" onsubmit="return confirm('Delete shop type ${esc(t.name)}?')" style="margin-top:8px"><button class="sm warn">Delete type</button></form>`}</div>`;
+  }
+  res.send(page(req, 'Shop types', `<h1>Shop types & item categories</h1><p class="muted">Each shop has a type. The type decides which item categories the shop can use, on WhatsApp, the website and Excel uploads.</p>
+${cards || '<p>No shop types yet.</p>'}<h2 id="new">Add a shop type</h2><div class="card"><form method="post" action="/panel/catalog"><div class="grid"><div><label>Shop type name</label><input name="name" required placeholder="e.g. Sweets & Snacks"></div></div>
+<label>Item categories — one per line</label><textarea name="cats" placeholder="Sweets&#10;Namkeen&#10;Others"></textarea><p></p><button>Add shop type</button></form></div>`, 'Shop types'));
+});
+r.post('/catalog', superOnly, async (req, res) => {
+  const name = String(req.body.name || '').trim(); if (!name) return back(res, '/panel/catalog', 'Name is required.');
+  if (await db.one('select 1 from shop_types where lower(name)=lower($1)', [name])) return back(res, '/panel/catalog', `${name} already exists.`);
+  const max = (await db.one('select coalesce(max(sort),0)::int m from shop_types')).m;
+  const t = await db.one('insert into shop_types(name,sort) values($1,$2) returning *', [name, max + 1]);
+  const cats = await catalog.setCategories(t.id, String(req.body.cats || '').split('\n'));
+  back(res, '/panel/catalog#t' + t.id, `${t.name} added with ${cats.length} categories.`);
+});
+r.post('/catalog/:id', superOnly, async (req, res) => {
+  const t = await catalog.type(+req.params.id); if (!t) return back(res, '/panel/catalog', 'Not found.');
+  const name = String(req.body.name || t.name).trim();
+  if (await db.one('select 1 from shop_types where lower(name)=lower($1) and id<>$2', [name, t.id])) return back(res, '/panel/catalog#t' + t.id, `Another type is already called ${name}.`);
+  await db.q('update shop_types set name=$2, sort=$3, active=$4 where id=$1', [t.id, name, parseInt(req.body.sort, 10) || 0, req.body.active !== '0']);
+  const cats = await catalog.setCategories(t.id, String(req.body.cats || '').split('\n'));
+  const stray = (await db.one(`select count(*)::int n from items i join shops s on s.id=i.shop_id where s.type_id=$1 and not (i.cat = any($2))`, [t.id, cats])).n;
+  back(res, '/panel/catalog#t' + t.id, `${name} saved (${cats.length} categories).${stray ? ` ${stray} existing item(s) in these shops use other categories — they still show, marked "check" on the shop page.` : ''}`);
+});
+r.post('/catalog/:id/delete', superOnly, async (req, res) => {
+  const t = await catalog.type(+req.params.id); if (!t) return back(res, '/panel/catalog', 'Not found.');
+  if ((await db.one('select count(*)::int n from shops where type_id=$1', [t.id])).n) return back(res, '/panel/catalog', 'Move its shops to another type first.');
+  await db.q('delete from shop_types where id=$1', [t.id]);
+  back(res, '/panel/catalog', `${t.name} deleted.`);
 });
 
 // ---------- orders

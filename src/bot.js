@@ -6,6 +6,7 @@ const db = require('./db');
 const wa = require('./wa');
 const pay = require('./pay');
 const invoice = require('./invoice');
+const catalog = require('./catalog');
 
 const rs = (n) => '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 const MONTH = () => new Date().toLocaleString('en-IN', { month: 'long', timeZone: 'Asia/Kolkata' });
@@ -169,11 +170,23 @@ async function newAreaAdminWelcome(a) {
   await notify(a.admin_phone, `🗺 You are now the *area admin* for *${a.name}* on ${cfg.BRAND}.\n\nYou can add and manage shops in your area, handle home deliveries, and see your earnings.\nYour share: *${Math.round(a.setup_share * 100)}% of each ₹${cfg.SETUP_FEE} setup fee + ${a.comm_pct}% of your shops' sales*.\n\nType *menu* to start.`, [['Menu', 'menu']]);
 }
 
+async function areaStep(c) {
+  const S = c.sess;
+  const choices = c.isSuper ? await db.areas.active() : c.myAreas;
+  if (choices.length > 1 || (c.isSuper && choices.length === 1)) {
+    S.state = 'a_pick';
+    return c.reply('Which area does this shop belong to?', choices.map((a) => ['🗺 ' + a.name, 'sa:' + a.id]).concat(c.isSuper ? [['No area', 'sa:0']] : []));
+  }
+  const ns = S.data.ns; S.state = null; delete S.data.ns;
+  return createShop(c, ns, choices[0] ? choices[0].id : null);
+}
+
 async function createShop(c, ns, areaId) {
   const a = areaId ? await db.areas.get(areaId) : null;
-  const s = await db.one('insert into shops(code,name,owner_phone,area,delivery,area_id) values($1,$2,$3,$4,$5,$6) returning *',
-    [await mkCode(ns.name), ns.name, ns.owner, ns.area, ns.delivery, areaId || null]);
-  await c.reply(`✅ *${s.name}* added (code ${s.code})\n📍 ${s.area}${a ? ' · 🗺 ' + a.name : ''} · 📱 +${s.owner_phone}\n${s.delivery ? '🛵 Home delivery: ON' : '🏃 Pickup only'}\n\n📩 Welcome message + ${rs(cfg.SETUP_FEE)} setup-fee request sent to the owner. Ask the owner to share the shop's 📍 location from *Settings* so nearby customers can find it.\n_If the owner has never messaged this bot, ask them to send *hi* to this number once._`,
+  const s = await db.one('insert into shops(code,name,owner_phone,area,delivery,area_id,type_id) values($1,$2,$3,$4,$5,$6,$7) returning *',
+    [await mkCode(ns.name), ns.name, ns.owner, ns.area, ns.delivery, areaId || null, ns.type_id || null]);
+  const st = s.type_id ? await catalog.type(s.type_id) : null;
+  await c.reply(`✅ *${s.name}* added (code ${s.code})\n📍 ${s.area}${a ? ' · 🗺 ' + a.name : ''}${st ? ' · 🏷 ' + st.name : ''} · 📱 +${s.owner_phone}\n${s.delivery ? '🛵 Home delivery: ON' : '🏃 Pickup only'}\n\n📩 Welcome message + ${rs(cfg.SETUP_FEE)} setup-fee request sent to the owner. Ask the owner to share the shop's 📍 location from *Settings* so nearby customers can find it.\n_If the owner has never messaged this bot, ask them to send *hi* to this number once._`,
     [[`✅ Mark ${rs(cfg.SETUP_FEE)} received`, 'paid:' + s.id], ['🏪 Manage shops', 'list'], ['Menu', 'menu']]);
   if (c.isSuper && a && a.admin_phone && a.admin_phone !== c.from) await notify(a.admin_phone, `🏪 New shop added in *${a.name}*: ${s.name} (+${s.owner_phone}).`);
   else if (!c.isSuper) await notifyAdmins(`🏪 Area admin +${c.from} added *${s.name}* in ${a ? a.name : s.area}.`);
@@ -195,14 +208,11 @@ async function admin(c, v, btn) {
   if (!btn && S.state === 'a_area') { S.data.ns.area = v.trim(); S.state = 'a_del'; return c.reply('Will this shop offer *home delivery* (by the area delivery team)?', [['🛵 Yes, opt in', 'del:y'], ['🏃 No, pickup only', 'del:n']]); }
   if ((m = v.match(/^del:(y|n)$/)) && S.state === 'a_del' && S.data.ns) {
     S.data.ns.delivery = m[1] === 'y';
-    const choices = c.isSuper ? await db.areas.active() : c.myAreas;
-    if (choices.length > 1 || (c.isSuper && choices.length === 1)) {
-      S.state = 'a_pick';
-      return c.reply('Which area does this shop belong to?', choices.map((a) => ['🗺 ' + a.name, 'sa:' + a.id]).concat(c.isSuper ? [['No area', 'sa:0']] : []));
-    }
-    const ns = S.data.ns; S.state = null; delete S.data.ns;
-    return createShop(c, ns, choices[0] ? choices[0].id : null);
+    const ts = await catalog.types();
+    if (ts.length) { S.state = 'a_type'; return c.reply('What type of shop is it?', ts.map((t) => ['🏷 ' + t.name, 'stype:' + t.id]).concat([['Other / not listed', 'stype:0']])); }
+    return areaStep(c);
   }
+  if ((m = v.match(/^stype:(\d+)$/)) && S.state === 'a_type' && S.data.ns) { S.data.ns.type_id = +m[1] || null; return areaStep(c); }
   if ((m = v.match(/^sa:(\d+)$/)) && S.state === 'a_pick' && S.data.ns) {
     const id = +m[1];
     if (id && !c.isSuper && !c.areaIds.includes(id)) return c.reply('Not your area.');
@@ -341,25 +351,13 @@ async function ownerMenu(c, s) {
 }
 
 async function addItems(c, s, v) {
-  const ok = [], bad = [];
-  const list = await db.items.byShop(s.id);
-  for (const line of v.split(/\n|;/).map((x) => x.trim()).filter(Boolean)) {
-    const p = line.split('|').map((x) => x.trim());
-    const price = parseFloat(p[2]), stock = parseInt(p[3], 10);
-    if (p.length < 3 || !p[0] || !p[1] || isNaN(price) || price < 0) { bad.push(line); continue; }
-    const cat = (list.find((i) => i.cat.toLowerCase() === p[1].toLowerCase()) || { cat: p[1] }).cat;
-    const ex = list.find((i) => i.name.toLowerCase() === p[0].toLowerCase());
-    if (ex) {
-      const u = await db.one('update items set cat=$2, price=$3, stock=$4 where id=$1 returning *', [ex.id, cat, price, isNaN(stock) ? ex.stock : stock]);
-      ok.push(`✏️ ${u.name} — ${rs(price)} · ${u.stock} in stock (updated)`);
-    } else {
-      const n = await db.one('insert into items(shop_id,name,cat,price,stock) values($1,$2,$3,$4,$5) returning *', [s.id, p[0], cat, price, isNaN(stock) ? 0 : stock]);
-      list.push(n);
-      ok.push(`➕ ${n.name} — ${rs(price)} · ${n.stock} in stock`);
-    }
-  }
+  const rows = catalog.parseLines(v);
+  const r = await catalog.importItems(s, rows);
+  const items = await db.items.byShop(s.id), by = new Map(items.map((i) => [i.name, i]));
+  const ok = r.added.map((n) => `➕ ${n} — ${rs(by.get(n).price)} · ${by.get(n).stock} in stock`).concat(r.updated.map((n) => `✏️ ${n} — ${rs(by.get(n).price)} · ${by.get(n).stock} in stock (updated)`));
   c.sess.state = null;
-  return c.reply((ok.length ? `✅ *${ok.length} item(s) saved*\n` + ok.join('\n') : '') + (bad.length ? `\n\n⚠️ Couldn't read:\n${bad.join('\n')}\nFormat: _Name | Category | Price | Stock_` : ''),
+  return c.reply((ok.length ? `✅ *${ok.length} item(s) saved*\n` + ok.join('\n') : '') +
+    (r.errors.length ? `\n\n⚠️ Not saved:\n${r.errors.join('\n')}\nFormat: _Name | Category | Price | Stock_${r.allowed.length ? `\n\n*Categories for your shop:*\n${r.allowed.join(', ')}` : ''}` : ''),
     [['➕ Add more', 'additem'], ['📦 Stock & prices', 'stock'], ['Menu', 'menu']]);
 }
 
@@ -409,7 +407,11 @@ async function owner(c, v, btn) {
     const p = await pay.createLink({ kind: 'setup', ref: s.id, amount: cfg.SETUP_FEE, description: `${cfg.BRAND} setup fee – ${s.name}`, phone: s.owner_phone, name: s.name });
     return c.reply(`*Setup fee: ${rs(cfg.SETUP_FEE)}* (one-time)\n\n${pay.payText(p)}\n\nYour shop goes live as soon as payment is confirmed.`, [['Menu', 'menu']]);
   }
-  if (v === 'additem') { S.state = 'additem'; return c.reply('➕ Send items in this format — one per line, or separate with *;*\n\n_Name | Category | Price | Stock_\n\nExample:\nToor Dal 1kg | Pulses | 165 | 30; Sugar 1kg | Essentials | 48 | 50'); }
+  if (v === 'additem') {
+    S.state = 'additem';
+    const cats = (await catalog.categories(s.type_id)).map((x) => x.name);
+    return c.reply(`➕ Send items in this format — one per line, or separate with *;*\n\n_Name | Category | Price | Stock_\n\nExample:\nToor Dal 1kg | ${cats[2] || 'Pulses'} | 165 | 30; Sugar 1kg | ${cats[5] || 'Essentials'} | 48 | 50${cats.length ? `\n\n*Categories for your shop:*\n${cats.join(', ')}` : ''}${cfg.PUBLIC_URL ? `\n\n📊 Many items? Ask your admin to upload your Excel sheet.` : ''}`);
+  }
   if (!btn && v.includes('|')) return addItems(c, s, v);
   if (!btn && (m = v.match(/^\s*price\s+(.+?)\s+(\d+(?:\.\d+)?)\s*$/i))) {
     const i = await db.items.find(s.id, m[1]); if (!i) return c.reply(`Item "${m[1]}" not found.`, [['📦 Stock & prices', 'stock']]);
@@ -471,8 +473,15 @@ async function nearbyShops(loc) {
   return out.sort((x, y) => x.d - y.d);
 }
 const shopBtn = (s, d) => [`🏪 ${s.name}${d != null ? ' · ' + fmtKm(d) : ' · ' + s.area}${s.delivery ? ' · 🛵' : ''}`, 'shop:' + s.id];
-async function showNearby(c) {
-  const near = await nearbyShops(c.sess.data.loc);
+async function showNearby(c, typeId) {
+  let near = await nearbyShops(c.sess.data.loc);
+  const tids = [...new Set(near.map(({ s }) => s.type_id || 0))];
+  if (typeId == null && near.length > 3 && tids.length > 1) {
+    const ts = Object.fromEntries((await catalog.types(true)).map((t) => [t.id, t.name]));
+    return c.reply(`📍 *${near.length} shops near you*\nWhat are you shopping for?${await webLine(c.from)}`,
+      tids.map((t) => [`🏷 ${ts[t] || 'Other shops'} (${near.filter(({ s }) => (s.type_id || 0) === t).length})`, 'ty:' + t]).concat([['🏪 All shops', 'ty:all'], ['📍 Change location', 'newloc']]));
+  }
+  if (typeId != null && typeId !== 'all') near = near.filter(({ s }) => (s.type_id || 0) === typeId);
   if (!near.length) return c.reply('😔 No shops deliver to your location yet.\nYou can pick an area instead, or share a different location.', [['🗺 Choose area', 'areas_c'], ['📦 My orders', 'my']]);
   return c.reply(`📍 *Shops near you* (${near.length})\nTap a shop to start ordering:${await webLine(c.from)}`, near.map(({ s, d }) => shopBtn(s, d)).concat([['📍 Change location', 'newloc'], ['📦 My orders', 'my']]));
 }
@@ -504,7 +513,7 @@ const itemBtns = (its) => its.filter((i) => i.stock > 0).map((i) => [`➕ ${i.na
 
 async function showCats(c, s) {
   const its = await db.items.byShop(s.id);
-  const cats = [...new Set(its.map((i) => i.cat))];
+  const cats = await catalog.sortCats(s, [...new Set(its.map((i) => i.cat))]);
   if (!cats.length) return c.reply(`*${s.name}* hasn't added items yet.`, [['🏠 Other shops', 'menu']]);
   return c.reply(`🏪 *${s.name}* · ${s.area}\n${s.delivery ? `🛵 Home delivery ${rs(s.del_fee)}${s.min_order ? ` (min ${rs(s.min_order)})` : ''} · 🏃 Pickup` : '🏃 Store pickup only'}\n\nTap a category or *type an item name* to search.${await webLine(c.from, s.id)}`,
     cats.map((ct) => [`${ct} (${its.filter((i) => i.cat === ct).length})`, 'cat:' + ct]).concat([[`🛒 Cart (${cartCount(c)})`, 'cart']]));
@@ -605,6 +614,7 @@ async function customer(c, v, btn) {
     await webLink(c.from); await db.q('update cust_links set lat=$2, lng=$3, updated_at=now() where phone=$1', [c.from, c.loc.lat, c.loc.lng]);
     return showNearby(c);
   }
+  if ((m = v.match(/^ty:(\d+|all)$/)) && D.loc) return showNearby(c, m[1] === 'all' ? 'all' : +m[1]);
   if (v === 'newloc') return c.reply('📍 Send your location: tap 📎 → *Location* → *Send your current location*.', [['🗺 Choose area instead', 'areas_c']]);
   if (v === 'areas_c') {
     const as = await db.areas.active();
