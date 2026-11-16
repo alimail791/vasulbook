@@ -56,6 +56,13 @@ r.get('/u/:token', async (req, res) => {
   res.redirect(l.lat != null ? `/shops?lat=${l.lat.toFixed(5)}&lng=${l.lng.toFixed(5)}` : '/shops');
 });
 
+// Shop type label + icon (types are managed in the admin panel)
+const catalog = require('./catalog');
+function typeIcon(name) {
+  const n = String(name || '').toLowerCase();
+  return /veg|fruit/.test(n) ? '🥦' : /dairy|milk|bakery|bread/.test(n) ? '🥛' : /meat|fish|chicken/.test(n) ? '🍗' : /station|book/.test(n) ? '✏️' : /sweet|snack/.test(n) ? '🍬' : /pharm|medic|health/.test(n) ? '💊' : /grocer|kirana|super/.test(n) ? '🛒' : '🏪';
+}
+
 // ---------- shops list
 r.get('/shops', async (req, res) => {
   const lat = parseFloat(req.query.lat), lng = parseFloat(req.query.lng), area = +req.query.area || 0;
@@ -65,11 +72,23 @@ r.get('/shops', async (req, res) => {
   if (hasLoc) list = await bot.nearbyShops({ lat, lng });
   else list = live.filter((s) => !area || s.area_id === area).map((s) => ({ s, d: null }));
   const counts = Object.fromEntries((await db.all('select shop_id, count(*)::int n from items where stock>0 group by shop_id')).map((x) => [x.shop_id, x.n]));
+  // shop-type filter (types and their order come from the admin panel)
+  const types = await catalog.types(true), tname = Object.fromEntries(types.map((t) => [t.id, t.name]));
+  const present = types.filter((t) => list.some(({ s }) => s.type_id === t.id));
+  const hasOther = list.some(({ s }) => !s.type_id || !tname[s.type_id]);
+  const tsel = req.query.type === 'other' ? 'other' : +req.query.type || 0;
+  const base = hasLoc ? `lat=${lat.toFixed(5)}&lng=${lng.toFixed(5)}` : area ? `area=${area}` : '';
+  const href = (t) => '/shops?' + [base, t ? 'type=' + t : ''].filter(Boolean).join('&');
+  const chips = present.length + (hasOther ? 1 : 0) > 1 ? `<a class="chip${tsel ? '' : ' on'}" href="${href('')}">All (${list.length})</a>` +
+    present.map((t) => `<a class="chip${tsel === t.id ? ' on' : ''}" href="${href(t.id)}">${typeIcon(t.name)} ${esc(t.name)} (${list.filter(({ s }) => s.type_id === t.id).length})</a>`).join('') +
+    (hasOther ? `<a class="chip${tsel === 'other' ? ' on' : ''}" href="${href('other')}">🏪 Other (${list.filter(({ s }) => !s.type_id || !tname[s.type_id]).length})</a>` : '') : '';
+  if (tsel === 'other') list = list.filter(({ s }) => !s.type_id || !tname[s.type_id]); else if (tsel) list = list.filter(({ s }) => s.type_id === tsel);
   const where = `<div class="box where">${hasLoc ? '📍 Shops that serve your location' : area ? `🗺 ${esc((areas.find((a) => a.id === area) || {}).name || '')}` : '🏪 All shops'}
+${tsel ? ` · ${tsel === 'other' ? 'Other shops' : typeIcon(tname[tsel]) + ' ' + esc(tname[tsel] || '')}` : ''}
 <button type="button" onclick="loc()">Use my location</button>${areas.length ? `<select onchange="if(this.value)location=this.value"><option value="">Pick an area…</option>${areas.map((a) => `<option value="/shops?area=${a.id}"${a.id === area ? ' selected' : ''}>${esc(a.name)}</option>`).join('')}</select>` : ''}</div>
 <script>function loc(){if(!navigator.geolocation)return alert('Location not available');navigator.geolocation.getCurrentPosition(function(p){location='/shops?lat='+p.coords.latitude.toFixed(5)+'&lng='+p.coords.longitude.toFixed(5)},function(){alert('Please allow location, or pick an area')})}</script>`;
-  const rows = list.map(({ s, d }) => `<a class="shop" href="/s/${s.id}"><span class="ic">🏪</span><span><b>${esc(s.name)}</b><span class="mt">${esc(s.area || '')}${d != null ? ' · 📍 ' + fmtKm(d) : ''} · ${counts[s.id] || 0} items<br>${s.delivery ? `🛵 Delivery ${rs(s.del_fee)} · 🏃 Pickup` : '🏃 Pickup only'}</span></span><span class="go">›</span></a>`).join('');
-  res.send(layout(`${cfg.BRAND} – Shops near you`, where + (rows || `<div class="box">No shops ${hasLoc ? 'serve your location' : 'here'} yet. Try another area.</div>`)));
+  const rows = list.map(({ s, d }) => `<a class="shop" href="/s/${s.id}"><span class="ic">${typeIcon(tname[s.type_id])}</span><span><b>${esc(s.name)}</b><span class="mt">${tname[s.type_id] ? esc(tname[s.type_id]) + ' · ' : ''}${esc(s.area || '')}${d != null ? ' · 📍 ' + fmtKm(d) : ''} · ${counts[s.id] || 0} items<br>${s.delivery ? `🛵 Delivery ${rs(s.del_fee)} · 🏃 Pickup` : '🏃 Pickup only'}</span></span><span class="go">›</span></a>`).join('');
+  res.send(layout(`${cfg.BRAND} – Shops near you`, where + (rows || `<div class="box">No ${tsel ? 'shops of this type' : 'shops'} ${hasLoc ? 'serve your location' : 'here'} yet. Try another area${tsel ? ` or <a href="${href('')}">see all shops</a>` : ''}.</div>`), chips));
 });
 
 // ---------- one shop
@@ -77,12 +96,13 @@ r.get('/s/:id', async (req, res) => {
   const s = await db.shops.get(+req.params.id || 0);
   if (!s || !s.active || !s.paid) return res.status(404).send(layout('Shop not available', `<div class="box">This shop isn't taking orders right now.<br><br><a class="btn" href="/shops">See other shops</a></div>`));
   const its = await db.items.byShop(s.id), who = await me(req);
-  const cats = await require('./catalog').sortCats(s, [...new Set(its.map((i) => i.cat))]);
+  const stype = s.type_id ? await catalog.type(s.type_id) : null;
+  const cats = await catalog.sortCats(s, [...new Set(its.map((i) => i.cat))]);
   const chips = `<button class="chip on" onclick="window.scrollTo({top:0,behavior:'smooth'})">All</button>` + cats.map((c, k) => `<a class="chip" href="#c${k}">${esc(c)}</a>`).join('');
   const sections = cats.map((c, k) => `<h2 id="c${k}">${esc(c)}</h2>` + its.filter((i) => i.cat === c).map((i) => `<div class="it"><div class="nm"><b>${esc(i.name)}</b><span class="pr">${rs(i.price)}</span>${i.stock === 0 ? ' <span class="out">Out of stock</span>' : i.stock < 5 ? ` <span class="out">Only ${i.stock} left</span>` : ''}</div>
 ${i.stock > 0 ? `<div class="qty" data-id="${i.id}"></div>` : ''}</div>`).join('')).join('');
   const data = { shop: { id: s.id, name: s.name, delivery: !!s.delivery, fee: Number(s.del_fee), min: Number(s.min_order || 0), upi: !!s.upi }, items: Object.fromEntries(its.map((i) => [i.id, { n: i.name, p: Number(i.price), st: i.stock }])), known: !!who };
-  const body = `<div class="box"><b style="font-size:18px">🏪 ${esc(s.name)}</b><div class="mt">${esc(s.area || '')} · ${s.delivery ? `🛵 Home delivery ${rs(s.del_fee)}${s.min_order ? ` (min ${rs(s.min_order)})` : ''} · 🏃 Pickup` : '🏃 Store pickup only'}</div>
+  const body = `<div class="box"> <b style="font-size:18px">${typeIcon(stype && stype.name)} ${esc(s.name)}</b><div class="mt">${stype ? esc(stype.name) + ' · ' : ''}${esc(s.area || '')} · ${s.delivery ? `🛵 Home delivery ${rs(s.del_fee)}${s.min_order ? ` (min ${rs(s.min_order)})` : ''} · 🏃 Pickup` : '🏃 Store pickup only'}</div>
 <input id="q" placeholder="Search items…" style="width:100%;margin-top:10px;font:inherit;padding:9px 10px;border:1px solid #cfd8d2;border-radius:8px" oninput="search(this.value)"></div>
 ${sections || '<div class="box">This shop hasn’t added items yet.</div>'}
 <div class="cartbar" id="bar"><b id="bt"></b><button onclick="openSheet()">View cart ›</button></div>

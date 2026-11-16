@@ -136,6 +136,16 @@ const tap = (p, label) => bot.handle(p, p === CUST ? 'Priya' : 'X', find(p, labe
   const o4 = await db.one('select * from orders order by id desc limit 1'); assert.equal(o4.cust_phone, NEWC); assert.equal(o4.mode, 'delivery'); assert(o4.addr.includes('Lake View'));
   await bot.handle(NEWC, 'Ravi', code, false); assert(txt(last(NEWC)).includes('expired'), 'code used once');
   await bot.handle(OWNER2, 'X', code, false); // owner sending a code goes to customer flow, not owner commands
+  // website: shop-type filter and labels
+  h = await (await fetch(`${base}/shops?lat=13.501&lng=80.501`)).text();
+  assert(h.includes('All (4)') && h.includes('Grocery (2)') && h.includes('Vegetables &amp; Fruits (2)'), 'type chips');
+  const vt = await db.one(`select id from shop_types where name='Vegetables & Fruits'`);
+  h = await (await fetch(`${base}/shops?lat=13.501&lng=80.501&type=${vt.id}`)).text();
+  assert(h.includes('V1') && h.includes('V2') && !h.includes('>G1<') && h.includes('🥦'), 'filtered by type');
+  h = await (await fetch(`${base}/shops?lat=13.501&lng=80.501&type=other`)).text(); assert(h.includes('No shops of this type'));
+  const v1 = await db.one(`select id from shops where name='V1'`);
+  h = await (await fetch(`${base}/s/${v1.id}`)).text(); assert(h.includes('Vegetables &amp; Fruits ·'), 'type on shop page');
+  console.log('✔ website: shop types filter and labels');
   srv.close();
   console.log('✔ website shop: personal link, nearby shops, cart order, WhatsApp code order');
   console.log('\n✅ ALL FLOWS PASSED'); process.exit(0);
