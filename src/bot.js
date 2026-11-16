@@ -273,7 +273,7 @@ async function advMenu(c) {
   const a = c.adv, P = await db.plans(), L = a.locality_id ? await db.localities.get(a.locality_id) : null;
   const plan = planActive(a) ? `${P[a.plan].name} · valid till ${istDate(a.plan_until)}` : '⚠️ No active plan';
   const post = a.cat === 'Property' ? [['🏠 Post a property', 'post:property']] : [['➕ Post an offer', 'post:deal'], ['🎉 Post an event', 'post:event'], ['🏠 Post a property', 'post:property']];
-  return c.reply(`🏪 *${a.name}*${L ? ' · 📍 ' + L.name : ''}\nPlan: ${plan}`, post.concat([['📊 My ads & leads', 'myads'], ['✅ Redeem a coupon', 'redeem'], ['💳 Plans & renew', 'plans'], ['📍 Update location', 'aloc'], ['🛍 Browse offers', '#customer']]));
+  return c.reply(`🏪 *${a.name}*${L ? ' · 📍 ' + L.name : ''}\n🏷 ${a.cat === 'Property' ? 'Property owner / broker' : a.cat}\nPlan: ${plan}`, post.concat([['📊 My ads & leads', 'myads'], ['✅ Redeem a coupon', 'redeem'], ['💳 Plans & renew', 'plans'], [`🏷 Category: ${a.cat}`, 'acat'], ['📍 Update location', 'aloc'], ['🛍 Browse offers', '#customer']]));
 }
 async function activatePlan(adv, planKey, payment) {
   const P = await db.plans(), p = P[planKey];
@@ -301,7 +301,7 @@ async function postLimit(adv) {
 }
 async function submitAd(c) {
   const d = c.sess.data.d, a = c.adv, P = await db.plans(), p = P[a.plan];
-  const cat = d.type === 'event' ? 'Events' : d.type === 'property' ? 'Property' : a.cat;
+  const cat = d.type === 'event' ? 'Events' : d.type === 'property' ? 'Property' : d.cat || (CATS.includes(a.cat) ? a.cat : 'Grocery');
   const ad = await db.one(`insert into ads(adv_id,type,cat,sub,title,offer,details,media_id,valid_until,radius_km,featured,plan) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) returning *`,
     [a.id, d.type, cat, d.sub || null, d.title, d.offer, d.details || null, d.media || null, new Date(d.valid), d.radius || p.km, !!p.featured, a.plan]);
   c.sess.data.d = null; c.sess.state = null;
@@ -313,10 +313,13 @@ async function submitAd(c) {
 }
 async function previewAd(c) {
   const d = c.sess.data.d, a = c.adv, P = await db.plans();
-  const cat = d.type === 'event' ? 'Events' : d.type === 'property' ? 'Property' : a.cat;
+  const cat = d.type === 'event' ? 'Events' : d.type === 'property' ? 'Property' : d.cat || (CATS.includes(a.cat) ? a.cat : 'Grocery');
   const fake = { type: d.type, cat, sub: d.sub, title: d.title, offer: d.offer, details: d.details, shop: a.name, valid_until: d.valid, featured: !!P[a.plan].featured, media_id: d.media };
   c.sess.state = 'd_confirm';
-  return c.reply(`*Preview – how customers will see it:*\n\n${cardText(fake)}\n📏 Shown within ${d.radius} km`, [['🚀 Submit', 'dsubmit'], ['✏️ Start over', 'post:' + d.type], ['🏪 Business menu', 'menu']], imgOf(fake));
+  const b = [['🚀 Submit', 'dsubmit']];
+  if (d.type === 'deal') b.push([`🏷 Change category (${cat})`, 'dcat']);
+  b.push(['✏️ Start over', 'post:' + d.type], ['🏪 Business menu', 'menu']);
+  return c.reply(`*Preview – how customers will see it:*\n\n${cardText(fake)}\n🏷 ${d.type === 'deal' ? cat : d.type === 'event' ? 'Event' : 'Property'} · 📏 within ${d.radius} km`, b, imgOf(fake));
 }
 async function askValidity(c) {
   const a = c.adv, P = await db.plans(), p = P[a.plan], left = (new Date(a.plan_until) - Date.now()) / 864e5;
@@ -398,6 +401,28 @@ async function advertiser(c, v, btn) {
     for (const to of cfg.ADMINS) await notify(to, msg, [[`✅ Confirm ${rs(pm.amount)}`, 'pc:' + pm.id], ['❌ Not received', 'pr:' + pm.id]], img);
     return c.reply('🙏 Thanks! The admin will confirm your payment shortly and your plan will start right away.', [['🏪 Business menu', 'menu']]);
   }
+  // ---- change business category
+  if (v === 'acat') {
+    return c.reply(`🏷 Your category now: *${a.cat === 'Property' ? 'Property owner / broker' : a.cat}*\nPick a new one:`, CATS.map((k) => [`${EMO[k]} ${k}${k === a.cat ? ' ✓' : ''}`, 'acat:' + k]).concat([[`🏠 Property owner / broker${a.cat === 'Property' ? ' ✓' : ''}`, 'acat:Property']]));
+  }
+  if ((m = v.match(/^acat:(.+)$/)) && (CATS.includes(m[1]) || m[1] === 'Property')) {
+    const old = a.cat, nw = m[1];
+    if (old === nw) return advMenu(c);
+    c.adv = await db.advertisers.set(a.id, { cat: nw });
+    const n = nw === 'Property' ? 0 : (await db.one(`select count(*)::int n from ads where adv_id=$1 and type='deal' and status in ('live','pending','paused') and cat=$2`, [a.id, old])).n;
+    if (n) { S.data.oldcat = old; return c.reply(`✅ Category changed to *${nw}*.\nYou have ${n} running offer${n > 1 ? 's' : ''} under ${old}. Move ${n > 1 ? 'them' : 'it'} to ${nw} too?`, [['✅ Yes, move them', 'acatmv'], ['No, keep as is', 'menu']]); }
+    await c.say(`✅ Category changed to *${nw === 'Property' ? 'Property owner / broker' : nw}*.${nw === 'Property' ? '\nYou can now post houses for rent and flats / houses for sale.' : ''}`);
+    return advMenu(c);
+  }
+  if (v === 'acatmv' && S.data.oldcat) {
+    const r2 = await db.q(`update ads set cat=$3 where adv_id=$1 and type='deal' and status in ('live','pending','paused') and cat=$2`, [a.id, S.data.oldcat, a.cat]);
+    S.data.oldcat = null; await c.say(`✅ ${r2.rowCount} offer${r2.rowCount === 1 ? '' : 's'} moved to *${a.cat}*.`); return advMenu(c);
+  }
+  // ---- choose a different category for just this ad (from the preview)
+  if (v === 'dcat' && S.data.d && S.data.d.type === 'deal') {
+    return c.reply('🏷 Category for this ad only (your business category stays the same):', CATS.map((k) => [`${EMO[k]} ${k}${k === (S.data.d.cat || a.cat) ? ' ✓' : ''}`, 'dcat:' + k]));
+  }
+  if ((m = v.match(/^dcat:(.+)$/)) && S.data.d && S.data.d.type === 'deal' && CATS.includes(m[1])) { S.data.d.cat = m[1]; return previewAd(c); }
   if (v === 'aloc') { S.state = 'a_loc'; return wa.askLocation(c.from, 'Tap *Send location* to update your shop location 👇'); }
   if ((m = v.match(/^loc:(-?[\d.]+),(-?[\d.]+)\|?(.*)$/)) && S.state === 'a_loc') {
     const L = await nearestLocality(+m[1], +m[2]);

@@ -60,6 +60,15 @@ const ok = (name) => console.log('✔', name);
 
   await tap(ADMIN, 'Approve'); assert(has(TUTOR, 'is now *LIVE*'));
   ok('approve on WhatsApp');
+  // ---- advertiser changes business category, moves running offers
+  await say(TUTOR, 'menu'); assert(txt(last(TUTOR)).includes('🏷 Tuition'));
+  await tap(TUTOR, 'Category: Tuition'); await tap(TUTOR, 'Coaching');
+  assert(txt(last(TUTOR)).includes('Move it to Coaching'));
+  await tap(TUTOR, 'Yes, move them'); assert(has(TUTOR, '1 offer moved to *Coaching*'));
+  assert.equal((await db.one(`select cat from ads where title like 'Maths%'`)).cat, 'Coaching');
+  await say(TUTOR, 'menu'); await tap(TUTOR, 'Category: Coaching'); await tap(TUTOR, 'Tuition'); await tap(TUTOR, 'Yes, move them');
+  assert.equal((await db.one(`select cat from ads where title like 'Maths%'`)).cat, 'Tuition');
+  ok('advertiser changes category (and moves running offers)');
 
   // ---- shop in Anna Nagar pays Monthly by direct UPI; admin confirms
   await say(SHOP, 'advertise'); await say(SHOP, 'Style Point Boutique'); await tap(SHOP, 'Fashion'); await loc(SHOP, 13.0860, 80.2110);
@@ -69,7 +78,11 @@ const ok = (name) => console.log('✔', name);
   assert(txt(last(ADMIN)).includes('Payment to confirm') && txt(last(ADMIN)).includes('412345678901'));
   await tap(ADMIN, 'Confirm'); assert(has(SHOP, 'Monthly* plan is active'));
   assert(has(AREA, '₹299 received from *Style Point Boutique*'));
-  await tap(SHOP, 'Post an ad'); await say(SHOP, 'Season clearance'); await say(SHOP, 'Buy 2 get 1 free on kurtis'); await tap(SHOP, 'Skip photo'); await tap(SHOP, '30 days'); await tap(SHOP, 'Submit');
+  await tap(SHOP, 'Post an ad'); await say(SHOP, 'Season clearance'); await say(SHOP, 'Buy 2 get 1 free on kurtis'); await tap(SHOP, 'Skip photo'); await tap(SHOP, '30 days');
+  await tap(SHOP, 'Change category'); await tap(SHOP, 'Kids'); assert(txt(last(SHOP)).includes('🏷 Kids'));
+  await tap(SHOP, 'Change category'); await tap(SHOP, 'Fashion'); await tap(SHOP, 'Submit');
+  assert.equal((await db.one(`select cat from ads where title='Season clearance'`)).cat, 'Fashion');
+  assert.equal((await db.advertisers.byPhone(SHOP)).cat, 'Fashion');
   assert(txt(last(AREA)).includes('Ad waiting for approval'), 'Anna Nagar ad goes to the area admin');
   await say(AREA, 'hi'); assert(/area admin/.test(txt(last(AREA))));
   await tap(AREA, 'Pending ads'); await tap(AREA, 'Approve'); assert(has(SHOP, 'is now *LIVE*'));
@@ -121,6 +134,9 @@ const ok = (name) => console.log('✔', name);
   }
   let r = await fetch(`${base}/panel/plans?key=testkey`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'day=40&week=100&month=299&premium=499', redirect: 'manual' });
   assert.equal(r.status, 302); assert.equal((await db.plans()).day.price, 40);
+  const tutorId = (await db.advertisers.byPhone(TUTOR)).id;
+  r = await fetch(`${base}/panel/advertisers/${tutorId}/cat?key=testkey`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'cat=Schools', redirect: 'manual' });
+  assert.equal(r.status, 302); assert.equal((await db.advertisers.byPhone(TUTOR)).cat, 'Schools');
   r = await fetch(`${base}/panel/localities?key=testkey`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'name=KK+Nagar&admin=9000000002&loc=13.03,80.19&share=50', redirect: 'manual' });
   assert.equal((await db.localities.byAdmin(AREA)).length, 2, 'one area admin, two localities');
   await say(SHOP, 'hi'); await tap(SHOP, 'Plans'); await tap(SHOP, 'Premium'); const pid = (await db.one(`select id from payments where status='created' order by id desc limit 1`)).id;
