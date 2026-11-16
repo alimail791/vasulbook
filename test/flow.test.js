@@ -32,7 +32,7 @@ const has = (p, s) => msgs(p).some((m) => txt(m).includes(s));
 const ok = (name) => console.log('✔', name);
 
 (async () => {
-  await db.q('drop table if exists localities, advertisers, media, ads, customers, coupons, leads, payments, settings, broadcasts, sessions, menus, otps cascade');
+  await db.q('drop table if exists localities, advertisers, media, ads, customers, coupons, leads, payments, settings, broadcasts, sessions, menus, otps, categories cascade');
   await db.init();
 
   // ---- main admin sets up two localities (one run by self, one by an area admin)
@@ -43,6 +43,13 @@ const ok = (name) => console.log('✔', name);
   await say(ADMIN, 'menu'); await tap(ADMIN, 'Add locality'); await say(ADMIN, 'Anna Nagar'); await say(ADMIN, '90000 00002'); await loc(ADMIN, 13.0850, 80.2100);
   assert(has(AREA, 'area admin* for *Anna Nagar'));
   ok('localities + area admin via WhatsApp');
+  // ---- admin adds a category on WhatsApp
+  await say(ADMIN, 'menu'); await tap(ADMIN, 'Categories'); assert(txt(last(ADMIN)).includes('📖 Tuition · 🎓'));
+  await tap(ADMIN, 'Add category'); await say(ADMIN, 'Medical'); await say(ADMIN, '💊'); await tap(ADMIN, 'Shops & services');
+  assert(txt(last(ADMIN)).includes('💊 Medical* added')); assert(bot.CATS.includes('Medical'));
+  await tap(ADMIN, 'Categories'); await tap(ADMIN, 'More options'); await tap(ADMIN, 'Medical'); await tap(ADMIN, 'Hide'); assert(!bot.CATS.includes('Medical'));
+  await tap(ADMIN, 'Show'); assert(bot.CATS.includes('Medical'));
+  ok('admin adds / hides / shows a category on WhatsApp');
 
   // ---- tutor registers in Gandhi Nagar, takes free trial, posts an offer
   await say(TUTOR, 'business'); assert(txt(last(TUTOR)).includes('business name'));
@@ -70,7 +77,7 @@ const ok = (name) => console.log('✔', name);
   assert.equal((await db.one(`select cat from ads where title like 'Maths%'`)).cat, 'Tuition');
   ok('advertiser changes category (and moves running offers)');
   // ---- main admin posts their own ad from business view and approves it from there
-  await say(ADMIN, '#business'); await say(ADMIN, 'Akbar Rentals'); await tap(ADMIN, 'Property owner'); await loc(ADMIN, 13.0402, 80.2002);
+  await say(ADMIN, '#business'); await say(ADMIN, 'Akbar Rentals'); await tap(ADMIN, 'More options'); await tap(ADMIN, 'Property owner'); await loc(ADMIN, 13.0402, 80.2002);
   await tap(ADMIN, 'free trial'); await tap(ADMIN, 'Post a property'); await tap(ADMIN, 'Houses for rent');
   await say(ADMIN, '1 BHK near market'); await say(ADMIN, '₹7,000/month'); await say(ADMIN, 'First floor · 600 sq ft');
   await tap(ADMIN, 'Skip photo'); await tap(ADMIN, '7 days'); await tap(ADMIN, 'Submit');
@@ -88,7 +95,7 @@ const ok = (name) => console.log('✔', name);
   assert(txt(last(ADMIN)).includes('Payment to confirm') && txt(last(ADMIN)).includes('412345678901'));
   await tap(ADMIN, 'Confirm'); assert(has(SHOP, 'Monthly* plan is active'));
   assert(has(AREA, '₹299 received from *Style Point Boutique*'));
-  await tap(SHOP, 'Post an ad'); await tap(SHOP, 'Electronics'); assert(txt(last(SHOP)).includes('*Electronics* offer')); await say(SHOP, 'Season clearance'); await say(SHOP, 'Buy 2 get 1 free on kurtis'); await tap(SHOP, 'Skip photo'); await tap(SHOP, '30 days');
+  await tap(SHOP, 'Post an ad'); await tap(SHOP, 'Medical'); assert(txt(last(SHOP)).includes('*Medical* offer')); await say(SHOP, 'Season clearance'); await say(SHOP, 'Buy 2 get 1 free on kurtis'); await tap(SHOP, 'Skip photo'); await tap(SHOP, '30 days');
   await tap(SHOP, 'Change category'); await tap(SHOP, 'Kids'); assert(txt(last(SHOP)).includes('🏷 Kids'));
   await tap(SHOP, 'Change category'); await tap(SHOP, 'Fashion'); await tap(SHOP, 'Submit');
   assert.equal((await db.one(`select cat from ads where title='Season clearance'`)).cat, 'Fashion');
@@ -99,7 +106,7 @@ const ok = (name) => console.log('✔', name);
   ok('UPI payment claim + admin confirm, area admin approval');
 
   // ---- house owner: property listing
-  await say(OWNER, 'business'); await say(OWNER, 'Owner Kumar'); await tap(OWNER, 'Property owner'); await loc(OWNER, 13.0395, 80.1990);
+  await say(OWNER, 'business'); await say(OWNER, 'Owner Kumar'); await tap(OWNER, 'More options'); await tap(OWNER, 'Property owner'); await loc(OWNER, 13.0395, 80.1990);
   await tap(OWNER, 'free trial'); await tap(OWNER, 'Post a property'); await tap(OWNER, 'Houses for rent');
   await say(OWNER, '2 BHK house near bus stand'); await say(OWNER, '₹12,000/month'); await say(OWNER, 'Ground floor · 900 sq ft · bike parking');
   await bot.handle(OWNER, 'X', 'img:FAKE', true); await tap(OWNER, '15 days'); await tap(OWNER, 'Submit');
@@ -146,6 +153,13 @@ const ok = (name) => console.log('✔', name);
   }
   let r = await fetch(`${base}/panel/plans?key=testkey`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'day=40&week=100&month=299&premium=499', redirect: 'manual' });
   assert.equal(r.status, 302); assert.equal((await db.plans()).day.price, 40);
+  const med = await db.one(`select id from categories where name='Medical'`);
+  r = await fetch(`${base}/panel/categories?key=testkey`); assert((await r.text()).includes('Medical'));
+  r = await fetch(`${base}/panel/categories?key=testkey`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'name=Hardware&emoji=%F0%9F%94%A7&edu=0', redirect: 'manual' });
+  assert(bot.CATS.includes('Hardware'));
+  r = await fetch(`${base}/panel/categories/${med.id}?key=testkey`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'name=Pharmacy&emoji=%F0%9F%92%8A&edu=0&active=1&sort=15', redirect: 'manual' });
+  assert(bot.CATS.includes('Pharmacy') && !bot.CATS.includes('Medical'));
+  r = await fetch(`${base}/offers`); { const hh = await r.text(); assert(hh.includes('Pharmacy') && hh.includes('Hardware'), 'website chips'); }
   const tutorId = (await db.advertisers.byPhone(TUTOR)).id;
   r = await fetch(`${base}/panel/advertisers/${tutorId}/cat?key=testkey`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'cat=Schools', redirect: 'manual' });
   assert.equal(r.status, 302); assert.equal((await db.advertisers.byPhone(TUTOR)).cat, 'Schools');

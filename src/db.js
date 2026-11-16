@@ -44,10 +44,15 @@ async function init() {
   create table if not exists menus(phone text primary key, text text, items jsonb);
   create table if not exists otps(phone text primary key, code_hash text, tries int default 0, expires_at timestamptz, created_at timestamptz default now());
   alter table customers add column if not exists web_token text unique;
+  create table if not exists categories(id serial primary key, name text unique not null, emoji text default '🏷', edu boolean default false, active boolean default true, sort int default 100, created_at timestamptz default now());
   create index if not exists ads_status on ads(status);
   create index if not exists ads_adv on ads(adv_id);
   create index if not exists leads_ad on leads(ad_id);
   `);
+  if (!(await one('select 1 from categories limit 1'))) {
+    const def = [['Grocery', '🛒', false], ['Food', '🍛', false], ['Fashion', '👗', false], ['Electronics', '📱', false], ['Salon & Spa', '💇', false], ['Kids', '🧸', false], ['Tuition', '📖', true], ['Coaching', '🎯', true], ['Schools', '🏫', true]];
+    for (const [i, [n, e, edu]] of def.entries()) await q('insert into categories(name,emoji,edu,sort) values($1,$2,$3,$4) on conflict do nothing', [n, e, edu, (i + 1) * 10]);
+  }
 }
 
 // ---- plans (defaults from config, prices overridable in settings)

@@ -51,13 +51,13 @@ function layout(title, body, { og = {}, chips = '' } = {}) {
 }
 
 function card(a) {
-  const bg = img(a) ? `background-image:url('${img(a)}')` : `background:linear-gradient(135deg,${COL[a.cat] || COL.Events})`;
+  const bg = img(a) ? `background-image:url('${img(a)}')` : `background:linear-gradient(135deg,${COL[a.cat] || (a.type === 'deal' ? '#e8f0ec,#c5e3d2' : COL.Events)})`;
   return `<a class="card" href="/ad/${a.id}"><div class="ph" style="${bg}">${img(a) ? '' : emo(a)}${a.featured ? '<span class="ft">⭐ Featured</span>' : ''}${a.dist != null ? `<span class="ds">📍 ${fmtKm(a.dist)}</span>` : ''}</div>
 <div class="bd"><b>${esc(a.title)}</b><span class="off">${esc(a.offer)}</span>${a.type === 'property' && a.details ? `<span class="mt">${esc(a.details)}</span>` : ''}<span class="mt">${a.type === 'property' ? '👤' : bot.EDU.includes(a.cat) ? '🎓' : '🏪'} ${esc(a.shop)}${a.type === 'deal' ? ' · ' + esc(a.cat) : ''}</span>
 ${a.valid_until && a.type !== 'property' ? `<span class="mt">⏳ Till ${bot.istDate(a.valid_until)}</span>` : ''}</div></a>`;
 }
 
-const FILTERS = [['', 'All'], ['offers', '🔥 Offers'], ['edu', '🎓 Tuition & schools'], ['events', '🎉 Events'], ['property', '🏠 Rent & property'], ...['Grocery', 'Food', 'Fashion', 'Electronics', 'Salon & Spa', 'Kids'].map((c) => ['cat:' + c, `${bot.EMO[c]} ${c}`]), ...Object.entries(bot.SUBS).map(([k, v]) => ['sub:' + k, v])];
+const FILTERS = () => [['', 'All'], ['offers', '🔥 Offers'], ['edu', '🎓 Tuition & schools'], ['events', '🎉 Events'], ['property', '🏠 Rent & property'], ...bot.CATS.filter((c) => !bot.EDU.includes(c)).map((c) => ['cat:' + c, `${bot.EMO[c] || '🏷'} ${c}`]), ...bot.EDU.map((c) => ['cat:' + c, `${bot.EMO[c] || '🏷'} ${c}`]), ...Object.entries(bot.SUBS).map(([k, v]) => ['sub:' + k, v])];
 function applyFilter(list, f) {
   if (!f) return list;
   if (f === 'offers') return list.filter((a) => a.type === 'deal' && !bot.EDU.includes(a.cat));
@@ -80,7 +80,7 @@ r.get('/offers', async (req, res) => {
   list = applyFilter(list, f);
   if (q) list = list.filter((a) => q.split(/\s+/).every((w) => `${a.title} ${a.offer} ${a.shop} ${a.cat} ${a.details || ''}`.toLowerCase().includes(w)));
   const base = (extra) => { const p = new URLSearchParams(); if (hasLoc) { p.set('lat', lat.toFixed(5)); p.set('lng', lng.toFixed(5)); p.set('r', R); } if (q) p.set('q', q); for (const [k, v] of Object.entries(extra)) if (v) p.set(k, v); else p.delete(k); return '/offers?' + p.toString(); };
-  const chips = FILTERS.map(([k, l]) => `<a class="chip${k === f ? ' on' : ''}" href="${esc(base({ f: k }))}">${esc(l)}</a>`).join('');
+  const chips = FILTERS().map(([k, l]) => `<a class="chip${k === f ? ' on' : ''}" href="${esc(base({ f: k }))}">${esc(l)}</a>`).join('');
   const locs = (await db.localities.active()).filter((l) => l.lat != null);
   const where = `<div class="where">${hasLoc ? `📍 Showing ads within <b>${R} km</b> of your location · ${[2, 3, 5].map((k) => k === R ? `<b>${k} km</b>` : `<a href="${esc(base({ r: k, f }).replace(/r=\d/, 'r=' + k))}">${k} km</a>`).join(' · ')}` : '📍 Showing all areas.'}
 <button type="button" onclick="loc()">Use my location</button>${locs.length ? `<select onchange="if(this.value)location=this.value"><option value="">Pick an area…</option>${locs.map((l) => `<option value="/offers?lat=${l.lat}&lng=${l.lng}&r=${R}${f ? '&f=' + encodeURIComponent(f) : ''}">${esc(l.name)}</option>`).join('')}</select>` : ''}
@@ -104,7 +104,7 @@ r.get('/ad/:id', async (req, res) => {
   await db.q('update ads set views=views+1 where id=$1', [a.id]);
   const lat = parseFloat(req.query.lat), lng = parseFloat(req.query.lng);
   const d = Number.isFinite(lat) && Number.isFinite(lng) ? bot.km({ lat, lng }, a) : null;
-  const bg = img(a) ? `background-image:url('${img(a)}')` : `background:linear-gradient(135deg,${COL[a.cat] || COL.Events})`;
+  const bg = img(a) ? `background-image:url('${img(a)}')` : `background:linear-gradient(135deg,${COL[a.cat] || (a.type === 'deal' ? '#e8f0ec,#c5e3d2' : COL.Events)})`;
   const share = `${cfg.PUBLIC_URL}/ad/${a.id}`;
   const body = `<div class="big"><div class="ph" style="${bg}">${img(a) ? '' : emo(a)}${a.featured ? '<span class="ft">⭐ Featured</span>' : ''}${d != null ? `<span class="ds">📍 ${fmtKm(d)}</span>` : ''}</div>
 <div class="bd"><h1>${esc(a.title)}</h1><span class="off">${esc(a.offer)}</span>${a.details ? `<p class="mt" style="font-size:14px">${esc(a.details)}</p>` : ''}

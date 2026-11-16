@@ -8,9 +8,19 @@ const pay = require('./pay');
 
 const rs = (n) => '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 const MENU_WORDS = ['hi', 'hello', 'hey', 'hii', 'hai', 'menu', 'start', '0', 'vanakkam', 'namaste'];
+// Categories are managed by the admin (WhatsApp or web panel) and loaded from the database.
+// These arrays are filled in place by loadCats(), so every module always sees the current list.
 const CATS = ['Grocery', 'Food', 'Fashion', 'Electronics', 'Salon & Spa', 'Kids', 'Tuition', 'Coaching', 'Schools'];
 const EDU = ['Tuition', 'Coaching', 'Schools'];
 const EMO = { Grocery: '🛒', Food: '🍛', Fashion: '👗', Electronics: '📱', 'Salon & Spa': '💇', Kids: '🧸', Tuition: '📖', Coaching: '🎯', Schools: '🏫', Events: '🎉', Property: '🏠' };
+let catsLoaded = false;
+async function loadCats() {
+  const rows = await db.all('select * from categories order by sort, id');
+  CATS.length = 0; EDU.length = 0;
+  for (const r of rows) { EMO[r.name] = r.emoji || '🏷'; if (r.active) { CATS.push(r.name); if (r.edu) EDU.push(r.name); } }
+  catsLoaded = true;
+}
+const ensureCats = () => (catsLoaded ? null : loadCats());
 const SUBS = { Rent: '🔑 Houses for rent', 'Flat sale': '🏢 Flats for sale', 'House sale': '🏡 Houses for sale' };
 const SUBEMO = { Rent: '🔑', 'Flat sale': '🏢', 'House sale': '🏡' };
 const SAMPLE = {
@@ -546,7 +556,7 @@ async function adminMenu(c) {
   const lines = locs.map((l) => `📍 ${l.name}${c.isMain ? ` (${l.admin_phone ? '+' + l.admin_phone : 'you'})` : ''} – ${liveOf(l.id)} live · ${pend.filter((a) => a.locality_id === l.id).length} pending`);
   if (c.isMain) { const noLoc = pend.filter((a) => !a.locality_id).length; if (noLoc) lines.push(`📍 No locality – ${noLoc} pending`); }
   const b = [[`🕒 Pending ads (${pend.length})`, 'apend']];
-  if (c.isMain) b.push([`💳 Payments to confirm (${claims})`, 'apays'], ['📍 Localities & admins', 'alocs'], ['➕ Add locality', 'aadd']);
+  if (c.isMain) b.push([`💳 Payments to confirm (${claims})`, 'apays'], ['📍 Localities & admins', 'alocs'], ['➕ Add locality', 'aadd'], ['🏷 Categories', 'acats']);
   b.push(['📈 Revenue this month', 'arev']);
   if (c.isMain) b.push(['📢 Send daily offers now', 'adigest']);
   b.push(['🌐 Web admin panel', 'aweb'], ['🛍 Browse as customer', '#customer']);
@@ -668,6 +678,51 @@ async function admin(c, v, btn) {
     const mine = c.isMain ? total - theirs : locs.reduce((t, l) => t + ((rev.find((x) => x.locality_id === l.id) || { s: 0 }).s * l.share), 0);
     return c.reply(`📈 *Revenue this month*\n\n${rows.join('\n') || 'No payments yet.'}\n\nTotal: *${rs(total)}*\n${c.isMain ? 'Your share' : 'Your share'}: *${rs(mine)}*`, [['Menu', 'menu']]);
   }
+  // ---- categories (main admin): add, rename, emoji, education group, hide/show
+  if (c.isMain && v === 'acats') {
+    const rows = await db.all(`select c.*, (select count(*)::int from ads a where a.cat=c.name and a.status='live') live from categories c order by sort, id`);
+    return c.reply('🏷 *Categories*\n' + rows.map((r) => `${r.emoji} ${r.name}${r.edu ? ' · 🎓' : ''}${r.active ? '' : ' · ⏸ hidden'} – ${r.live} live`).join('\n') + '\n\n_🎓 = shown under Tuition, coaching & schools with a "Book free demo" button._',
+      [['➕ Add category', 'cadd']].concat(rows.map((r) => [`✏️ ${r.name}`, 'ced:' + r.id])));
+  }
+  if (c.isMain && v === 'cadd') { S.state = 'c_name'; S.data.nc = {}; return c.reply('🏷 Name of the new category? (e.g. Medical, Hardware, Mobile repair)', [['❌ Cancel', 'acats']]); }
+  if (c.isMain && S.state === 'c_name' && !btn) {
+    const name = v.trim().replace(/\s+/g, ' ').slice(0, 24);
+    if (name.length < 2) return c.reply('Please send a name with at least 2 letters.');
+    if (await db.one('select 1 from categories where lower(name)=lower($1)', [name]) || ['events', 'property'].includes(name.toLowerCase())) return c.reply(`*${name}* already exists. Send another name.`, [['❌ Cancel', 'acats']]);
+    S.data.nc = { name }; S.state = 'c_emoji';
+    return c.reply(`Send one emoji for *${name}* (e.g. 💊 🔧 🍰), or tap Skip.`, [['Skip', 'cemo:skip']]);
+  }
+  if (c.isMain && S.state === 'c_emoji' && (v === 'cemo:skip' || !btn)) {
+    S.data.nc.emoji = v === 'cemo:skip' ? '🏷' : [...v.trim()].slice(0, 2).join('') || '🏷'; S.state = 'c_group';
+    return c.reply(`Where should *${S.data.nc.emoji} ${S.data.nc.name}* appear?`, [['🛍 Shops & services', 'cgrp:shop'], ['🎓 Education', 'cgrp:edu']]);
+  }
+  if (c.isMain && S.state === 'c_group' && (m = v.match(/^cgrp:(shop|edu)$/))) {
+    const nc = S.data.nc; S.state = null; S.data.nc = null;
+    const sort = ((await db.one('select max(sort) m from categories')).m || 0) + 10;
+    await db.q('insert into categories(name,emoji,edu,sort) values($1,$2,$3,$4)', [nc.name, nc.emoji, m[1] === 'edu', sort]);
+    await loadCats();
+    return c.reply(`✅ *${nc.emoji} ${nc.name}* added. Businesses can pick it now, and it shows in the bot and on the website.`, [['🏷 Categories', 'acats'], ['Menu', 'menu']]);
+  }
+  if (c.isMain && (m = v.match(/^ced:(\d+)$/))) {
+    const r = await db.one('select * from categories where id=$1', [+m[1]]); if (!r) return admin(c, 'acats', true);
+    const n = (await db.one('select count(*)::int n from ads where cat=$1', [r.name])).n;
+    return c.reply(`${r.emoji} *${r.name}*\nGroup: ${r.edu ? '🎓 Education' : '🛍 Shops & services'} · ${r.active ? 'Shown' : '⏸ Hidden'} · ${n} ads`,
+      [['✏️ Rename', 'cren:' + r.id], ['😀 Change emoji', 'cemj:' + r.id], [r.edu ? '🛍 Move to Shops' : '🎓 Move to Education', 'cgsw:' + r.id], [r.active ? '⏸ Hide' : '▶ Show', 'chid:' + r.id], ['🏷 Categories', 'acats']]);
+  }
+  if (c.isMain && (m = v.match(/^(cren|cemj):(\d+)$/))) { S.state = m[1] === 'cren' ? 'c_ren' : 'c_emj'; S.data.cid = +m[2]; return c.reply(m[1] === 'cren' ? 'Send the new name:' : 'Send the new emoji:', [['❌ Cancel', 'acats']]); }
+  if (c.isMain && S.state === 'c_ren' && !btn) {
+    const r = await db.one('select * from categories where id=$1', [S.data.cid]), name = v.trim().replace(/\s+/g, ' ').slice(0, 24); S.state = null;
+    if (!r || name.length < 2) return admin(c, 'acats', true);
+    if (await db.one('select 1 from categories where lower(name)=lower($1) and id<>$2', [name, r.id])) return c.reply(`*${name}* already exists.`, [['🏷 Categories', 'acats']]);
+    await db.q('update categories set name=$2 where id=$1', [r.id, name]);
+    await db.q('update ads set cat=$2 where cat=$1', [r.name, name]); await db.q('update advertisers set cat=$2 where cat=$1', [r.name, name]);
+    await loadCats(); return c.reply(`✅ Renamed *${r.name}* → *${name}* (ads and businesses updated).`, [['🏷 Categories', 'acats']]);
+  }
+  if (c.isMain && S.state === 'c_emj' && !btn) { S.state = null; await db.q('update categories set emoji=$2 where id=$1', [S.data.cid, [...v.trim()].slice(0, 2).join('') || '🏷']); await loadCats(); return admin(c, 'ced:' + S.data.cid, true); }
+  if (c.isMain && (m = v.match(/^(cgsw|chid):(\d+)$/))) {
+    await db.q(m[1] === 'cgsw' ? 'update categories set edu=not edu where id=$1' : 'update categories set active=not active where id=$1', [+m[2]]);
+    await loadCats(); return admin(c, 'ced:' + m[2], true);
+  }
   if (c.isMain && v === 'adigest') { const n = await require('./jobs').runDigest(true); return c.reply(`📢 Daily offers sent to *${n}* subscribers.`, [['Menu', 'menu']]); }
   if (v === 'aweb') return c.reply(`🌐 Web admin panel: ${cfg.PUBLIC_URL || cfg.WEBSITE}/panel\nLog in with this WhatsApp number – you'll get a code here.`, [['Menu', 'menu']]);
   return adminMenu(c);
@@ -685,6 +740,7 @@ async function saveMedia(waId) {
 
 /* ================================================================== ROUTER */
 async function handle(from, name, v, btn) {
+  await ensureCats();
   const sess = await db.sessions.get(from);
   sess.data = sess.data || {};
   const isMain = cfg.ADMINS.includes(from);
@@ -717,7 +773,7 @@ async function handle(from, name, v, btn) {
     let role = sess.data.as || (isAdmin ? 'admin' : c.adv ? 'business' : 'customer');
     if (role === 'admin' && !isAdmin) role = 'customer';
     // Buttons from alerts work in any view: admin actions (approve, payments, localities)…
-    if (isAdmin && btn && /^(ap|rj|rr|pc|pr|lo|lch|lpa|lw):|^(apend|apays|alocs|aadd|arev|adigest|aweb)$/.test(v)) return await admin(c, v, btn);
+    if (isAdmin && btn && /^(ap|rj|rr|pc|pr|lo|lch|lpa|lw|ced|cren|cemj|cgsw|chid|cgrp|cemo):|^(apend|apays|alocs|aadd|arev|adigest|aweb|acats|cadd)$/.test(v)) return await admin(c, v, btn);
     // …and an admin's own business buttons while in admin view
     if (role !== 'business' && c.adv && btn && /^(myads|plans|redeem|acat|acatmv|dcat|dskip|dsubmit|okVisit)$|^(post|paid|plan|ad|adp|adr|add|adl|acat|dcat|dsub|dval|drad):/.test(v)) { sess.data.as = 'business'; return await advertiser(c, v, btn); }
     if (role === 'business' || (role === 'customer' && v === 'biz')) { sess.data.as = 'business'; return await advertiser(c, v, btn); }
@@ -728,4 +784,4 @@ async function handle(from, name, v, btn) {
   }
 }
 
-module.exports = { webLink, handle, notify, notifyAdmins, approveAd, rejectAd, confirmPayment, activatePlan, welcomeAreaAdmin, nearby, cardText, imgOf, rs, km, istDate, planActive, REASONS, CATS, EMO, EDU, SUBS };
+module.exports = { loadCats, ensureCats, webLink, handle, notify, notifyAdmins, approveAd, rejectAd, confirmPayment, activatePlan, welcomeAreaAdmin, nearby, cardText, imgOf, rs, km, istDate, planActive, REASONS, CATS, EMO, EDU, SUBS };

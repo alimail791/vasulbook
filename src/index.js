@@ -15,6 +15,7 @@ app.use(express.static(path.join(__dirname, '..', 'public'), { maxAge: '7d' }));
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 app.get('/health', (_req, res) => res.json({ ok: true }));
+app.use(async (_req, _res, next) => { try { await bot.ensureCats(); } catch (e) { console.error('cats', e.message); } next(); });
 
 const page = (title, body, extraCss = '') => `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title><link rel="icon" href="/edeal-icon.svg"><meta property="og:image" content="/edeal-whatsapp-dp.png">

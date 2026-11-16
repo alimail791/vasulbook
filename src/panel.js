@@ -72,7 +72,7 @@ button.ghost,.btn.ghost{background:#fff;color:#075e54;border-color:#075e54}butto
 .login{max-width:380px;margin:60px auto}`;
 function page(req, title, body, tab) {
   const u = req.u;
-  const nav = u ? [['', 'Dashboard'], ['/approvals', 'Approvals'], ['/ads', 'Ads'], ['/advertisers', 'Advertisers'], ['/payments', 'Payments'], ...(u.isMain ? [['/localities', 'Localities'], ['/plans', 'Plans'], ['/broadcast', 'Broadcast']] : [])]
+  const nav = u ? [['', 'Dashboard'], ['/approvals', 'Approvals'], ['/ads', 'Ads'], ['/advertisers', 'Advertisers'], ['/payments', 'Payments'], ...(u.isMain ? [['/localities', 'Localities'], ['/categories', 'Categories'], ['/plans', 'Plans'], ['/broadcast', 'Broadcast']] : [])]
     .map(([p, n]) => `<a href="/panel${p}" class="${tab === n ? 'on' : ''}">${n}</a>`).join('') : '';
   const msg = req.query && req.query.m ? `<div class="msg">${esc(req.query.m)}</div>` : '';
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} – ${esc(cfg.BRAND)} admin</title><link rel="icon" href="/edeal-icon.svg"><style>${CSS}</style></head><body>
@@ -271,6 +271,36 @@ r.post('/localities/:id', mainOnly, async (req, res) => {
   const l = await db.localities.set(l0.id, { name: (b.name || l0.name).trim(), admin_phone: admin, share: Math.min(100, Math.max(0, Number(b.share) || 0)) / 100, lat: loc ? loc.lat : l0.lat, lng: loc ? loc.lng : l0.lng, active: b.active === '1' });
   if (l.admin_phone && l.admin_phone !== l0.admin_phone) await bot.welcomeAreaAdmin(l);
   back(res, '/panel/localities', `${l.name} saved.`);
+});
+
+// ---------- categories (main admin)
+r.get('/categories', mainOnly, async (req, res) => {
+  const rows = await db.all(`select c.*, (select count(*)::int from ads a where a.cat=c.name and a.status='live') live, (select count(*)::int from advertisers v where v.cat=c.name) advs from categories c order by sort, id`);
+  const tr = rows.map((c) => `<tr><td style="font-size:22px">${esc(c.emoji)}</td><td><b>${esc(c.name)}</b></td><td>${c.edu ? '🎓 Education' : '🛍 Shops &amp; services'}</td><td>${c.live}</td><td>${c.advs}</td><td>${c.active ? tag('live') : '<span class="tag x">hidden</span>'}</td>
+<td><form class="row" method="post" action="/panel/categories/${c.id}"><input name="emoji" value="${esc(c.emoji)}" style="width:56px"><input name="name" value="${esc(c.name)}" style="width:150px"><select class="sm" name="edu"><option value="0"${c.edu ? '' : ' selected'}>Shops</option><option value="1"${c.edu ? ' selected' : ''}>Education</option></select>
+<input name="sort" type="number" value="${c.sort}" style="width:70px" title="Order (smaller first)"><select class="sm" name="active"><option value="1"${c.active ? ' selected' : ''}>Shown</option><option value="0"${c.active ? '' : ' selected'}>Hidden</option></select><button class="sm">Save</button></form></td></tr>`).join('');
+  res.send(page(req, 'Categories', `<h1>Categories</h1><div class="tw"><table><tr><th></th><th>Category</th><th>Group</th><th>Live ads</th><th>Businesses</th><th>Status</th><th>Edit (emoji · name · group · order · status)</th></tr>${tr}</table></div>
+<p class="muted">Changes show right away in the WhatsApp bot and on the website. Renaming also updates existing ads and businesses. <b>Education</b> categories appear under “Tuition, coaching &amp; schools” with a “Book free demo” button. Hidden categories can't be picked for new ads; existing ads stay visible.</p>
+<h2>Add category</h2><div class="card"><form method="post" action="/panel/categories"><div class="grid"><div><label>Name</label><input name="name" required maxlength="24" placeholder="Medical"></div><div><label>Emoji</label><input name="emoji" maxlength="4" placeholder="💊"></div>
+<div><label>Group</label><select name="edu"><option value="0">🛍 Shops &amp; services</option><option value="1">🎓 Education</option></select></div></div><p></p><button>Add category</button></form></div>`, 'Categories'));
+});
+const cleanName = (s) => String(s || '').trim().replace(/\s+/g, ' ').slice(0, 24);
+const cleanEmoji = (s) => [...String(s || '').trim()].slice(0, 2).join('') || '🏷';
+r.post('/categories', mainOnly, async (req, res) => {
+  const name = cleanName(req.body.name);
+  if (name.length < 2 || ['events', 'property'].includes(name.toLowerCase())) return back(res, '/panel/categories', 'Please enter a valid name.');
+  if (await db.one('select 1 from categories where lower(name)=lower($1)', [name])) return back(res, '/panel/categories', `${name} already exists.`);
+  const sort = ((await db.one('select max(sort) m from categories')).m || 0) + 10;
+  await db.q('insert into categories(name,emoji,edu,sort) values($1,$2,$3,$4)', [name, cleanEmoji(req.body.emoji), req.body.edu === '1', sort]);
+  await bot.loadCats(); back(res, '/panel/categories', `${name} added.`);
+});
+r.post('/categories/:id', mainOnly, async (req, res) => {
+  const c0 = await db.one('select * from categories where id=$1', [+req.params.id]); if (!c0) return back(res, '/panel/categories', 'Not found.');
+  const name = cleanName(req.body.name) || c0.name;
+  if (name !== c0.name && await db.one('select 1 from categories where lower(name)=lower($1) and id<>$2', [name, c0.id])) return back(res, '/panel/categories', `${name} already exists.`);
+  await db.q('update categories set name=$2, emoji=$3, edu=$4, active=$5, sort=$6 where id=$1', [c0.id, name, cleanEmoji(req.body.emoji), req.body.edu === '1', req.body.active !== '0', parseInt(req.body.sort, 10) || c0.sort]);
+  if (name !== c0.name) { await db.q('update ads set cat=$2 where cat=$1', [c0.name, name]); await db.q('update advertisers set cat=$2 where cat=$1', [c0.name, name]); }
+  await bot.loadCats(); back(res, '/panel/categories', `${name} saved.`);
 });
 
 // ---------- plans (main admin)
