@@ -173,7 +173,7 @@ async function custWelcome(c) {
   await wa.askLocation(c.from, `👋 *Welcome to ${cfg.BRAND}!*\nSales, discounts, offers, events, tuition & schools, and homes for rent or sale within *2–5 km* of you – fresh every day.\n\nTap *Send location* below to begin 👇`);
   const ls = (await db.localities.active()).filter((l) => l.lat != null);
   const b = ls.slice(0, 8).map((l) => ['📍 ' + l.name, 'carea:' + l.id]);
-  b.push(['🏪 Advertise your business', 'biz']);
+  b.push(['🏪 Advertise with us', 'biz']);
   return c.reply(ls.length ? 'Or pick your area:' : 'Own a shop, school or property to advertise?', b);
 }
 async function custMenu(c) {
@@ -186,7 +186,7 @@ async function custMenu(c) {
   const web = await webLink(c.from);
   return c.reply(`*${cfg.BRAND}* · 📍 ${area || 'your location'} · ${cust.radius_km} km\n🔥 ${n((a) => a.type === 'deal' && !EDU.includes(a.cat))} offers · 🎓 ${n((a) => EDU.includes(a.cat))} education · 🎉 ${n((a) => a.type === 'event')} events · 🏠 ${n((a) => a.type === 'property')} homes${web ? `\n\n🌐 See all with photos on the web:\n${web}` : ''}\n\n_Tip: type what you need, e.g. "tuition" or "2 bhk rent"._`, [
     ["🔥 Today's offers", 'offers'], ['🗂 Categories', 'cats'], ['🎓 Tuition, coaching & schools', 'edu'], ['🎉 Local events', 'events'], ['🏠 Rent & property', 'props'],
-    ['🎟 My coupons', 'mine'], [cust.subscribed ? '🔕 Stop daily offers' : '🔔 Daily 9 AM offers', 'alerts'], ['⚙️ Settings', 'settings'], ['🏪 Advertise your business', 'biz']]);
+    ['🎟 My coupons', 'mine'], [cust.subscribed ? '🔕 Stop daily offers' : '🔔 Daily 9 AM offers', 'alerts'], ['⚙️ Settings', 'settings'], ['🏪 Advertise with us', 'biz']]);
 }
 async function getCoupon(adId, phone) {
   const ex = await db.one('select * from coupons where ad_id=$1 and phone=$2', [adId, phone]);
