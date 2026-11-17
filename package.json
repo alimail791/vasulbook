@@ -1,11 +1,11 @@
 {
   "name": "vasulbook-bazaar",
   "version": "1.0.0",
-  "description": "VasulBook Bazaar – multi-shop grocery ordering on WhatsApp",
+  "description": "VasulBook Bazaar \u2013 multi-shop grocery ordering on WhatsApp",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "test": "node test/flow.test.js && node test/panel.test.js"
+    "test": "node test/flow.test.js && node test/panel.test.js && node test/lang.test.js"
   },
   "engines": {
     "node": ">=20"

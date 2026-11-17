@@ -22,7 +22,8 @@ const say = (p, t) => bot.handle(p, p === CUST ? 'Priya' : 'X', t, false);
 const loc = (p, lat, lng, label = '') => bot.handle(p, 'X', `loc:${lat},${lng}|${label}`, true);
 const tap = (p, label) => bot.handle(p, p === CUST ? 'Priya' : 'X', find(p, label), true);
 (async () => {
-  await db.q('drop table if exists shops, items, orders, sessions, menus, payments, areas, otps, cust_links, web_orders, categories, shop_types cascade'); await db.init();
+  await db.q('drop table if exists shops, items, orders, sessions, menus, payments, areas, otps, cust_links, web_orders, categories, shop_types, cust_lang cascade'); await db.init();
+  await db.q("insert into cust_lang(phone,lang) select unnest(array['919003264537','919111122222','919222233333','919333344444','919444455555','919555566666','919811112222','919840011111','919876543210']),'en' on conflict do nothing");
   await say(ADMIN, 'hi'); assert(/admin/i.test(txt(last(ADMIN))));
   await tap(ADMIN, 'Add new shop'); await say(ADMIN, 'Sri Murugan Stores'); await say(ADMIN, '98400 11111'); await say(ADMIN, 'Anna Nagar'); await tap(ADMIN, 'Yes, opt in'); await tap(ADMIN, 'Other / not listed');
   assert(txt(box[OWNER][0]).includes('Welcome'));

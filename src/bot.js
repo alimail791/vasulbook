@@ -7,6 +7,23 @@ const wa = require('./wa');
 const pay = require('./pay');
 const invoice = require('./invoice');
 const catalog = require('./catalog');
+const i18n = require('./strings');
+
+/* -------------------------------------------------------------- language */
+const langCache = new Map();
+async function langOf(phone) {
+  phone = cfg.norm(phone);
+  if (langCache.has(phone)) return langCache.get(phone);
+  const r = await db.one('select lang from cust_lang where phone=$1', [phone]);
+  const l = r ? r.lang : null;
+  if (l) langCache.set(phone, l);
+  return l;
+}
+async function setLang(phone, l) {
+  await db.q('insert into cust_lang(phone,lang) values($1,$2) on conflict(phone) do update set lang=$2, updated_at=now()', [phone, l]);
+  langCache.set(phone, l);
+}
+wa.setLangResolver(langOf);
 
 const rs = (n) => '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 const MONTH = () => new Date().toLocaleString('en-IN', { month: 'long', timeZone: 'Asia/Kolkata' });
@@ -347,6 +364,7 @@ async function ownerMenu(c, s) {
   const b = [['➕ Add items', 'additem'], ['📦 Stock & prices', 'stock'], ['🧾 Orders', 'orders'], ['💰 Sales & invoices', 'sales'], ['⚙️ Settings', 'settings']];
   if (!s.paid) b.unshift(['💳 Pay setup fee', 'paysetup']);
   if (c.ownShops.length > 1) b.push(['🔁 Switch shop', 'switch']);
+  b.push(['🌐 Language', 'lang']);
   return c.reply(`🏪 *${s.name}* — shop panel\n${!s.paid ? '⏳ Not live yet — setup fee pending' : s.active ? '🟢 Live for customers' : '⏸ Paused by admin'}\n\nQuick commands:\n_Name | Category | Price | Stock_ → add item\n_price Sugar 1kg 50_ → change price\n_stock Sugar 1kg 40_ → set stock`, b);
 }
 
@@ -492,14 +510,14 @@ async function custWelcome(c) {
   const areas = await db.areas.active();
   if (!areas.length) {
     return c.reply(`🙏 Welcome to *${cfg.BRAND}*!\nOrder from shops near you on WhatsApp — pickup or home delivery.\n\nChoose a shop:${await webLine(c.from)}`,
-      live.map((s) => shopBtn(s)).concat([['📦 My orders', 'my']]));
+      live.map((s) => shopBtn(s)).concat([['📦 My orders', 'my'], ['🌐 Language', 'lang']]));
   }
   if (c.sess.data.loc) {
     const near = await nearbyShops(c.sess.data.loc);
-    if (near.length) return c.reply(`🙏 Welcome back to *${cfg.BRAND}*!\n📍 Shops near you:${await webLine(c.from)}`, near.map(({ s, d }) => shopBtn(s, d)).concat([['📍 Change location', 'newloc'], ['📦 My orders', 'my']]));
+    if (near.length) return c.reply(`🙏 Welcome back to *${cfg.BRAND}*!\n📍 Shops near you:${await webLine(c.from)}`, near.map(({ s, d }) => shopBtn(s, d)).concat([['📍 Change location', 'newloc'], ['📦 My orders', 'my'], ['🌐 Language', 'lang']]));
   }
   return c.reply(`🙏 Welcome to *${cfg.BRAND}*!\nOrder from shops near you on WhatsApp — pickup or home delivery.\n\n📍 *Share your location* to see nearby shops:\ntap 📎 → *Location* → *Send your current location*.`,
-    [['🗺 Choose area instead', 'areas_c'], ['📦 My orders', 'my']]);
+    [['🗺 Choose area instead', 'areas_c'], ['📦 My orders', 'my'], ['🌐 Language', 'lang']]);
 }
 const cartCount = (c) => Object.values(c.sess.data.cart || {}).reduce((a, q) => a + q, 0);
 async function cartLines(c) {
@@ -698,12 +716,32 @@ async function handle(from, name, v, btn) {
   const sess = await db.sessions.get(from);
   sess.data = sess.data || {};
   const c = { from, name, sess, reply: (t, b) => out(from, t, b || []) };
-  const low = String(v).trim().toLowerCase();
   try {
     if (btn && /^pg:\d+$/.test(v)) {
       const mrow = await db.one('select * from menus where phone=$1', [from]);
       if (mrow) return await sendPage(from, mrow.text, mrow.items, +v.slice(3));
     }
+    // ---- language
+    const lw = String(v).trim().toLowerCase();
+    let ln = btn && /^lang:(en|ta|hi)$/.test(v) ? v.slice(5) : null;
+    if (!btn && !ln) ln = { english: 'en', tamil: 'ta', 'தமிழ்': 'ta', hindi: 'hi', 'हिंदी': 'hi', 'हिन्दी': 'hi' }[lw] || null;
+    if (ln) {
+      await setLang(from, ln);
+      await out(from, '✅ Language set to English.');
+      const p = sess.data.pending; delete sess.data.pending;
+      await db.sessions.save(from, sess); sess.noSave = true;
+      return await handle(from, name, p ? p.v : 'menu', p ? p.btn : false);
+    }
+    if (v === 'lang' || (!btn && i18n.WORDS.lang.includes(lw))) return await out(from, i18n.PICKER, i18n.PICKER_BTNS);
+    if (!(await langOf(from))) {
+      const wo = lw.match(/^order\s+(w[a-z0-9]{5,8})\b/);
+      const fromWeb = wo && (await db.one('select lang from web_orders where code=$1', [wo[1].toUpperCase()]));
+      const guess = i18n.detect(v) || (fromWeb && fromWeb.lang) || (cfg.ADMINS.includes(from) || (await db.areas.byAdmin(from)).length || wo ? 'en' : null);
+      if (guess) await setLang(from, guess);
+      else { sess.data.pending = { v, btn }; return await out(from, i18n.PICKER, i18n.PICKER_BTNS); }
+    }
+    if (!btn && i18n.WORDS.menu.includes(lw)) v = 'menu';
+    if (!btn && i18n.WORDS.stop.includes(lw)) v = 'menu';
     const lm = String(v).match(/^loc:(-?[\d.]+),(-?[\d.]+)\|?(.*)$/s);
     if (lm) { c.loc = { lat: +lm[1], lng: +lm[2], label: lm[3] || '' }; v = 'loc'; }
     c.isSuper = cfg.ADMINS.includes(from);
@@ -711,6 +749,7 @@ async function handle(from, name, v, btn) {
     c.areaIds = c.myAreas.map((a) => a.id);
     const isAdmin = c.isSuper || c.myAreas.length > 0;
     c.ownShops = await db.shops.byOwner(from);
+    const low = String(v).trim().toLowerCase();
     console.log('IN', from, isAdmin ? '(admin)' : c.ownShops.length ? '(owner)' : '(customer)', JSON.stringify(String(v).slice(0, 60)));
     if (low === '#whoami' || low === '#id') {
       return await out(from, `🔎 Your WhatsApp number as the bot sees it: *+${from}*\nRole: *${c.isSuper ? 'Main admin' : isAdmin ? 'Area admin (' + c.myAreas.map((a) => a.name).join(', ') + ')' : c.ownShops.length ? 'Shop owner' : 'Customer'}*\nMain admin numbers: ${cfg.ADMINS.map((a) => '+' + a).join(', ') || 'none'}`);
@@ -729,8 +768,8 @@ async function handle(from, name, v, btn) {
     console.error('handle error', e);
     await out(from, '⚠️ Something went wrong. Please type *menu* and try again.').catch(() => {});
   } finally {
-    await db.sessions.save(from, sess);
+    if (!sess.noSave) await db.sessions.save(from, sess);
   }
 }
 
-module.exports = { createOrder, orderPlaced, webLink, nearbyShops, handle, activate, notify, notifyAdmins, notifyShopAdmins, rs, setStatus, ownerWelcome, mkCode, newAreaAdminWelcome, sendBills, areaMoney, out };
+module.exports = { langOf, setLang, createOrder, orderPlaced, webLink, nearbyShops, handle, activate, notify, notifyAdmins, notifyShopAdmins, rs, setStatus, ownerWelcome, mkCode, newAreaAdminWelcome, sendBills, areaMoney, out };

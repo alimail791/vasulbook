@@ -4,7 +4,8 @@ const assert = require('assert'); const db = require('../src/db'); const wa = re
 const sent = []; wa.setSink((b) => { sent.push(b); return {}; });
 const { app } = require('../src/index');
 (async () => {
-  await db.q('drop table if exists shops, items, orders, sessions, menus, payments, areas, otps, cust_links, web_orders, categories, shop_types cascade'); await db.init();
+  await db.q('drop table if exists shops, items, orders, sessions, menus, payments, areas, otps, cust_links, web_orders, categories, shop_types, cust_lang cascade'); await db.init();
+  await db.q("insert into cust_lang(phone,lang) select unnest(array['919003264537','919111122222','919222233333','919333344444','919444455555','919555566666','919811112222','919840011111','919876543210']),'en' on conflict do nothing");
   const srv = app.listen(3998); const B = 'http://localhost:3998';
   let cookie = '';
   const go = async (path, body) => { const r = await fetch(B + path, { method: body ? 'POST' : 'GET', redirect: 'manual', headers: { cookie, ...(body ? { 'content-type': 'application/x-www-form-urlencoded' } : {}) }, body: body ? new URLSearchParams(body).toString() : undefined });

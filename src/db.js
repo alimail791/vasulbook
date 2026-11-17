@@ -44,6 +44,11 @@ async function init() {
   create index if not exists orders_shop on orders(shop_id, created_at);
   create index if not exists orders_cust on orders(cust_phone, created_at);
   `);
+  // Languages (English / Tamil / Hindi). People who used the bot before languages existed keep English.
+  const hadLang = (await one("select to_regclass('cust_lang') r")).r;
+  await q(`create table if not exists cust_lang(phone text primary key, lang text not null, updated_at timestamptz default now());
+    alter table web_orders add column if not exists lang text;`);
+  if (!hadLang) await q(`insert into cust_lang(phone,lang) select phone,'en' from sessions on conflict do nothing`);
   const c = await one('select count(*)::int c from orders');
   if (c.c === 0) await q("select setval('orders_id_seq', 1000, true)");
   await require('./catalog').init();

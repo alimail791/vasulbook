@@ -8,8 +8,18 @@ const express = require('express');
 const cfg = require('./config');
 const db = require('./db');
 const bot = require('./bot');
+const i18n = require('./strings');
 
 const r = express.Router();
+// Language: ?lang=ta sets it (remembered in a cookie); the WhatsApp link carries the customer's language
+r.use((req, res, next) => {
+  let L = String(req.query.lang || '');
+  if (i18n.LANGS[L]) res.append('Set-Cookie', `lang=${L}; Path=/; SameSite=Lax; Max-Age=${365 * 86400}`);
+  else L = (req.headers.cookie || '').match(/(?:^|;\s*)lang=(\w+)/)?.[1] || 'en';
+  if (!i18n.LANGS[L]) L = 'en';
+  req.lang = L; req.t = (x) => i18n.tr(L, x);
+  next();
+});
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const rs = (n) => '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 const botNo = () => { const d = String(process.env.BOT_PHONE || '').replace(/\D/g, ''); return d.length === 10 ? '91' + d : d; };
@@ -40,18 +50,22 @@ textarea{width:100%;font:inherit;padding:8px;border:1px solid #cfd8d2;border-rad
 .btn{display:inline-block;text-decoration:none;font-weight:700;padding:11px 18px;border-radius:22px;background:#25d366;color:#fff}.err{color:#b42318;font-size:14px;margin-top:6px}
 footer{text-align:center;color:#5b6b60;font-size:13px;padding:20px}`;
 
-function layout(title, body, chips = '') {
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>
+function layout(req, title, body, chips = '') {
+  const t = req.t, L = req.lang;
+  const sw = Object.entries(i18n.LANGS).map(([k, n]) => k === L ? `<b>${n}</b>` : `<a href="?${esc(new URLSearchParams({ ...req.query, lang: k }).toString())}" style="color:#fff">${n}</a>`).join(' · ');
+  return `<!DOCTYPE html><html lang="${L}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>
 <meta property="og:title" content="${esc(title)}"><meta property="og:description" content="Order from shops near you – pickup or home delivery"><style>${CSS}</style></head><body>
-<header><div class="top"><a href="/shops" style="text-decoration:none;display:flex;gap:8px;align-items:center"><span style="font-size:24px">🛒</span><b>${esc(cfg.BRAND)}</b></a><a class="wa" href="${waLink('Hi')}">💬 WhatsApp</a></div>${chips ? `<div class="bar">${chips}</div>` : ''}</header>
-<main>${body}</main><footer>${esc(cfg.BRAND)} · order from local shops · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></footer></body></html>`;
+<header><div class="top"><a href="/shops" style="text-decoration:none;display:flex;gap:8px;align-items:center"><span style="font-size:24px">🛒</span><b>${esc(cfg.BRAND)}</b></a><a class="wa" href="${waLink('Hi')}">💬 WhatsApp</a></div><div style="max-width:900px;margin:6px auto 0;font-size:12.5px">🌐 ${sw}</div>${chips ? `<div class="bar">${chips}</div>` : ''}</header>
+<main>${body}</main><footer>${esc(cfg.BRAND)} · ${t('order from local shops')} · <a href="/privacy">${t('Privacy')}</a> · <a href="/terms">${t('Terms')}</a></footer></body></html>`;
 }
 
 // ---------- personal link from WhatsApp
 r.get('/u/:token', async (req, res) => {
   const l = await db.one('select * from cust_links where token=$1', [String(req.params.token).slice(0, 40)]);
   if (!l) return res.redirect('/shops');
-  res.setHeader('Set-Cookie', `em_u=${encodeURIComponent(l.token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${60 * 86400}`);
+  res.append('Set-Cookie', `em_u=${encodeURIComponent(l.token)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${60 * 86400}`);
+  const lg = await bot.langOf(l.phone);
+  if (lg && lg !== 'en') res.append('Set-Cookie', `lang=${lg}; Path=/; SameSite=Lax; Max-Age=${365 * 86400}`);
   if (req.query.shop) return res.redirect('/s/' + (+req.query.shop || 0));
   res.redirect(l.lat != null ? `/shops?lat=${l.lat.toFixed(5)}&lng=${l.lng.toFixed(5)}` : '/shops');
 });
@@ -65,6 +79,7 @@ function typeIcon(name) {
 
 // ---------- shops list
 r.get('/shops', async (req, res) => {
+  const t = req.t;
   const lat = parseFloat(req.query.lat), lng = parseFloat(req.query.lng), area = +req.query.area || 0;
   const hasLoc = Number.isFinite(lat) && Number.isFinite(lng);
   const live = await db.shops.live(), areas = await db.areas.active();
@@ -79,90 +94,93 @@ r.get('/shops', async (req, res) => {
   const tsel = req.query.type === 'other' ? 'other' : +req.query.type || 0;
   const base = hasLoc ? `lat=${lat.toFixed(5)}&lng=${lng.toFixed(5)}` : area ? `area=${area}` : '';
   const href = (t) => '/shops?' + [base, t ? 'type=' + t : ''].filter(Boolean).join('&');
-  const chips = present.length + (hasOther ? 1 : 0) > 1 ? `<a class="chip${tsel ? '' : ' on'}" href="${href('')}">All (${list.length})</a>` +
+  const chips = present.length + (hasOther ? 1 : 0) > 1 ? `<a class="chip${tsel ? '' : ' on'}" href="${href('')}">${t('All')} (${list.length})</a>` +
     present.map((t) => `<a class="chip${tsel === t.id ? ' on' : ''}" href="${href(t.id)}">${typeIcon(t.name)} ${esc(t.name)} (${list.filter(({ s }) => s.type_id === t.id).length})</a>`).join('') +
-    (hasOther ? `<a class="chip${tsel === 'other' ? ' on' : ''}" href="${href('other')}">🏪 Other (${list.filter(({ s }) => !s.type_id || !tname[s.type_id]).length})</a>` : '') : '';
+    (hasOther ? `<a class="chip${tsel === 'other' ? ' on' : ''}" href="${href('other')}">🏪 ${t('Other')} (${list.filter(({ s }) => !s.type_id || !tname[s.type_id]).length})</a>` : '') : '';
   if (tsel === 'other') list = list.filter(({ s }) => !s.type_id || !tname[s.type_id]); else if (tsel) list = list.filter(({ s }) => s.type_id === tsel);
-  const where = `<div class="box where">${hasLoc ? '📍 Shops that serve your location' : area ? `🗺 ${esc((areas.find((a) => a.id === area) || {}).name || '')}` : '🏪 All shops'}
-${tsel ? ` · ${tsel === 'other' ? 'Other shops' : typeIcon(tname[tsel]) + ' ' + esc(tname[tsel] || '')}` : ''}
-<button type="button" onclick="loc()">Use my location</button>${areas.length ? `<select onchange="if(this.value)location=this.value"><option value="">Pick an area…</option>${areas.map((a) => `<option value="/shops?area=${a.id}"${a.id === area ? ' selected' : ''}>${esc(a.name)}</option>`).join('')}</select>` : ''}</div>
-<script>function loc(){if(!navigator.geolocation)return alert('Location not available');navigator.geolocation.getCurrentPosition(function(p){location='/shops?lat='+p.coords.latitude.toFixed(5)+'&lng='+p.coords.longitude.toFixed(5)},function(){alert('Please allow location, or pick an area')})}</script>`;
-  const rows = list.map(({ s, d }) => `<a class="shop" href="/s/${s.id}"><span class="ic">${typeIcon(tname[s.type_id])}</span><span><b>${esc(s.name)}</b><span class="mt">${tname[s.type_id] ? esc(tname[s.type_id]) + ' · ' : ''}${esc(s.area || '')}${d != null ? ' · 📍 ' + fmtKm(d) : ''} · ${counts[s.id] || 0} items<br>${s.delivery ? `🛵 Delivery ${rs(s.del_fee)} · 🏃 Pickup` : '🏃 Pickup only'}</span></span><span class="go">›</span></a>`).join('');
-  res.send(layout(`${cfg.BRAND} – Shops near you`, where + (rows || `<div class="box">No ${tsel ? 'shops of this type' : 'shops'} ${hasLoc ? 'serve your location' : 'here'} yet. Try another area${tsel ? ` or <a href="${href('')}">see all shops</a>` : ''}.</div>`), chips));
+  const where = `<div class="box where">${hasLoc ? t('📍 Shops that serve your location') : area ? `🗺 ${esc((areas.find((a) => a.id === area) || {}).name || '')}` : t('🏪 All shops')}
+${tsel ? ` · ${tsel === 'other' ? t('Other shops') : typeIcon(tname[tsel]) + ' ' + esc(tname[tsel] || '')}` : ''}
+<button type="button" onclick="loc()">${t('Use my location')}</button>${areas.length ? `<select onchange="if(this.value)location=this.value"><option value="">${t('Pick an area…')}</option>${areas.map((a) => `<option value="/shops?area=${a.id}"${a.id === area ? ' selected' : ''}>${esc(a.name)}</option>`).join('')}</select>` : ''}</div>
+<script>function loc(){if(!navigator.geolocation)return alert(${JSON.stringify(t('Location not available'))});navigator.geolocation.getCurrentPosition(function(p){location='/shops?lat='+p.coords.latitude.toFixed(5)+'&lng='+p.coords.longitude.toFixed(5)},function(){alert(${JSON.stringify(t('Please allow location, or pick an area'))})})}</script>`;
+  const rows = list.map(({ s, d }) => `<a class="shop" href="/s/${s.id}"><span class="ic">${typeIcon(tname[s.type_id])}</span><span><b>${esc(s.name)}</b><span class="mt">${tname[s.type_id] ? esc(tname[s.type_id]) + ' · ' : ''}${esc(s.area || '')}${d != null ? ' · 📍 ' + fmtKm(d) : ''} · ${t((counts[s.id] || 0) + ' items')}<br>${s.delivery ? t(`🛵 Delivery ${rs(s.del_fee)} · 🏃 Pickup`) : t('🏃 Pickup only')}</span></span><span class="go">›</span></a>`).join('');
+  res.send(layout(req, `${cfg.BRAND} – Shops near you`, where + (rows || `<div class="box">${t(tsel ? 'No shops of this type here yet.' : 'No shops here yet. Try another area.')}${tsel ? ` <a href="${href('')}">${t('See all shops')}</a>` : ''}</div>`), chips));
 });
 
 // ---------- one shop
 r.get('/s/:id', async (req, res) => {
   const s = await db.shops.get(+req.params.id || 0);
-  if (!s || !s.active || !s.paid) return res.status(404).send(layout('Shop not available', `<div class="box">This shop isn't taking orders right now.<br><br><a class="btn" href="/shops">See other shops</a></div>`));
+  const t = req.t;
+  if (!s || !s.active || !s.paid) return res.status(404).send(layout(req, 'Shop not available', `<div class="box">${t("This shop isn't taking orders right now.")}<br><br><a class="btn" href="/shops">${t('See other shops')}</a></div>`));
   const its = await db.items.byShop(s.id), who = await me(req);
   const stype = s.type_id ? await catalog.type(s.type_id) : null;
   const cats = await catalog.sortCats(s, [...new Set(its.map((i) => i.cat))]);
-  const chips = `<button class="chip on" onclick="window.scrollTo({top:0,behavior:'smooth'})">All</button>` + cats.map((c, k) => `<a class="chip" href="#c${k}">${esc(c)}</a>`).join('');
-  const sections = cats.map((c, k) => `<h2 id="c${k}">${esc(c)}</h2>` + its.filter((i) => i.cat === c).map((i) => `<div class="it"><div class="nm"><b>${esc(i.name)}</b><span class="pr">${rs(i.price)}</span>${i.stock === 0 ? ' <span class="out">Out of stock</span>' : i.stock < 5 ? ` <span class="out">Only ${i.stock} left</span>` : ''}</div>
+  const chips = `<button class="chip on" onclick="window.scrollTo({top:0,behavior:'smooth'})">${t('All')}</button>` + cats.map((c, k) => `<a class="chip" href="#c${k}">${esc(c)}</a>`).join('');
+  const sections = cats.map((c, k) => `<h2 id="c${k}">${esc(c)}</h2>` + its.filter((i) => i.cat === c).map((i) => `<div class="it"><div class="nm"><b>${esc(i.name)}</b><span class="pr">${rs(i.price)}</span>${i.stock === 0 ? ` <span class="out">${t('Out of stock')}</span>` : i.stock < 5 ? ` <span class="out">${t(`Only ${i.stock} left`)}</span>` : ''}</div>
 ${i.stock > 0 ? `<div class="qty" data-id="${i.id}"></div>` : ''}</div>`).join('')).join('');
   const data = { shop: { id: s.id, name: s.name, delivery: !!s.delivery, fee: Number(s.del_fee), min: Number(s.min_order || 0), upi: !!s.upi }, items: Object.fromEntries(its.map((i) => [i.id, { n: i.name, p: Number(i.price), st: i.stock }])), known: !!who };
-  const body = `<div class="box"> <b style="font-size:18px">${typeIcon(stype && stype.name)} ${esc(s.name)}</b><div class="mt">${stype ? esc(stype.name) + ' · ' : ''}${esc(s.area || '')} · ${s.delivery ? `🛵 Home delivery ${rs(s.del_fee)}${s.min_order ? ` (min ${rs(s.min_order)})` : ''} · 🏃 Pickup` : '🏃 Store pickup only'}</div>
-<input id="q" placeholder="Search items…" style="width:100%;margin-top:10px;font:inherit;padding:9px 10px;border:1px solid #cfd8d2;border-radius:8px" oninput="search(this.value)"></div>
-${sections || '<div class="box">This shop hasn’t added items yet.</div>'}
-<div class="cartbar" id="bar"><b id="bt"></b><button onclick="openSheet()">View cart ›</button></div>
-<div class="sheet" id="sheet" onclick="if(event.target===this)closeSheet()"><div class="in"><h3>🛒 Your cart</h3><div id="lines"></div>
-<div id="modeBox"><p><b>How do you want it?</b></p><label class="opt"><input type="radio" name="mode" value="pickup" checked onchange="draw()"> 🏃 Pickup at shop</label>
-${s.delivery ? `<label class="opt"><input type="radio" name="mode" value="delivery" onchange="draw()"> 🛵 Home delivery +${rs(s.del_fee)}</label><div id="addrBox" style="display:none"><textarea id="addr" placeholder="House no, street, landmark"></textarea></div>` : ''}
-<p><b>Payment</b></p>${s.upi ? `<label class="opt"><input type="radio" name="pay" value="UPI"> 💳 Pay by UPI</label>` : ''}<label class="opt"><input type="radio" name="pay" value="Cash" checked> 💵 <span id="cashLbl">Pay at shop</span></label></div>
+  const body = `<div class="box"> <b style="font-size:18px">${typeIcon(stype && stype.name)} ${esc(s.name)}</b><div class="mt">${stype ? esc(stype.name) + ' · ' : ''}${esc(s.area || '')} · ${t(s.delivery ? `🛵 Home delivery ${rs(s.del_fee)}${s.min_order ? ` (min ${rs(s.min_order)})` : ''} · 🏃 Pickup` : '🏃 Store pickup only')}</div>
+<input id="q" placeholder="${esc(t('Search items…'))}" style="width:100%;margin-top:10px;font:inherit;padding:9px 10px;border:1px solid #cfd8d2;border-radius:8px" oninput="search(this.value)"></div>
+${sections || `<div class="box">${t('This shop hasn’t added items yet.')}</div>`}
+<div class="cartbar" id="bar"><b id="bt"></b><button onclick="openSheet()">${t('View cart ›')}</button></div>
+<div class="sheet" id="sheet" onclick="if(event.target===this)closeSheet()"><div class="in"><h3>${t('🛒 Your cart')}</h3><div id="lines"></div>
+<div id="modeBox"><p><b>${t('How do you want it?')}</b></p><label class="opt"><input type="radio" name="mode" value="pickup" checked onchange="draw()"> ${t('🏃 Pickup at shop')}</label>
+${s.delivery ? `<label class="opt"><input type="radio" name="mode" value="delivery" onchange="draw()"> ${t(`🛵 Home delivery +${rs(s.del_fee)}`)}</label><div id="addrBox" style="display:none"><textarea id="addr" placeholder="${esc(t('House no, street, landmark'))}"></textarea></div>` : ''}
+<p><b>${t('Payment')}</b></p>${s.upi ? `<label class="opt"><input type="radio" name="pay" value="UPI"> ${t('💳 Pay by UPI')}</label>` : ''}<label class="opt"><input type="radio" name="pay" value="Cash" checked> 💵 <span id="cashLbl">${t('Pay at shop')}</span></label></div>
 <div id="tot" style="margin-top:8px"></div><div class="err" id="err"></div>
-<button class="big" id="go" onclick="place()">${who ? '✅ Place order' : '💬 Place order on WhatsApp'}</button>
-<p class="mt" style="text-align:center">${who ? 'Updates and your invoice come on WhatsApp.' : 'Opens WhatsApp with your order code – just tap Send.'}</p></div></div>
+<button class="big" id="go" onclick="place()">${t(who ? '✅ Place order' : '💬 Place order on WhatsApp')}</button>
+<p class="mt" style="text-align:center">${t(who ? 'Updates and your invoice come on WhatsApp.' : 'Opens WhatsApp with your order code – just tap Send.')}</p></div></div>
 <script>
+const T=${JSON.stringify(Object.fromEntries(['Add', 'item', 'items', 'Cash on delivery', 'Pay at shop', 'Items', 'Delivery', 'Total', 'Home delivery needs a minimum of', 'Please enter your full delivery address.', 'Please wait…', '✅ Place order', '💬 Place order on WhatsApp', 'Network problem. Please try again.'].map((k) => [k, t(k)]))).replace(/</g, '\\u003c')};
 const D=${JSON.stringify(data).replace(/</g, '\\u003c')};const KEY='em_cart_'+D.shop.id;let cart={};try{cart=JSON.parse(localStorage.getItem(KEY)||'{}')}catch(e){}
 const rs=n=>'₹'+Number(n).toLocaleString('en-IN',{maximumFractionDigits:2});
 function save(){try{localStorage.setItem(KEY,JSON.stringify(cart))}catch(e){}}
 function setQ(id,q){const it=D.items[id];q=Math.max(0,Math.min(q,it.st));if(q)cart[id]=q;else delete cart[id];save();draw()}
 function sub(){return Object.entries(cart).reduce((a,[id,q])=>a+(D.items[id]?D.items[id].p*q:0),0)}
 function mode(){const m=document.querySelector('input[name=mode]:checked');return m?m.value:'pickup'}
-function draw(){document.querySelectorAll('.qty').forEach(el=>{const id=el.dataset.id,q=cart[id]||0;el.innerHTML=q?'<button onclick="setQ('+id+','+(q-1)+')">−</button><span>'+q+'</span><button onclick="setQ('+id+','+(q+1)+')">+</button>':'<button class="add" onclick="setQ('+id+',1)">Add</button>'});
- const n=Object.values(cart).reduce((a,b)=>a+b,0),bar=document.getElementById('bar');bar.style.display=n?'flex':'none';document.getElementById('bt').textContent=n+' item'+(n>1?'s':'')+' · '+rs(sub());
+function draw(){document.querySelectorAll('.qty').forEach(el=>{const id=el.dataset.id,q=cart[id]||0;el.innerHTML=q?'<button onclick="setQ('+id+','+(q-1)+')">−</button><span>'+q+'</span><button onclick="setQ('+id+','+(q+1)+')">+</button>':'<button class="add" onclick="setQ('+id+',1)">'+T['Add']+'</button>'});
+ const n=Object.values(cart).reduce((a,b)=>a+b,0),bar=document.getElementById('bar');bar.style.display=n?'flex':'none';document.getElementById('bt').textContent=n+' '+(n>1?T['items']:T['item'])+' · '+rs(sub());
  document.getElementById('lines').innerHTML=Object.entries(cart).map(([id,q])=>'<div class="ln"><span>'+q+' × '+D.items[id].n.replace(/</g,'&lt;')+'</span><span>'+rs(q*D.items[id].p)+'</span></div>').join('');
- const del=mode()==='delivery';const ab=document.getElementById('addrBox');if(ab)ab.style.display=del?'block':'none';document.getElementById('cashLbl').textContent=del?'Cash on delivery':'Pay at shop';
- const fee=del?D.shop.fee:0;document.getElementById('tot').innerHTML='<div class="ln"><span>Items</span><span>'+rs(sub())+'</span></div>'+(fee?'<div class="ln"><span>Delivery</span><span>'+rs(fee)+'</span></div>':'')+'<div class="ln"><b>Total</b><b>'+rs(sub()+fee)+'</b></div>'+(del&&D.shop.min>sub()?'<div class="err">Home delivery needs a minimum of '+rs(D.shop.min)+'</div>':'')}
+ const del=mode()==='delivery';const ab=document.getElementById('addrBox');if(ab)ab.style.display=del?'block':'none';document.getElementById('cashLbl').textContent=del?T['Cash on delivery']:T['Pay at shop'];
+ const fee=del?D.shop.fee:0;document.getElementById('tot').innerHTML='<div class="ln"><span>'+T['Items']+'</span><span>'+rs(sub())+'</span></div>'+(fee?'<div class="ln"><span>'+T['Delivery']+'</span><span>'+rs(fee)+'</span></div>':'')+'<div class="ln"><b>'+T['Total']+'</b><b>'+rs(sub()+fee)+'</b></div>'+(del&&D.shop.min>sub()?'<div class="err">'+T['Home delivery needs a minimum of']+' '+rs(D.shop.min)+'</div>':'')}
 function openSheet(){draw();document.getElementById('sheet').style.display='flex'}function closeSheet(){document.getElementById('sheet').style.display='none'}
 function search(t){t=t.toLowerCase();document.querySelectorAll('.it').forEach(el=>{el.style.display=el.textContent.toLowerCase().includes(t)?'flex':'none'})}
 async function place(){const err=document.getElementById('err');err.textContent='';const m=mode(),a=document.getElementById('addr');
- if(m==='delivery'&&(!a||a.value.trim().length<8)){err.textContent='Please enter your full delivery address.';return}
+ if(m==='delivery'&&(!a||a.value.trim().length<8)){err.textContent=T['Please enter your full delivery address.'];return}
  const body={cart,mode:m,addr:a?a.value.trim():'',pay:(document.querySelector('input[name=pay]:checked')||{}).value||'Cash'};
- const b=document.getElementById('go');b.disabled=true;b.textContent='Please wait…';
+ const b=document.getElementById('go');b.disabled=true;b.textContent=T['Please wait…'];
  try{const r=await fetch('/s/'+D.shop.id+'/order',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const j=await r.json();
-  if(j.error){err.textContent=j.error;b.disabled=false;b.textContent=D.known?'✅ Place order':'💬 Place order on WhatsApp';return}
-  cart={};save();if(j.wa){location=j.wa;return}location=j.done}catch(e){err.textContent='Network problem. Please try again.';b.disabled=false}}
+  if(j.error){err.textContent=j.error;b.disabled=false;b.textContent=D.known?T['✅ Place order']:T['💬 Place order on WhatsApp'];return}
+  cart={};save();if(j.wa){location=j.wa;return}location=j.done}catch(e){err.textContent=T['Network problem. Please try again.'];b.disabled=false}}
 draw();
 </script>`;
-  res.send(layout(`${s.name} – ${cfg.BRAND}`, body, chips));
+  res.send(layout(req, `${s.name} – ${cfg.BRAND}`, body, chips));
 });
 
 // ---------- place an order from the website
 r.post('/s/:id/order', async (req, res) => {
+  const t = req.t;
   const s = await db.shops.get(+req.params.id || 0);
-  if (!s || !s.active || !s.paid) return res.json({ error: 'This shop is not taking orders right now.' });
+  if (!s || !s.active || !s.paid) return res.json({ error: t('This shop is not taking orders right now.') });
   const b = req.body || {}, cart = {};
   for (const [id, q] of Object.entries(b.cart || {})) { const n = parseInt(q, 10); if (n > 0 && n <= 999 && /^\d+$/.test(id)) cart[id] = n; }
-  if (!Object.keys(cart).length) return res.json({ error: 'Your cart is empty.' });
+  if (!Object.keys(cart).length) return res.json({ error: t('Your cart is empty.') });
   const mode = b.mode === 'delivery' ? 'delivery' : 'pickup', payMode = b.pay === 'UPI' && s.upi ? 'UPI' : 'Cash', addr = String(b.addr || '').trim().slice(0, 300);
   if (mode === 'delivery') {
-    if (!s.delivery) return res.json({ error: 'This shop offers pickup only.' });
-    if (addr.length < 8) return res.json({ error: 'Please enter your full delivery address.' });
+    if (!s.delivery) return res.json({ error: t('This shop offers pickup only.') });
+    if (addr.length < 8) return res.json({ error: t('Please enter your full delivery address.') });
     const its = await db.items.byShop(s.id), sub = Object.entries(cart).reduce((a, [id, q]) => { const i = its.find((x) => x.id === +id); return a + (i ? i.price * q : 0); }, 0);
-    if (sub < Number(s.min_order || 0)) return res.json({ error: `Home delivery needs a minimum of ${rs(s.min_order)}.` });
+    if (sub < Number(s.min_order || 0)) return res.json({ error: t('Home delivery needs a minimum of') + ' ' + rs(s.min_order) });
   }
   const who = await me(req);
   if (who) {
     const r2 = await bot.createOrder({ s, phone: who.phone, name: '', cart, mode, addr, payMode });
-    if (r2.err) return res.json({ error: r2.err.replace(/\*/g, '') });
+    if (r2.err) return res.json({ error: t(r2.err).replace(/\*/g, '') });
     await bot.orderPlaced(r2.o, s, r2.lines, payMode);
     return res.json({ done: `/done/${r2.o.token}` });
   }
   // Unknown visitor: keep the cart and let them confirm on WhatsApp (that gives us their number)
   const code = 'W' + crypto.randomBytes(4).toString('hex').slice(0, 6).toUpperCase();
-  await db.q('insert into web_orders(code,shop_id,cart,mode,addr,pay) values($1,$2,$3,$4,$5,$6)', [code, s.id, JSON.stringify(cart), mode, addr, payMode]);
+  await db.q('insert into web_orders(code,shop_id,cart,mode,addr,pay,lang) values($1,$2,$3,$4,$5,$6,$7)', [code, s.id, JSON.stringify(cart), mode, addr, payMode, req.lang]);
   await db.q(`delete from web_orders where created_at < now() - interval '2 days'`);
   res.json({ wa: waLink(`Order ${code}`) });
 });
@@ -173,10 +191,11 @@ r.get('/done/:token', async (req, res) => {
   if (!o) return res.redirect('/shops');
   const s = await db.shops.get(o.shop_id);
   const upi = o.pay === 'UPI' && s.upi ? `upi://pay?${new URLSearchParams({ pa: s.upi, pn: s.name, am: Number(o.total).toFixed(2), cu: 'INR', tn: 'Order ' + o.id }).toString().replace(/\+/g, '%20')}` : null;
-  res.send(layout(`Order #${o.id} placed`, `<div class="box" style="text-align:center"><div style="font-size:48px">🎉</div><h2 style="font-size:20px;color:#14231a">Order #${o.id} placed with ${esc(s.name)}</h2>
-<p>Total <b>${rs(o.total)}</b> · ${o.mode === 'delivery' ? '🛵 Home delivery' : '🏃 Pickup at shop'}</p>
-${upi ? `<p><a class="btn" href="${esc(upi)}">💳 Pay ${rs(o.total)} by UPI</a></p><p class="mt">UPI ID: ${esc(s.upi)} · note "Order ${o.id}"</p>` : `<p>${o.mode === 'delivery' ? 'Pay cash on delivery.' : 'Pay at the shop.'}</p>`}
-<p class="mt">Your invoice and order updates are on WhatsApp.</p><p><a href="/inv/${o.token}.pdf">📄 Invoice</a> · <a href="/s/${s.id}">Order more</a></p></div>`));
+  const t = req.t;
+  res.send(layout(req, `Order #${o.id} placed`, `<div class="box" style="text-align:center"><div style="font-size:48px">🎉</div><h2 style="font-size:20px;color:#14231a">${esc(t(`Order #${o.id} placed with ${s.name}`))}</h2>
+<p>${t('Total')} <b>${rs(o.total)}</b> · ${t(o.mode === 'delivery' ? '🛵 Home delivery' : '🏃 Pickup at shop')}</p>
+${upi ? `<p><a class="btn" href="${esc(upi)}">${t(`💳 Pay ${rs(o.total)} by UPI`)}</a></p><p class="mt">UPI ID: ${esc(s.upi)} · note "Order ${o.id}"</p>` : `<p>${t(o.mode === 'delivery' ? 'Pay cash on delivery.' : 'Pay at the shop.')}</p>`}
+<p class="mt">${t('Your invoice and order updates are on WhatsApp.')}</p><p><a href="/inv/${o.token}.pdf">${t('📄 Invoice')}</a> · <a href="/s/${s.id}">${t('Order more')}</a></p></div>`));
 });
 
 module.exports = r;

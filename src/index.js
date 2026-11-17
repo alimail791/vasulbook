@@ -145,12 +145,19 @@ async function waDiagnose() {
   // Alert template for messages outside WhatsApp's 24-hour window (created once, then Meta reviews it)
   if (cfg.WA_TEMPLATE && process.env.WA_WABA_ID) {
     const w = process.env.WA_WABA_ID;
-    const found = await g(`${w}/message_templates?name=${cfg.WA_TEMPLATE}&fields=name,status,category,language`);
-    if (found && found.data && found.data.length) out.template = found.data;
-    else {
-      out.template_create = await post(`${w}/message_templates`, {
-        name: cfg.WA_TEMPLATE, language: cfg.WA_TEMPLATE_LANG, category: 'UTILITY',
-        components: [{ type: 'BODY', text: `${cfg.BRAND} update: {{1}}\n\nReply here to see your menu.`, example: { body_text: [['Your order #1023 is ready for pickup at Fresh Mart.']] } }],
+    // Same template in English, Tamil and Hindi (one per language; Meta reviews each)
+    const found = await g(`${w}/message_templates?name=${cfg.WA_TEMPLATE}&fields=name,status,category,language&limit=50`);
+    const have = new Set(((found && found.data) || []).filter((t) => t.name === cfg.WA_TEMPLATE).map((t) => t.language));
+    const texts = {
+      [cfg.WA_TEMPLATE_LANG]: `${cfg.BRAND} update: {{1}}\n\nReply here to see your menu.`,
+      ta: `${cfg.BRAND} அறிவிப்பு: {{1}}\n\nஉங்கள் மெனுவைப் பார்க்க இங்கே பதில் அனுப்பவும்.`,
+      hi: `${cfg.BRAND} अपडेट: {{1}}\n\nअपना मेनू देखने के लिए यहाँ जवाब दें।`,
+    };
+    out.template = {};
+    for (const [lang, text] of Object.entries(texts)) {
+      out.template[lang] = have.has(lang) ? 'exists' : await post(`${w}/message_templates`, {
+        name: cfg.WA_TEMPLATE, language: lang, category: 'UTILITY',
+        components: [{ type: 'BODY', text, example: { body_text: [['Your order #1023 is ready for pickup at Fresh Mart.']] } }],
       });
     }
   }
