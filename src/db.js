@@ -44,6 +44,7 @@ async function init() {
   create table if not exists menus(phone text primary key, text text, items jsonb);
   create table if not exists otps(phone text primary key, code_hash text, tries int default 0, expires_at timestamptz, created_at timestamptz default now());
   alter table customers add column if not exists web_token text unique;
+  alter table customers add column if not exists lang text;
   create table if not exists categories(id serial primary key, name text unique not null, emoji text default '🏷', edu boolean default false, active boolean default true, sort int default 100, created_at timestamptz default now());
   -- group of a category: 'shop' (offers), 'edu' (education offers), 'property' (rent / sale listings)
   alter table categories add column if not exists kind text;
@@ -54,6 +55,11 @@ async function init() {
   create index if not exists ads_adv on ads(adv_id);
   create index if not exists leads_ad on leads(ad_id);
   `);
+  // people who used the bot before languages existed keep English (they can change it in Settings)
+  if (!(await one(`select 1 from settings where key='lang_init'`))) {
+    await q(`update customers set lang='en' where lang is null`);
+    await q(`insert into settings(key,value) values('lang_init','true') on conflict do nothing`);
+  }
   if (!(await one('select 1 from categories limit 1'))) {
     const def = [['Grocery', '🛒', false], ['Food', '🍛', false], ['Fashion', '👗', false], ['Electronics', '📱', false], ['Salon & Spa', '💇', false], ['Kids', '🧸', false], ['Tuition', '📖', true], ['Coaching', '🎯', true], ['Schools', '🏫', true]];
     for (const [i, [n, e, edu]] of def.entries()) await q('insert into categories(name,emoji,edu,kind,sort) values($1,$2,$3,$4,$5) on conflict do nothing', [n, e, edu, edu ? 'edu' : 'shop', (i + 1) * 10]);

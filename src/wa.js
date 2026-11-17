@@ -4,6 +4,11 @@ const cfg = require('./config');
 
 let sink = null; // tests capture outbound messages here
 const setSink = (fn) => { sink = fn; };
+// Language: the bot sets a resolver (phone -> 'en' | 'ta' | 'hi'); text is translated just before sending
+const i18n = require('./strings');
+let langOf = async () => 'en';
+const setLangResolver = (fn) => { langOf = fn; };
+const T = async (to, s) => i18n.tr(await langOf(to), s);
 
 const cut = (s, n) => { s = String(s || ''); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
 
@@ -31,6 +36,7 @@ function chunks(text, n = 4000) {
 }
 
 async function sendText(to, text) {
+  text = await T(to, text);
   for (const c of chunks(text)) await api({ to, type: 'text', text: { body: c, preview_url: true } });
 }
 
@@ -39,13 +45,15 @@ const fitsButtons = (buttons) => buttons.length <= 3 && buttons.every(([l]) => l
 // buttons: array of [label, id]; at most 10 (paging is done by the bot layer)
 // image: optional public image URL shown above the text (only with ≤3 short buttons)
 async function send(to, text, buttons = [], image = null) {
-  text = text || '👇';
+  const L = await langOf(to);
+  text = i18n.tr(L, text || '👇');
+  buttons = buttons.map(([l, id]) => [i18n.tr(L, l), id]);
   if (!buttons.length) {
     if (image) return api({ to, type: 'image', image: { link: image, caption: cut(text, 1024) } });
     return sendText(to, text);
   }
   let body = text;
-  if (body.length > 1024) { await sendText(to, body); body = 'Choose an option 👇'; }
+  if (body.length > 1024) { await sendText(to, body); body = i18n.tr(L, 'Choose an option 👇'); }
   if (fitsButtons(buttons)) {
     const interactive = { type: 'button', body: { text: body }, action: { buttons: buttons.map(([l, id]) => ({ type: 'reply', reply: { id: cut(id, 256), title: l } })) } };
     if (image) interactive.header = { type: 'image', image: { link: image } };
@@ -62,6 +70,7 @@ async function send(to, text, buttons = [], image = null) {
 
 // "Send location" button (WhatsApp location request message)
 async function askLocation(to, text) {
+  text = await T(to, text);
   return api({ to, type: 'interactive', interactive: { type: 'location_request_message', body: { text: cut(text, 1024) }, action: { name: 'send_location' } } });
 }
 
@@ -73,8 +82,11 @@ async function sendLocation(to, lat, lng, name, address) {
 // Business-initiated message outside the 24h window needs an approved template.
 async function sendTemplate(to, text, name = cfg.WA_TEMPLATE) {
   if (!name) throw new Error('No template configured');
-  const param = cut(String(text).replace(/\s*\n+\s*/g, ' · ').replace(/\s{4,}/g, ' '), 1000);
-  return api({ to, type: 'template', template: { name, language: { code: cfg.WA_TEMPLATE_LANG }, components: [{ type: 'body', parameters: [{ type: 'text', text: param }] }] } });
+  const L = await langOf(to);
+  const param = cut(String(i18n.tr(L, text)).replace(/\s*\n+\s*/g, ' · ').replace(/\s{4,}/g, ' '), 1000);
+  const body = (code) => ({ to, type: 'template', template: { name, language: { code }, components: [{ type: 'body', parameters: [{ type: 'text', text: param }] }] } });
+  if (L !== 'en') { try { return await api(body(L)); } catch (e) { console.error('template', L, 'not available, using English:', e.message); } }
+  return api(body(cfg.WA_TEMPLATE_LANG));
 }
 
 async function markRead(id) {
@@ -91,4 +103,4 @@ async function downloadMedia(id) {
   return { mime: meta.mime_type || 'image/jpeg', data: Buffer.from(await r.arrayBuffer()) };
 }
 
-module.exports = { send, sendText, askLocation, sendLocation, sendTemplate, markRead, downloadMedia, graph, setSink, cut };
+module.exports = { setLangResolver, send, sendText, askLocation, sendLocation, sendTemplate, markRead, downloadMedia, graph, setSink, cut };

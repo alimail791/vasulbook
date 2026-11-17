@@ -35,6 +35,7 @@ const ok = (name) => console.log('✔', name);
 (async () => {
   await db.q('drop table if exists localities, advertisers, media, ads, customers, coupons, leads, payments, settings, broadcasts, sessions, menus, otps, categories cascade');
   await db.init();
+  for (const p of [ADMIN, AREA, TUTOR, SHOP, CUST, OWNER]) await db.q(`insert into customers(phone,lang) values($1,'en')`, [p]); // existing English users
 
   // ---- main admin sets up two localities (one run by self, one by an area admin)
   await say(ADMIN, 'hi'); assert(/main admin/.test(txt(last(ADMIN))));

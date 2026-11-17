@@ -1,9 +1,18 @@
 {
   "name": "edeal-bot",
   "version": "1.0.0",
-  "description": "EDeal – local offers, events, education and property ads on WhatsApp (2–5 km)",
+  "description": "EDeal \u2013 local offers, events, education and property ads on WhatsApp (2\u20135 km)",
   "main": "src/index.js",
-  "scripts": { "start": "node src/index.js", "test": "node test/flow.test.js" },
-  "engines": { "node": ">=20" },
-  "dependencies": { "express": "^4.21.2", "pg": "^8.13.1", "qrcode": "^1.5.4" }
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node test/flow.test.js && node test/lang.test.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "pg": "^8.13.1",
+    "qrcode": "^1.5.4"
+  }
 }

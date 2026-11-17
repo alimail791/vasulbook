@@ -5,6 +5,17 @@ const cfg = require('./config');
 const db = require('./db');
 const wa = require('./wa');
 const pay = require('./pay');
+const i18n = require('./strings');
+
+// ---- language of each person (cached; stored on the customers row)
+const langCache = new Map();
+async function langOf(phone) {
+  if (langCache.has(phone)) return langCache.get(phone);
+  const r = await db.one('select lang from customers where phone=$1', [phone]).catch(() => null);
+  const l = (r && r.lang) || 'en'; langCache.set(phone, l); return l;
+}
+async function setLang(phone, l) { await db.q('update customers set lang=$2 where phone=$1', [phone, l]); langCache.set(phone, l); }
+wa.setLangResolver(langOf);
 
 const rs = (n) => '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 const MENU_WORDS = ['hi', 'hello', 'hey', 'hii', 'hai', 'menu', 'start', '0', 'vanakkam', 'namaste'];
@@ -175,7 +186,7 @@ async function custMenu(c) {
   const web = await webLink(c.from);
   return c.reply(`*${cfg.BRAND}* · 📍 ${area || 'your location'} · ${cust.radius_km} km\n🔥 ${n((a) => a.type === 'deal' && !EDU.includes(a.cat))} offers · 🎓 ${n((a) => EDU.includes(a.cat))} education · 🎉 ${n((a) => a.type === 'event')} events · 🏠 ${n((a) => a.type === 'property')} homes${web ? `\n\n🌐 See all with photos on the web:\n${web}` : ''}\n\n_Tip: type what you need, e.g. "tuition" or "2 bhk rent"._`, [
     ["🔥 Today's offers", 'offers'], ['🗂 Categories', 'cats'], ['🎓 Tuition, coaching & schools', 'edu'], ['🎉 Local events', 'events'], ['🏠 Rent & property', 'props'],
-    ['🎟 My coupons', 'mine'], [cust.subscribed ? '🔕 Stop daily offers' : '🔔 Daily 9 AM offers', 'alerts'], ['📏 Change distance', 'radius'], ['📍 Change location', 'setloc'], ['🏪 Advertise your business', 'biz']]);
+    ['🎟 My coupons', 'mine'], [cust.subscribed ? '🔕 Stop daily offers' : '🔔 Daily 9 AM offers', 'alerts'], ['⚙️ Settings', 'settings'], ['🏪 Advertise your business', 'biz']]);
 }
 async function getCoupon(adId, phone) {
   const ex = await db.one('select * from coupons where ad_id=$1 and phone=$2', [adId, phone]);
@@ -215,6 +226,7 @@ async function customer(c, v, btn) {
   const isAdAction = /^(cp|dir|call|demo|enq|int|visit):\d+$/.test(v) || /^vt:/.test(v);
   if (c.cust.lat == null && !['biz'].includes(v) && !isAdAction) return custWelcome(c);
   if ((m = v.match(/^rad:(\d)$/))) { c.cust = await db.customers.set(c.from, { radius_km: Math.min(cfg.MAX_RADIUS_KM, +m[1]) }); return custMenu(c); }
+  if (v === 'settings') return c.reply(`⚙️ *Settings*\nDistance: ${c.cust.radius_km} km · Language: ${i18n.LANGS[await langOf(c.from)]}`, [['📏 Change distance', 'radius'], ['📍 Change location', 'setloc'], ['🌐 Language', 'lang']]);
   if (v === 'radius') return c.reply('How far should I look?', [['2 km', 'rad:2'], ['3 km', 'rad:3'], ['5 km', 'rad:5']]);
   if (v === 'setloc') return wa.askLocation(c.from, 'Tap *Send location* to update where you are 👇');
   if (v === 'more') return moreList(c);
@@ -301,7 +313,7 @@ async function advMenu(c) {
   const a = c.adv, P = await db.plans(), L = a.locality_id ? await db.localities.get(a.locality_id) : null;
   const plan = planActive(a) ? `${P[a.plan].name} · valid till ${istDate(a.plan_until)}` : '⚠️ No active plan';
   const post = a.cat === 'Property' ? [['🏠 Post a property', 'post:property'], ['➕ Post an offer', 'post:deal'], ['🎉 Post an event', 'post:event']] : [['➕ Post an offer', 'post:deal'], ['🎉 Post an event', 'post:event'], ['🏠 Post a property', 'post:property']];
-  return c.reply(`🏪 *${a.name}*${L ? ' · 📍 ' + L.name : ''}\n🏷 ${a.cat === 'Property' ? 'Property owner / broker' : a.cat}\nPlan: ${plan}`, post.concat([['📊 My ads & leads', 'myads'], ['✅ Redeem a coupon', 'redeem'], ['💳 Plans & renew', 'plans'], [`🏷 Category: ${a.cat}`, 'acat'], ['📍 Update location', 'aloc'], ['🛍 Browse offers', '#customer']]));
+  return c.reply(`🏪 *${a.name}*${L ? ' · 📍 ' + L.name : ''}\n🏷 ${a.cat === 'Property' ? 'Property owner / broker' : a.cat}\nPlan: ${plan}`, post.concat([['📊 My ads & leads', 'myads'], ['✅ Redeem a coupon', 'redeem'], ['💳 Plans & renew', 'plans'], [`🏷 Category: ${a.cat}`, 'acat'], ['📍 Update location', 'aloc'], ['🌐 Language', 'lang'], ['🛍 Browse offers', '#customer']]));
 }
 async function activatePlan(adv, planKey, payment) {
   const P = await db.plans(), p = P[planKey];
@@ -802,7 +814,25 @@ async function handle(from, name, v, btn) {
       const row = await db.one('select * from menus where phone=$1', [from]);
       if (row) return await sendPage(from, row.text, row.items, +m[1]);
     }
-    const low = v.trim().toLowerCase();
+    let low = v.trim().toLowerCase();
+    // ---- language
+    let m2;
+    if ((m2 = v.match(/^lang:(en|ta|hi)$/))) {
+      await setLang(from, m2[1]); await c.say('✅ Language set to English.');
+      const pend = sess.data.pending; sess.data.pending = null; await db.sessions.save(from, sess); sess.noSave = true;
+      return await handle(from, name, pend || 'menu', !!(pend && /^(loc|img):/.test(pend)));
+    }
+    const byWord = { tamil: 'ta', 'தமிழ்': 'ta', hindi: 'hi', 'हिंदी': 'hi', 'हिन्दी': 'hi', english: 'en' }[low];
+    if (byWord) { await setLang(from, byWord); await c.say('✅ Language set to English.'); await db.sessions.save(from, sess); sess.noSave = true; return await handle(from, name, 'menu', false); }
+    if (v === 'lang' || i18n.WORDS.lang.includes(low)) return await wa.send(from, i18n.PICKER, i18n.PICKER_BTNS);
+    if (!cust.lang) {
+      const guess = i18n.detect(v);
+      if (guess) await setLang(from, guess);
+      else if (isMain || myLocs.length || /^(offer|coupon|enquiry|contact|visit|interested|demo|admission)\s*#/i.test(v.trim())) await setLang(from, 'en');
+      else { sess.data.pending = v; return await wa.send(from, i18n.PICKER, i18n.PICKER_BTNS); }
+    }
+    if (i18n.WORDS.menu.includes(low)) { v = 'menu'; low = 'menu'; }
+    if (i18n.WORDS.stop.includes(low)) { v = 'stop'; low = 'stop'; }
     // role switches
     if (['#customer', '#shop', '#browse'].includes(low)) { sess.data.as = 'customer'; sess.state = null; return await custMenu(c); }
     if (['#business', 'business', 'advertise', 'biz', '#biz'].includes(low)) { sess.data.as = 'business'; sess.state = c.adv ? null : sess.state; return await advertiser(c, 'biz', true); }
@@ -822,7 +852,7 @@ async function handle(from, name, v, btn) {
     if (role === 'admin') return await admin(c, v, btn);
     return await customer(c, v, btn);
   } finally {
-    await db.sessions.save(from, sess);
+    if (!sess.noSave) await db.sessions.save(from, sess);
   }
 }
 

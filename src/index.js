@@ -157,13 +157,27 @@ async function waDiagnose() {
   const w = process.env.WA_WABA_ID;
   if (w) {
     out.subscribe = await g(`${w}/subscribed_apps`, 'POST');
-    const ensure = async (name, category, text, example) => {
-      const found = await g(`${w}/message_templates?name=${name}&fields=name,status,category`);
-      if (found && found.data && found.data.length) return found.data;
-      return g(`${w}/message_templates`, 'POST', { name, language: cfg.WA_TEMPLATE_LANG, category, components: [{ type: 'BODY', text, example: { body_text: [[example]] } }] });
+    // Each template exists in English, Tamil and Hindi (same name, one per language)
+    const ensure = async (name, category, texts, example) => {
+      const found = await g(`${w}/message_templates?name=${name}&fields=name,status,category,language&limit=50`);
+      const have = new Set(((found && found.data) || []).filter((t) => t.name === name).map((t) => t.language));
+      const res = {};
+      for (const [lang, text] of Object.entries(texts)) {
+        const code = lang === 'en' ? cfg.WA_TEMPLATE_LANG : lang;
+        res[code] = have.has(code) ? 'exists' : await g(`${w}/message_templates`, 'POST', { name, language: code, category, components: [{ type: 'BODY', text, example: { body_text: [[example]] } }] });
+      }
+      return res;
     };
-    if (cfg.WA_TEMPLATE) out.template = await ensure(cfg.WA_TEMPLATE, 'UTILITY', `${cfg.BRAND} update: {{1}}\n\nReply here to see your menu.`, 'Your ad “Weekend sale” is now live for people within 2 km.');
-    if (cfg.WA_DIGEST_TEMPLATE) out.digest_template = await ensure(cfg.WA_DIGEST_TEMPLATE, 'MARKETING', `☀️ Good morning! Top offers near you today: {{1}}\n\nReply HI to see all offers. Reply STOP to stop these messages.`, '1. Weekend grocery sale – Flat 20% off on oils (Fresh Mart, 600 m) | 2. Lunch combo – Meals at ₹99 (Annapoorna, 1.2 km)');
+    if (cfg.WA_TEMPLATE) out.template = await ensure(cfg.WA_TEMPLATE, 'UTILITY', {
+      en: `${cfg.BRAND} update: {{1}}\n\nReply here to see your menu.`,
+      ta: `${cfg.BRAND} அறிவிப்பு: {{1}}\n\nஉங்கள் மெனுவைப் பார்க்க இங்கே பதில் அனுப்பவும்.`,
+      hi: `${cfg.BRAND} अपडेट: {{1}}\n\nअपना मेनू देखने के लिए यहाँ जवाब दें।`,
+    }, 'Your ad “Weekend sale” is now live for people within 2 km.');
+    if (cfg.WA_DIGEST_TEMPLATE) out.digest_template = await ensure(cfg.WA_DIGEST_TEMPLATE, 'MARKETING', {
+      en: `☀️ Good morning! Top offers near you today: {{1}}\n\nReply HI to see all offers. Reply STOP to stop these messages.`,
+      ta: `☀️ காலை வணக்கம்! இன்று உங்கள் அருகில் சிறந்த சலுகைகள்: {{1}}\n\nஅனைத்தையும் பார்க்க HI அனுப்பவும். நிறுத்த STOP அனுப்பவும்.`,
+      hi: `☀️ सुप्रभात! आज आपके पास के बेहतरीन ऑफ़र: {{1}}\n\nसभी ऑफ़र देखने के लिए HI भेजें। बंद करने के लिए STOP भेजें।`,
+    }, '1. Weekend grocery sale – Flat 20% off on oils (Fresh Mart, 600 m) | 2. Lunch combo – Meals at ₹99 (Annapoorna, 1.2 km)');
   }
   if (process.env.WA_SET_PROFILE !== '0' && cfg.WA_PHONE_ID) {
     out.profile = await g(`${cfg.WA_PHONE_ID}/whatsapp_business_profile`, 'POST', {
