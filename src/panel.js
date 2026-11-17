@@ -75,15 +75,15 @@ function page(req, title, body, tab) {
   const nav = u ? [['', 'Dashboard'], ['/approvals', 'Approvals'], ['/ads', 'Ads'], ['/advertisers', 'Advertisers'], ['/payments', 'Payments'], ...(u.isMain ? [['/localities', 'Localities'], ['/categories', 'Categories'], ['/plans', 'Plans'], ['/broadcast', 'Broadcast']] : [])]
     .map(([p, n]) => `<a href="/panel${p}" class="${tab === n ? 'on' : ''}">${n}</a>`).join('') : '';
   const msg = req.query && req.query.m ? `<div class="msg">${esc(req.query.m)}</div>` : '';
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} – ${esc(cfg.BRAND)} admin</title><link rel="icon" href="/edeal-icon.svg"><style>${CSS}</style></head><body>
-<header><span class="logo"><img src="/edeal-icon.svg" alt="">${esc(cfg.BRAND)} admin</span><nav>${nav}</nav>${u ? `<span class="me">${u.isMain ? 'Main admin' : 'Area admin · ' + esc(u.myLocs.map((a) => a.name).join(', '))} · +${u.phone} · <a href="/panel/logout" style="color:#fff">Log out</a></span>` : ''}</header>
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} – ${esc(cfg.BRAND)} admin</title><link rel="icon" href="/edeal-icon.png"><style>${CSS}</style></head><body>
+<header><span class="logo"><img src="/edeal-icon.png" alt="">${esc(cfg.BRAND)} admin</span><nav>${nav}</nav>${u ? `<span class="me">${u.isMain ? 'Main admin' : 'Area admin · ' + esc(u.myLocs.map((a) => a.name).join(', '))} · +${u.phone} · <a href="/panel/logout" style="color:#fff">Log out</a></span>` : ''}</header>
 <main>${msg}${body}</main></body></html>`;
 }
 const STAT = { live: 'g', pending: 'y', rejected: 'r', paused: 'x', expired: 'x', paid: 'g', claimed: 'y', created: 'x' };
 const tag = (s) => `<span class="tag ${STAT[s] || 'b'}">${esc(s)}</span>`;
 
 // ---------- login with WhatsApp code
-r.get('/login', (req, res) => res.send(page(req, 'Log in', `<div class="login card"><p style="text-align:center"><img src="/edeal-logo.svg" style="height:56px" alt="${esc(cfg.BRAND)}"></p><h1>Admin log in</h1>
+r.get('/login', (req, res) => res.send(page(req, 'Log in', `<div class="login card"><p style="text-align:center"><img src="/edeal-logo.png" style="height:120px;border-radius:16px" alt="${esc(cfg.BRAND)}"></p><h1>Admin log in</h1>
 <form method="post" action="/panel/login"><label>Your WhatsApp number</label><input name="phone" inputmode="tel" placeholder="98xxxxxxxx" required>
 <p class="muted">We'll send a 6-digit code to this number from ${esc(cfg.BRAND)} on WhatsApp.</p><button>Send code</button></form>
 <hr style="margin:20px 0;border:0;border-top:1px solid #e5ece7"><form method="get" action="/panel"><label>Or log in with the admin key</label><input name="key" type="password" autocomplete="current-password" required><p></p><button class="ghost">Log in with key</button></form></div>`)));

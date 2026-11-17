@@ -189,7 +189,7 @@ const ok = (name) => console.log('✔', name);
   assert.equal((await db.localities.byAdmin(AREA)).length, 2, 'one area admin, two localities');
   await say(SHOP, 'hi'); await tap(SHOP, 'Plans'); await tap(SHOP, 'Premium'); const pid = (await db.one(`select id from payments where status='created' order by id desc limit 1`)).id;
   r = await fetch(`${base}/pay/${pid}`); assert((await r.text()).includes('upi://pay'));
-  r = await fetch(`${base}/`); assert((await r.text()).includes('free trial'));
+  r = await fetch(`${base}/`); { const t0 = await r.text(); assert(t0.includes('day trial') && t0.includes('Browse by category') && t0.includes('9443424064')); }
   r = await fetch(`${base}/panel`, { redirect: 'manual' }); assert.equal(r.status, 302, 'login required');
   // remove advertiser from panel
   const junk = await db.one(`insert into advertisers(phone,name,cat) values('919111111111','Junk','Food') returning id`);

@@ -18,27 +18,87 @@ app.get('/health', (_req, res) => res.json({ ok: true }));
 app.use(async (_req, _res, next) => { try { await bot.ensureCats(); } catch (e) { console.error('cats', e.message); } next(); });
 
 const page = (title, body, extraCss = '') => `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(title)}</title><link rel="icon" href="/edeal-icon.svg"><meta property="og:image" content="/edeal-whatsapp-dp.png">
+<title>${esc(title)}</title><link rel="icon" href="/edeal-icon.png"><meta property="og:image" content="/edeal-whatsapp-dp.png">
 <style>body{font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;max-width:760px;margin:0 auto;padding:20px;line-height:1.6;color:#14231a}h1{font-size:24px}h2{font-size:18px;margin-top:24px}
 .btn{display:inline-block;background:#00a884;color:#fff;text-decoration:none;padding:12px 20px;border-radius:24px;font-weight:600}.muted{color:#5b6b60;font-size:14px}
 table{border-collapse:collapse;width:100%}td,th{padding:8px;border-bottom:1px solid #e5ece7;text-align:left}${extraCss}</style></head><body>${body}</body></html>`;
 
-// ---------- public landing page
+// ---------- public landing page (categories come live from the admin's list)
+const HELP_PHONE = (process.env.HELP_PHONE || '9443424064').replace(/\D/g, '');
 app.get('/', async (_req, res) => {
   const P = await db.plans();
-  const botNo = (process.env.BOT_PHONE || '').replace(/\D/g, '');
-  const wa_link = botNo ? `https://wa.me/${botNo.length === 10 ? '91' + botNo : botNo}?text=Hi` : null;
-  res.send(page(`${cfg.BRAND} – Local offers on WhatsApp`, `<p><img src="/edeal-logo.svg" alt="${esc(cfg.BRAND)}" style="height:64px"></p>
-<h1>Offers, events, classes and homes near you – on WhatsApp</h1>
-<p>Say <b>Hi</b> on WhatsApp, share your location and see today's sales, discounts, tuition &amp; schools, local events, and houses for rent or sale within 2–5 km. No app, no login.</p>
-<p><a class="btn" href="/offers">🔥 See offers near you</a> <a class="btn" href="/offers?f=property">🏠 Rent &amp; property</a> ${wa_link ? `<a class="btn" style="background:#25d366" href="${wa_link}">💬 Open ${esc(cfg.BRAND)} on WhatsApp</a>` : ''}</p>
-<h2>For businesses and owners</h2><p>Shops, restaurants, salons, tutors, coaching centres, schools, house owners and brokers: reach people near you every day. Rent out or sell a house, flat, plot, shop or PG. Send <b>business</b> to the bot to start with a <b>${P.trial.days}-day free trial</b>.</p>
-<table><tr><th>Plan</th><th>Price</th><th>What you get</th></tr>
-<tr><td>Free trial</td><td>₹0 · ${P.trial.days} days</td><td>1 ad, 2 km</td></tr><tr><td>1 Day</td><td>₹${P.day.price}</td><td>1 ad for a day, 2 km</td></tr>
-<tr><td>7 Days</td><td>₹${P.week.price}</td><td>1 ad for a week, 2 km</td></tr><tr><td>Monthly</td><td>₹${P.month.price}/month</td><td>Unlimited ads &amp; events, 2 km</td></tr>
-<tr><td>Premium</td><td>₹${P.premium.price}/month</td><td>Unlimited ads, 5 km, featured on top and in the 9 AM daily message</td></tr></table>
-<p class="muted"><a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/delete-data">Delete your data</a> · info@vasulbook.com</p>`));
+  const botNo = (process.env.BOT_PHONE || '').replace(/\D/g, ''), wa = botNo.length === 10 ? '91' + botNo : botNo;
+  const waL = (t) => (wa ? `https://wa.me/${wa}?text=${encodeURIComponent(t)}` : '/offers');
+  const cats = await db.all(`select c.*, (select count(*)::int from ads a where a.status='live' and (a.valid_until is null or a.valid_until > now()) and ((c.kind='property' and a.type='property' and a.sub=c.name) or (c.kind<>'property' and a.type='deal' and a.cat=c.name))) live
+    from categories c where c.active order by sort, id`);
+  const st = await db.one(`select (select count(*)::int from ads where status='live' and (valid_until is null or valid_until > now())) ads,
+    (select count(*)::int from ads where status='live' and type='event' and (valid_until is null or valid_until > now())) events,
+    (select count(*)::int from advertisers where active) advs, (select count(*)::int from localities where active) areas`);
+  const areas = await db.all('select name from localities where active order by name');
+  const tile = (href, emoji, name, live) => `<a class="tile" href="${href}"><span class="em">${esc(emoji || '🏷')}</span><span class="nm">${esc(name)}</span>${live ? `<span class="lv">${live} live</span>` : ''}</a>`;
+  const grp = (k) => cats.filter((c) => (c.kind || 'shop') === k);
+  const group = (title, sub, href, tiles) => tiles ? `<div class="grp"><div class="gh"><h3>${title}</h3><a href="${href}">See all ›</a></div><p class="gs">${sub}</p><div class="tiles">${tiles}</div></div>` : '';
+  const shopTiles = grp('shop').map((c) => tile('/offers?f=' + encodeURIComponent('cat:' + c.name), c.emoji, c.name, c.live)).join('') + tile('/offers?f=events', '🎉', 'Events', st.events);
+  const eduTiles = grp('edu').map((c) => tile('/offers?f=' + encodeURIComponent('cat:' + c.name), c.emoji, c.name, c.live)).join('');
+  const propTiles = grp('property').map((c) => tile('/offers?f=' + encodeURIComponent('sub:' + c.name), c.emoji, c.name, c.live)).join('');
+  // Small numbers look empty, so ad and business counts show only once they are worth showing
+  const stats = [[st.ads >= 25 ? st.ads : 0, 'live ads'], [cats.length + 1, 'categories'], [st.areas, st.areas === 1 ? 'area' : 'areas'], [st.advs >= 15 ? st.advs : 0, 'local businesses']].filter(([n]) => n > 0);
+  const ben = [['📲', 'Real customer leads', "Coupon, enquiry, demo and visit requests come to your WhatsApp with the customer's name and number."],
+    ['🚫', 'No pamphlets, no printing', 'No notices to print or hand out. Your ad goes straight to phones nearby, and you can change it anytime.'],
+    ['📍', 'Seen within 2–5 km', 'Shown to people near you on WhatsApp and on this website.'],
+    ['☀️', 'Daily 9 AM message', 'Your offer goes out in the morning offers message people nearby get.'],
+    ['🎟', 'Coupons bring footfall', 'Customers show the coupon code at your shop. You redeem it on WhatsApp.'],
+    ['📊', 'Live reports', 'See views, leads and coupons used for every ad.'],
+    ['🔗', 'Your own ad page', 'A link to share on your WhatsApp status and groups.'],
+    ['🗣', 'Tamil, English, Hindi', 'Post in 1 minute, all on WhatsApp. No app, no login.']];
+  const css = `body{max-width:none;padding:0;margin:0;background:#fff7ed;color:#1c1917;font-family:Poppins,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.w{max-width:1040px;margin:0 auto;padding:0 18px}.ta{font-family:"Noto Sans Tamil",Poppins,sans-serif}
+.hero{background:#c2410c;color:#fff;padding:26px 0 34px}.hero .w{display:grid;grid-template-columns:auto 1fr;gap:26px;align-items:center}
+.hero img{width:190px;height:auto;border-radius:20px;display:block}.hero h1{font-size:38px;line-height:1.12;margin:0 0 10px;font-weight:800}.hero h1 span{color:#facc15}
+.hero p{font-size:17px;margin:0 0 6px;color:#ffedd5}.hero .ta{font-size:16px;font-weight:600;color:#ffedd5;margin-bottom:16px}
+.cta{display:flex;flex-wrap:wrap;gap:10px}.b{display:inline-flex;align-items:center;gap:8px;text-decoration:none;font-weight:700;font-size:16px;padding:13px 20px;border-radius:28px}
+.b.y{background:#facc15;color:#431407}.b.wh{background:#25d366;color:#fff}.b.o{background:#fff;color:#9a3412}.b.ol{border:2px solid #fff;color:#fff}
+.stats{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}.stats div{background:rgba(255,255,255,.14);border-radius:14px;padding:8px 14px;font-size:14px}.stats b{font-size:20px;display:block;line-height:1.1}
+section{padding:30px 0 6px}h2{font-size:26px;margin:0 0 4px;font-weight:800}.sub{color:#57534e;margin:0 0 16px}
+.grp{background:#fff;border-radius:18px;padding:16px;margin-bottom:14px;box-shadow:0 0 0 1.5px #fed7aa}.gh{display:flex;align-items:center;justify-content:space-between}.gh h3{margin:0;font-size:19px}.gh a{color:#c2410c;font-weight:700;text-decoration:none;font-size:14px}
+.gs{margin:2px 0 12px;color:#57534e;font-size:14px}.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.tile{display:flex;flex-direction:column;gap:2px;text-decoration:none;color:#1c1917;background:#fff7ed;border:1.5px solid #fed7aa;border-radius:14px;padding:12px;min-height:44px}.tile:hover{border-color:#c2410c}
+.tile .em{font-size:26px}.tile .nm{font-weight:700;font-size:15px;line-height:1.25}.tile .lv{font-size:12px;font-weight:700;color:#15803d}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.step{background:#fff;border-radius:16px;padding:16px;box-shadow:0 0 0 1.5px #fed7aa}.step b{display:inline-flex;width:34px;height:34px;border-radius:50%;background:#c2410c;color:#fff;align-items:center;justify-content:center;margin-bottom:8px}
+.biz{background:#431407;color:#fff;margin-top:26px;padding:34px 0}.biz h2{color:#fff}.biz .sub{color:#fed7aa}.ben{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}
+.ben div{background:rgba(255,255,255,.08);border-radius:16px;padding:14px}.ben .e{font-size:26px}.ben b{display:block;margin:4px 0 2px}.ben p{margin:0;font-size:14px;color:#fed7aa;line-height:1.5}
+.ben div.hl{background:#facc15;color:#431407}.ben div.hl p{color:#713f12}.free{display:inline-block;background:#facc15;color:#431407;font-weight:800;border-radius:10px;padding:2px 10px}
+.help{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:16px;font-size:15px}.help a{color:#facc15;font-weight:700}
+.areas{font-size:14px;color:#57534e}footer{padding:22px 0 30px;font-size:14px;color:#57534e}footer a{color:#9a3412}
+@media(max-width:720px){.hero .w{grid-template-columns:1fr;text-align:left}.hero img{width:130px}.hero h1{font-size:30px}.steps{grid-template-columns:1fr}.ben{grid-template-columns:1fr 1fr}.tiles{grid-template-columns:repeat(2,1fr)}}`;
+  res.send(page(`${cfg.BRAND} – Offers, classes & homes near you on WhatsApp`, `<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&family=Noto+Sans+Tamil:wght@600&display=swap" rel="stylesheet">
+<div class="hero"><div class="w"><img src="/edeal-logo.png" alt="${esc(cfg.BRAND)} – Local offers on WhatsApp">
+<div><h1>Offers, classes &amp; homes <span>near you</span> – on WhatsApp</h1>
+<p>Today's sales, discounts, tuition &amp; schools, events, and houses, flats, plots &amp; PG within 2–5 km. No app, no login.</p>
+<div class="ta">உங்கள் அருகிலுள்ள ஆஃபர்கள், வகுப்புகள், வீடுகள் – WhatsApp-இல்</div>
+<div class="cta"><a class="b y" href="/offers">🔥 See offers near you</a><a class="b wh" href="${waL('Hi')}">💬 Say Hi on WhatsApp</a><a class="b ol" href="#business">🏪 Advertise free</a></div>
+${stats.length ? `<div class="stats">${stats.map(([n, l]) => `<div><b>${n}</b>${l}</div>`).join('')}</div>` : ''}</div></div></div>
+
+<section><div class="w"><h2>Browse by category</h2><p class="sub">Tap a category to see what's on near you.</p>
+${group('🛍 Shops &amp; services', 'Sales, discounts and coupons from shops near you.', '/offers?f=offers', shopTiles)}
+${group('🎓 Education', 'Tuition, coaching and schools – book a free demo.', '/offers?f=edu', eduTiles)}
+${group('🏠 Property', 'Houses, flats, plots, shops and PG – rent or buy, contact owners directly.', '/offers?f=property', propTiles)}
+${areas.length ? `<p class="areas">📍 Now in: ${areas.map((a) => esc(a.name)).join(', ')}</p>` : ''}</div></section>
+
+<section><div class="w"><h2>How it works</h2><p class="sub">For everyone nearby – free.</p><div class="steps">
+<div class="step"><b>1</b><div><strong>Say Hi</strong> on WhatsApp and share your location.</div></div>
+<div class="step"><b>2</b><div><strong>See offers</strong>, classes and homes within 2–5 km.</div></div>
+<div class="step"><b>3</b><div><strong>Get a coupon</strong>, book a demo or contact the owner in one tap.</div></div></div></div></section>
+
+<div class="biz" id="business"><div class="w"><h2>Own a shop, teach, or have property?</h2>
+<p class="sub">Shops, restaurants, salons, tutors, coaching centres, schools, owners and brokers: reach every customer within 5 km. <span class="free">Start FREE – ${P.trial.days}-day trial</span></p>
+<div class="ben">${ben.map(([e, t, d], i) => `<div${i < 2 ? ' class="hl"' : ''}><span class="e">${e}</span><b>${t}</b><p>${d}</p></div>`).join('')}</div>
+<div class="cta"><a class="b y" href="${waL('business')}">🏪 Post your ad free on WhatsApp</a><a class="b o" href="${waL('business')}">🏠 List your property</a></div>
+<div class="help">📞 Help &amp; enquiries: <a href="tel:+91${HELP_PHONE}">${HELP_PHONE.replace(/(\d{5})(\d{5})/, '$1 $2')}</a> · <a href="https://wa.me/91${HELP_PHONE}">WhatsApp us</a></div></div></div>
+
+<footer><div class="w">${esc(cfg.BRAND)} · Local offers on WhatsApp · <a href="/offers">All offers</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/delete-data">Delete your data</a> · info@vasulbook.com</div></footer>`, css));
 });
+
 app.get('/privacy', (_req, res) => res.send(page('Privacy Policy', `<h1>${esc(cfg.BRAND)} – Privacy Policy</h1>
 <p>${esc(cfg.BRAND)} (operated by VasulBook, vasulbook.com) shows local offers, events, education and property ads on WhatsApp.</p>
 <h2>What we collect</h2><p>Your WhatsApp number and profile name, messages you send to our number, the location you share (to show ads near you), your distance setting, coupons you take, and enquiries you send. Businesses provide their name, category, location, ads and photos.</p>
@@ -65,7 +125,7 @@ app.get('/pay/:id', async (req, res) => {
   const P = await db.plans();
   if (p.status === 'paid') return res.send(page('Paid', `<h1>✅ Paid</h1><p>${esc(p.name)} – ${esc(P[p.plan].name)} plan is active. You can close this page.</p>`));
   const uri = pay.upiUri(p), qr = await QRCode.toDataURL(uri, { margin: 1, width: 260 });
-  res.send(page(`Pay ₹${p.amount} – ${cfg.BRAND}`, `<div style="text-align:center"><img src="/edeal-logo.svg" style="height:52px" alt=""><h1>Pay ₹${p.amount}</h1>
+  res.send(page(`Pay ₹${p.amount} – ${cfg.BRAND}`, `<div style="text-align:center"><img src="/edeal-logo.png" style="height:110px;border-radius:14px" alt=""><h1>Pay ₹${p.amount}</h1>
 <p>${esc(p.name)} · ${esc(P[p.plan].name)} plan · Ref ${pay.ref(p)}</p>
 <p><a class="btn" href="${esc(uri)}">Open GPay / PhonePe / Paytm</a></p><p class="muted">or scan this QR from another phone</p><img src="${qr}" width="240" height="240" alt="UPI QR">
 <p>UPI ID: <b>${esc(cfg.ADMIN_UPI)}</b></p><p class="muted">After paying, go back to WhatsApp, tap <b>I've paid</b> and send the UPI reference number.</p>

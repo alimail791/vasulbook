@@ -34,19 +34,19 @@ function actions(a) {
 }
 
 const CSS = `*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#f0f2f5;color:#111b21}
-a{color:inherit}header{background:#075e54;color:#fff;padding:10px 14px;position:sticky;top:0;z-index:5}
-.top{display:flex;align-items:center;gap:10px;max-width:1100px;margin:0 auto}.top img{height:30px}.top b{font-size:20px}.top .wa{margin-left:auto;background:#25d366;color:#fff;text-decoration:none;font-weight:600;font-size:13px;padding:7px 12px;border-radius:18px;white-space:nowrap}
+a{color:inherit}header{background:#c2410c;color:#fff;padding:10px 14px;position:sticky;top:0;z-index:5}
+.top{display:flex;align-items:center;gap:10px;max-width:1100px;margin:0 auto}.top img{height:34px;border-radius:8px}.top b{font-size:20px}.top .wa{margin-left:auto;background:#25d366;color:#fff;text-decoration:none;font-weight:600;font-size:13px;padding:7px 12px;border-radius:18px;white-space:nowrap}
 .bar{max-width:1100px;margin:8px auto 0;display:flex;gap:6px;overflow-x:auto;padding-bottom:2px}
-.chip{white-space:nowrap;text-decoration:none;font-size:13px;padding:6px 12px;border-radius:16px;background:rgba(255,255,255,.15);color:#fff}.chip.on{background:#fff;color:#075e54;font-weight:600}
+.chip{white-space:nowrap;text-decoration:none;font-size:13px;padding:6px 12px;border-radius:16px;background:rgba(255,255,255,.15);color:#fff}.chip.on{background:#fff;color:#c2410c;font-weight:600}
 main{max-width:1100px;margin:0 auto;padding:12px}.where{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff;border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:14px}
-.where select,.where button{font:inherit;font-size:14px;padding:7px 10px;border-radius:8px;border:1px solid #d1d7db;background:#fff}.where button{background:#00a884;color:#fff;border-color:#00a884;cursor:pointer}
+.where select,.where button{font:inherit;font-size:14px;padding:7px 10px;border-radius:8px;border:1px solid #d1d7db;background:#fff}.where button{background:#c2410c;color:#fff;border-color:#c2410c;cursor:pointer}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
 .card{background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 2px rgba(0,0,0,.06);display:flex;flex-direction:column;text-decoration:none}
 .ph{height:150px;display:flex;align-items:center;justify-content:center;font-size:54px;position:relative;background-size:cover;background-position:center}
 .ft{position:absolute;top:8px;left:8px;background:#ffd400;color:#3d3000;font-size:11px;font-weight:700;padding:2px 8px;border-radius:10px}
 .ds{position:absolute;bottom:8px;right:8px;background:rgba(0,0,0,.6);color:#fff;font-size:12px;padding:2px 8px;border-radius:10px}
 .bd{padding:10px 12px 12px;flex:1;display:flex;flex-direction:column;gap:3px}.bd b{font-size:15px}.off{color:#d93025;font-weight:700;font-size:14px}.mt{color:#54656f;font-size:12.5px}
-.btn{display:inline-block;text-align:center;text-decoration:none;font-weight:600;font-size:14px;padding:10px 14px;border-radius:22px;background:#25d366;color:#fff;margin:4px 6px 0 0}.btn.g{background:#fff;color:#075e54;border:1px solid #075e54}
+.btn{display:inline-block;text-align:center;text-decoration:none;font-weight:600;font-size:14px;padding:10px 14px;border-radius:22px;background:#25d366;color:#fff;margin:4px 6px 0 0}.btn.g{background:#fff;color:#c2410c;border:1px solid #c2410c}
 .empty{background:#fff;border-radius:12px;padding:24px;text-align:center;color:#54656f}footer{text-align:center;color:#54656f;font-size:13px;padding:24px 10px}
 .big{max-width:640px;margin:0 auto;background:#fff;border-radius:14px;overflow:hidden}.big .ph{height:260px;font-size:80px}.big .bd{padding:16px}.big h1{font-size:22px;margin:0}.big .off{font-size:18px}`;
 
@@ -55,8 +55,8 @@ function layout(req, title, body, { og = {}, chips = '' } = {}) {
   const sw = Object.entries(i18n.LANGS).map(([k, n]) => k === L ? `<b>${n}</b>` : `<a href="?${esc(new URLSearchParams({ ...req.query, lang: k }).toString())}" style="color:#fff">${n}</a>`).join(' · ');
   const ogImg = og.image ? (og.image.startsWith('http') ? og.image : cfg.PUBLIC_URL + og.image) : `${cfg.PUBLIC_URL}/edeal-whatsapp-dp.png`;
   return `<!DOCTYPE html><html lang="${L}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>
-<link rel="icon" href="/edeal-icon.svg"><meta property="og:title" content="${esc(og.title || title)}"><meta property="og:description" content="${esc(og.desc || 'Offers, events, classes and homes near you – on WhatsApp')}"><meta property="og:image" content="${esc(ogImg)}"><meta name="description" content="${esc(og.desc || '')}">
-<style>${CSS}</style></head><body><header><div class="top"><a href="/offers" style="display:flex;align-items:center;gap:8px;text-decoration:none"><img src="/edeal-icon.svg" alt=""><b>${esc(cfg.BRAND)}</b></a>
+<link rel="icon" href="/edeal-icon.png"><meta property="og:title" content="${esc(og.title || title)}"><meta property="og:description" content="${esc(og.desc || 'Offers, events, classes and homes near you – on WhatsApp')}"><meta property="og:image" content="${esc(ogImg)}"><meta name="description" content="${esc(og.desc || '')}">
+<style>${CSS}</style></head><body><header><div class="top"><a href="/offers" style="display:flex;align-items:center;gap:8px;text-decoration:none"><img src="/edeal-icon.png" alt=""><b>${esc(cfg.BRAND)}</b></a>
 <a class="wa" href="${waLink('Hi')}">${t('💬 Open on WhatsApp')}</a></div><div style="max-width:1100px;margin:6px auto 0;font-size:12.5px;opacity:.95">🌐 ${sw}</div>${chips ? `<div class="bar">${chips}</div>` : ''}</header><main>${body}</main>
 <script>try{var on=document.querySelector('.chip.on');if(on)on.scrollIntoView({inline:'center',block:'nearest'})}catch(e){}</script>
 <footer>${t(`${cfg.BRAND} · local offers on WhatsApp`)} · <a href="/">${t('About')}</a> · <a href="/privacy">${t('Privacy')}</a><br>${t('Own a shop, school or property?')} <a href="${waLink('business')}">${t('Advertise free for 15 days')}</a></footer></body></html>`;
@@ -100,8 +100,8 @@ r.get('/offers', async (req, res) => {
 <form action="/offers" method="get" style="display:flex;gap:6px;flex:1 1 100%;min-width:0">${hasLoc ? `<input type="hidden" name="lat" value="${lat}"><input type="hidden" name="lng" value="${lng}"><input type="hidden" name="r" value="${R}">` : ''}<input name="q" value="${esc(q)}" placeholder="${esc(t('Search: tuition, 2 bhk rent…'))}" style="flex:1;min-width:0;font:inherit;font-size:14px;padding:7px 10px;border-radius:8px;border:1px solid #d1d7db"></form></div>
 <script>function loc(){if(!navigator.geolocation)return alert('Location not available');navigator.geolocation.getCurrentPosition(function(p){location='/offers?lat='+p.coords.latitude.toFixed(5)+'&lng='+p.coords.longitude.toFixed(5)+'&r=${R}${f ? '&f=' + encodeURIComponent(f) : ''}'},function(){alert('Please allow location, or pick an area')})}</script>`;
   const isProp = f === 'property' || f.startsWith('sub:');
-  const propBar = isProp ? `<div class="where" style="gap:6px"><b style="width:100%">${esc(t('🏠 Rent & property'))}</b>${[['property', 'All'], ...bot.PROPS.map((k) => ['sub:' + k, bot.SUBS[k]])].map(([k, l]) => `<a href="${esc(base({ f: k }))}" style="text-decoration:none;font-size:13px;padding:6px 11px;border-radius:16px;border:1px solid ${k === f ? '#075e54;background:#075e54;color:#fff' : '#cfd8d2;background:#fff'}">${esc(t(l))}</a>`).join('')}
-<a href="${waLink('business')}" style="font-size:13px;margin-left:auto;color:#075e54;font-weight:600">${t('+ List your property free')}</a></div>` : '';
+  const propBar = isProp ? `<div class="where" style="gap:6px"><b style="width:100%">${esc(t('🏠 Rent & property'))}</b>${[['property', 'All'], ...bot.PROPS.map((k) => ['sub:' + k, bot.SUBS[k]])].map(([k, l]) => `<a href="${esc(base({ f: k }))}" style="text-decoration:none;font-size:13px;padding:6px 11px;border-radius:16px;border:1px solid ${k === f ? '#c2410c;background:#c2410c;color:#fff' : '#cfd8d2;background:#fff'}">${esc(t(l))}</a>`).join('')}
+<a href="${waLink('business')}" style="font-size:13px;margin-left:auto;color:#c2410c;font-weight:600">${t('+ List your property free')}</a></div>` : '';
   const body = where + propBar + (list.length ? `<div class="grid">${list.slice(0, 120).map((a) => card(a, t)).join('')}</div>` : `<div class="empty">${t('No ads here yet. Try a bigger distance or another area.')}<br><br><a class="btn" href="${waLink('Hi')}">${t('💬 Get offers on WhatsApp')}</a>${f === 'property' || f.startsWith('sub:') ? `<br><br>${t('Have a house, flat, plot or PG to rent or sell?')}<br><a class="btn" href="${waLink('business')}">${t('🏠 List your property free')}</a>` : ''}</div>`);
   res.send(layout(req, `${cfg.BRAND} – Offers near you`, body, { chips, og: { title: `${cfg.BRAND} – offers, events, classes & homes near you`, desc: 'Sales, discounts, tuition & schools, local events and houses for rent or sale within 2–5 km.' } }));
 });
