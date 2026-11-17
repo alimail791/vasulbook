@@ -45,7 +45,8 @@ function englishLeft(p) {
 
   // ---- Hindi advertiser: "business" → picker → Hindi → registration continues in Hindi
   await say(HI, 'business'); assert(txt(last(HI)).includes('भाषा चुनें'));
-  await byId(HI, 'lang:hi'); assert(txt(last(HI)).includes('दुकान / बिज़नेस का नाम'), 'registration continues after picking Hindi: ' + txt(last(HI)));
+  await byId(HI, 'lang:hi'); assert(txt(last(HI)).includes('आप क्या करना चाहेंगे?'), 'choices in Hindi: ' + txt(last(HI)));
+  await byId(HI, 'biz'); assert(txt(last(HI)).includes('दुकान / बिज़नेस का नाम'), 'registration in Hindi: ' + txt(last(HI)));
   await say(HI, 'Sharma Rentals'); assert(txt(last(HI)).includes('किसका विज्ञापन'));
   await byId(HI, 'rcat:Property'); await loc(HI, 13.041, 80.201);
   await byId(HI, 'plan:trial'); assert(msgs(HI).some((m) => txt(m).includes('फ्री ट्रायल शुरू')));

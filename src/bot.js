@@ -169,7 +169,19 @@ async function webLink(phone, filter) {
   return `${cfg.PUBLIC_URL}/u/${t}${filter ? '?f=' + encodeURIComponent(filter) : ''}`;
 }
 const WEB_ACTION = { offer: 'cp', coupon: 'cp', enquiry: 'enq', contact: 'enq', visit: 'visit', interested: 'int', demo: 'demo', admission: 'demo' };
+// First thing a new person sees: see offers, advertise, or look at ads on the website
+async function startMenu(c, forBiz) {
+  const site = cfg.PUBLIC_URL ? `${cfg.PUBLIC_URL}/offers` : '';
+  const head = forBiz ? `👋 *Welcome to ${cfg.BRAND}!*\nShops, tutors, schools and property owners advertise here to reach people within *2–5 km*.` : `👋 *Welcome to ${cfg.BRAND}!*\nSales, discounts, offers, events, tuition & schools, and homes for rent or sale within *2–5 km* of you.`;
+  return c.reply(`${head}${site ? `\n\n🌐 See all ads on the website:\n${site}` : ''}\n\nWhat would you like to do?`,
+    forBiz ? [['🏪 Advertise with us', 'biz'], ['🔥 See offers near me', 'gonear'], ['🌐 See ads on website', 'web']] : [['🔥 See offers near me', 'gonear'], ['🏪 Advertise with us', 'biz'], ['🌐 See ads on website', 'web']]);
+}
 async function custWelcome(c) {
+  if (!c.sess.data.started) return startMenu(c);
+  return askStart(c);
+}
+async function askStart(c) {
+  c.sess.data.started = true;
   await wa.askLocation(c.from, `👋 *Welcome to ${cfg.BRAND}!*\nSales, discounts, offers, events, tuition & schools, and homes for rent or sale within *2–5 km* of you – fresh every day.\n\nTap *Send location* below to begin 👇`);
   const ls = (await db.localities.active()).filter((l) => l.lat != null);
   const b = ls.slice(0, 8).map((l) => ['📍 ' + l.name, 'carea:' + l.id]);
@@ -224,6 +236,11 @@ async function customer(c, v, btn) {
   }
   if ((m = v.trim().match(/^(offer|coupon|enquiry|contact|visit|interested|demo|admission)\s*#\s*(\d+)/i))) { v = `${WEB_ACTION[m[1].toLowerCase()]}:${m[2]}`; btn = true; }
   const isAdAction = /^(cp|dir|call|demo|enq|int|visit):\d+$/.test(v) || /^vt:/.test(v);
+  if (v === 'gonear') return askStart(c);
+  if (v === 'web') {
+    const link = c.cust.lat != null ? await webLink(c.from) : `${cfg.PUBLIC_URL}/offers`;
+    return c.reply(`🌐 *See ads on the website*\nOffers, classes, events and homes with photos. Tap to open:\n${link}`, [['🔥 See offers near me', c.cust.lat != null ? 'menu' : 'gonear'], ['🏪 Advertise with us', 'biz']]);
+  }
   if (c.cust.lat == null && !['biz'].includes(v) && !isAdAction) return custWelcome(c);
   if ((m = v.match(/^rad:(\d)$/))) { c.cust = await db.customers.set(c.from, { radius_km: Math.min(cfg.MAX_RADIUS_KM, +m[1]) }); return custMenu(c); }
   if (v === 'settings') return c.reply(`⚙️ *Settings*\nDistance: ${c.cust.radius_km} km · Language: ${i18n.LANGS[await langOf(c.from)]}`, [['📏 Change distance', 'radius'], ['📍 Change location', 'setloc'], ['🌐 Language', 'lang']]);
@@ -835,6 +852,8 @@ async function handle(from, name, v, btn) {
     if (i18n.WORDS.stop.includes(low)) { v = 'stop'; low = 'stop'; }
     // role switches
     if (['#customer', '#shop', '#browse'].includes(low)) { sess.data.as = 'customer'; sess.state = null; return await custMenu(c); }
+    // Someone new who typed "business" (e.g. from the poster QR) first sees all three choices
+    if (!btn && ['business', 'advertise'].includes(low) && !c.adv && !isAdmin && cust.lat == null && !sess.state && !sess.data.started) { sess.data.started = true; return await startMenu(c, true); }
     if (['#business', 'business', 'advertise', 'biz', '#biz'].includes(low)) { sess.data.as = 'business'; sess.state = c.adv ? null : sess.state; return await advertiser(c, 'biz', true); }
     if (low === '#admin' && isAdmin) { sess.data.as = null; return await adminMenu(c); }
     if (low === 'delete my data') {

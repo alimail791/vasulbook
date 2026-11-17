@@ -62,7 +62,8 @@ const ok = (name) => console.log('✔', name);
   ok('admin adds / hides / shows a category on WhatsApp');
 
   // ---- tutor registers in Gandhi Nagar, takes free trial, posts an offer
-  await say(TUTOR, 'business'); assert(txt(last(TUTOR)).includes('business name'));
+  await say(TUTOR, 'business'); assert(txt(last(TUTOR)).includes('What would you like to do?') && opts(last(TUTOR))[0][0].includes('Advertise'), 'new person from the QR sees all three choices, Advertise first');
+  await tap(TUTOR, 'Advertise with us'); assert(txt(last(TUTOR)).includes('business name'));
   await say(TUTOR, 'Bright Minds Tuition'); assert(txt(last(TUTOR)).includes('what do you want to advertise')); await tap(TUTOR, 'Tuition / school'); await tap(TUTOR, '📖 Tuition'); await loc(TUTOR, 13.0410, 80.2030, 'Bright Minds, 4th St');
   assert(txt(last(TUTOR)).includes('registered in *Gandhi Nagar*'));
   assert(has(ADMIN, 'New advertiser: *Bright Minds Tuition*'));
@@ -98,7 +99,7 @@ const ok = (name) => console.log('✔', name);
   ok('main admin can approve own ad from business view');
 
   // ---- shop in Anna Nagar pays Monthly by direct UPI; admin confirms
-  await say(SHOP, 'advertise'); await say(SHOP, 'Style Point Boutique'); await tap(SHOP, 'Shop / service'); await tap(SHOP, 'Fashion'); await loc(SHOP, 13.0860, 80.2110);
+  await say(SHOP, 'advertise'); await tap(SHOP, 'Advertise with us'); await say(SHOP, 'Style Point Boutique'); await tap(SHOP, 'Shop / service'); await tap(SHOP, 'Fashion'); await loc(SHOP, 13.0860, 80.2110);
   assert(has(AREA, 'New advertiser: *Style Point Boutique*'));
   await tap(SHOP, 'Monthly'); assert(txt(last(SHOP)).includes('edeal@okaxis') && txt(last(SHOP)).includes('/pay/'));
   await tap(SHOP, "I've paid"); await say(SHOP, '412345678901');
@@ -116,7 +117,7 @@ const ok = (name) => console.log('✔', name);
   ok('UPI payment claim + admin confirm, area admin approval');
 
   // ---- house owner: property listing
-  await say(OWNER, 'business'); await say(OWNER, 'Owner Kumar'); await tap(OWNER, '🏠 Property'); await loc(OWNER, 13.0395, 80.1990);
+  await say(OWNER, 'business'); await tap(OWNER, 'Advertise with us'); await say(OWNER, 'Owner Kumar'); await tap(OWNER, '🏠 Property'); await loc(OWNER, 13.0395, 80.1990);
   await tap(OWNER, 'free trial'); await tap(OWNER, 'Post a property'); await tap(OWNER, 'Houses for rent');
   await say(OWNER, '2 BHK house near bus stand'); await say(OWNER, '₹12,000/month'); await say(OWNER, 'Ground floor · 900 sq ft · bike parking');
   await bot.handle(OWNER, 'X', 'img:FAKE', true); await tap(OWNER, '15 days'); await tap(OWNER, 'Submit');
@@ -127,7 +128,9 @@ const ok = (name) => console.log('✔', name);
   ok('property listing');
 
   // ---- customer near Gandhi Nagar
-  await say(CUST, 'hi'); assert.equal(msgs(CUST)[0].interactive.type, 'location_request_message');
+  await say(CUST, 'hi'); assert(txt(last(CUST)).includes('What would you like to do?'));
+  await tap(CUST, 'See ads on website'); assert(txt(last(CUST)).includes('/offers'));
+  await tap(CUST, 'See offers near me'); assert(msgs(CUST).some((m) => m.type === 'interactive' && m.interactive.type === 'location_request_message'));
   await loc(CUST, 13.0405, 80.2005); await tap(CUST, '2 km');
   assert(txt(last(CUST)).includes('🎓 1 education') && txt(last(CUST)).includes('🏠 2 homes'), txt(last(CUST)));
   await tap(CUST, 'Tuition, coaching'); await tap(CUST, 'Tuition (1)');
