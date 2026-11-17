@@ -148,6 +148,7 @@ async function waDiagnose() {
     // Same template in English, Tamil and Hindi (one per language; Meta reviews each)
     const found = await g(`${w}/message_templates?name=${cfg.WA_TEMPLATE}&fields=name,status,category,language&limit=50`);
     const have = new Set(((found && found.data) || []).filter((t) => t.name === cfg.WA_TEMPLATE).map((t) => t.language));
+    const ex = ((found && found.data) || []).find((t) => t.name === cfg.WA_TEMPLATE), cat = (ex && ex.category) || 'UTILITY';
     const texts = {
       [cfg.WA_TEMPLATE_LANG]: `${cfg.BRAND} update: {{1}}\n\nReply here to see your menu.`,
       ta: `${cfg.BRAND} அறிவிப்பு: {{1}}\n\nஉங்கள் மெனுவைப் பார்க்க இங்கே பதில் அனுப்பவும்.`,
@@ -156,7 +157,7 @@ async function waDiagnose() {
     out.template = {};
     for (const [lang, text] of Object.entries(texts)) {
       out.template[lang] = have.has(lang) ? 'exists' : await post(`${w}/message_templates`, {
-        name: cfg.WA_TEMPLATE, language: lang, category: 'UTILITY',
+        name: cfg.WA_TEMPLATE, language: lang, category: cat,
         components: [{ type: 'BODY', text, example: { body_text: [['Your order #1023 is ready for pickup at Fresh Mart.']] } }],
       });
     }
