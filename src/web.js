@@ -13,7 +13,7 @@ const botNo = () => { const d = String(process.env.BOT_PHONE || '').replace(/\D/
 const waLink = (text) => (botNo() ? `https://wa.me/${botNo()}?text=${encodeURIComponent(text)}` : '#');
 const fmtKm = (d) => (d < 1 ? `${Math.max(50, Math.round((d * 1000) / 50) * 50)} m` : `${d.toFixed(1)} km`);
 const COL = { Grocery: '#d7f5dd,#a8e6b6', Food: '#ffe7c7,#ffc98a', Fashion: '#fde0ef,#f7b3d6', Electronics: '#dde7ff,#a9c1ff', 'Salon & Spa': '#efe3ff,#cfb3ff', Kids: '#fff6c2,#ffe36b', Tuition: '#e6ecff,#b5c6ff', Coaching: '#ffe4e1,#ffb3a7', Schools: '#e1f5fe,#9fd8f5', Events: '#d9f4ff,#9bdcff', Property: '#e3f1e8,#9fd4b4' };
-const emo = (a) => (a.type === 'property' ? { Rent: '🔑', 'Flat sale': '🏢', 'House sale': '🏡' }[a.sub] || '🏠' : a.type === 'event' ? '🎉' : bot.EMO[a.cat] || '🏷');
+const emo = (a) => (a.type === 'property' ? bot.SUBEMO[a.sub] || '🏠' : a.type === 'event' ? '🎉' : bot.EMO[a.cat] || '🏷');
 const img = (a) => (a.media_id ? `/m/${a.media_id}.jpg` : null);
 
 // What the customer can do on WhatsApp for this ad (text the bot understands)
@@ -47,17 +47,18 @@ function layout(title, body, { og = {}, chips = '' } = {}) {
 <link rel="icon" href="/edeal-icon.svg"><meta property="og:title" content="${esc(og.title || title)}"><meta property="og:description" content="${esc(og.desc || 'Offers, events, classes and homes near you – on WhatsApp')}"><meta property="og:image" content="${esc(ogImg)}"><meta name="description" content="${esc(og.desc || '')}">
 <style>${CSS}</style></head><body><header><div class="top"><a href="/offers" style="display:flex;align-items:center;gap:8px;text-decoration:none"><img src="/edeal-icon.svg" alt=""><b>${esc(cfg.BRAND)}</b></a>
 <a class="wa" href="${waLink('Hi')}">💬 Open on WhatsApp</a></div>${chips ? `<div class="bar">${chips}</div>` : ''}</header><main>${body}</main>
+<script>try{var on=document.querySelector('.chip.on');if(on)on.scrollIntoView({inline:'center',block:'nearest'})}catch(e){}</script>
 <footer>${esc(cfg.BRAND)} · local offers on WhatsApp · <a href="/">About</a> · <a href="/privacy">Privacy</a><br>Own a shop, school or property? <a href="${waLink('business')}">Advertise free for 15 days</a></footer></body></html>`;
 }
 
 function card(a) {
   const bg = img(a) ? `background-image:url('${img(a)}')` : `background:linear-gradient(135deg,${COL[a.cat] || (a.type === 'deal' ? '#e8f0ec,#c5e3d2' : COL.Events)})`;
   return `<a class="card" href="/ad/${a.id}"><div class="ph" style="${bg}">${img(a) ? '' : emo(a)}${a.featured ? '<span class="ft">⭐ Featured</span>' : ''}${a.dist != null ? `<span class="ds">📍 ${fmtKm(a.dist)}</span>` : ''}</div>
-<div class="bd"><b>${esc(a.title)}</b><span class="off">${esc(a.offer)}</span>${a.type === 'property' && a.details ? `<span class="mt">${esc(a.details)}</span>` : ''}<span class="mt">${a.type === 'property' ? '👤' : bot.EDU.includes(a.cat) ? '🎓' : '🏪'} ${esc(a.shop)}${a.type === 'deal' ? ' · ' + esc(a.cat) : ''}</span>
+<div class="bd"><b>${esc(a.title)}</b><span class="off">${esc(a.offer)}</span>${a.type === 'property' ? `<span class="mt">${esc(bot.SUBS[a.sub] || '🏠 Property')}</span>` : ''}${a.type === 'property' && a.details ? `<span class="mt">${esc(a.details)}</span>` : ''}<span class="mt">${a.type === 'property' ? '👤' : bot.EDU.includes(a.cat) ? '🎓' : '🏪'} ${esc(a.shop)}${a.type === 'deal' ? ' · ' + esc(a.cat) : ''}</span>
 ${a.valid_until && a.type !== 'property' ? `<span class="mt">⏳ Till ${bot.istDate(a.valid_until)}</span>` : ''}</div></a>`;
 }
 
-const FILTERS = () => [['', 'All'], ['offers', '🔥 Offers'], ['edu', '🎓 Tuition & schools'], ['events', '🎉 Events'], ['property', '🏠 Rent & property'], ...bot.CATS.filter((c) => !bot.EDU.includes(c)).map((c) => ['cat:' + c, `${bot.EMO[c] || '🏷'} ${c}`]), ...bot.EDU.map((c) => ['cat:' + c, `${bot.EMO[c] || '🏷'} ${c}`]), ...Object.entries(bot.SUBS).map(([k, v]) => ['sub:' + k, v])];
+const FILTERS = () => [['', 'All'], ['offers', '🔥 Offers'], ['edu', '🎓 Tuition & schools'], ['events', '🎉 Events'], ['property', '🏠 Rent & property'], ...bot.CATS.filter((c) => !bot.EDU.includes(c)).map((c) => ['cat:' + c, `${bot.EMO[c] || '🏷'} ${c}`]), ...bot.EDU.map((c) => ['cat:' + c, `${bot.EMO[c] || '🏷'} ${c}`]), ...bot.PROPS.map((k) => ['sub:' + k, bot.SUBS[k]])];
 function applyFilter(list, f) {
   if (!f) return list;
   if (f === 'offers') return list.filter((a) => a.type === 'deal' && !bot.EDU.includes(a.cat));
@@ -86,7 +87,10 @@ r.get('/offers', async (req, res) => {
 <button type="button" onclick="loc()">Use my location</button>${locs.length ? `<select onchange="if(this.value)location=this.value"><option value="">Pick an area…</option>${locs.map((l) => `<option value="/offers?lat=${l.lat}&lng=${l.lng}&r=${R}${f ? '&f=' + encodeURIComponent(f) : ''}">${esc(l.name)}</option>`).join('')}</select>` : ''}
 <form action="/offers" method="get" style="display:flex;gap:6px;flex:1 1 100%;min-width:0">${hasLoc ? `<input type="hidden" name="lat" value="${lat}"><input type="hidden" name="lng" value="${lng}"><input type="hidden" name="r" value="${R}">` : ''}<input name="q" value="${esc(q)}" placeholder="Search: tuition, 2 bhk rent…" style="flex:1;min-width:0;font:inherit;font-size:14px;padding:7px 10px;border-radius:8px;border:1px solid #d1d7db"></form></div>
 <script>function loc(){if(!navigator.geolocation)return alert('Location not available');navigator.geolocation.getCurrentPosition(function(p){location='/offers?lat='+p.coords.latitude.toFixed(5)+'&lng='+p.coords.longitude.toFixed(5)+'&r=${R}${f ? '&f=' + encodeURIComponent(f) : ''}'},function(){alert('Please allow location, or pick an area')})}</script>`;
-  const body = where + (list.length ? `<div class="grid">${list.slice(0, 120).map(card).join('')}</div>` : `<div class="empty">No ads here yet. Try a bigger distance or another area.<br><br><a class="btn" href="${waLink('Hi')}">💬 Get offers on WhatsApp</a></div>`);
+  const isProp = f === 'property' || f.startsWith('sub:');
+  const propBar = isProp ? `<div class="where" style="gap:6px"><b style="width:100%">🏠 Rent &amp; property</b>${[['property', 'All'], ...bot.PROPS.map((k) => ['sub:' + k, bot.SUBS[k]])].map(([k, l]) => `<a href="${esc(base({ f: k }))}" style="text-decoration:none;font-size:13px;padding:6px 11px;border-radius:16px;border:1px solid ${k === f ? '#075e54;background:#075e54;color:#fff' : '#cfd8d2;background:#fff'}">${esc(l)}</a>`).join('')}
+<a href="${waLink('business')}" style="font-size:13px;margin-left:auto;color:#075e54;font-weight:600">+ List your property free</a></div>` : '';
+  const body = where + propBar + (list.length ? `<div class="grid">${list.slice(0, 120).map(card).join('')}</div>` : `<div class="empty">No ads here yet. Try a bigger distance or another area.<br><br><a class="btn" href="${waLink('Hi')}">💬 Get offers on WhatsApp</a>${f === 'property' || f.startsWith('sub:') ? `<br><br>Have a house, flat, plot or PG to rent or sell?<br><a class="btn" href="${waLink('business')}">🏠 List your property free</a>` : ''}</div>`);
   res.send(layout(`${cfg.BRAND} – Offers near you`, body, { chips, og: { title: `${cfg.BRAND} – offers, events, classes & homes near you`, desc: 'Sales, discounts, tuition & schools, local events and houses for rent or sale within 2–5 km.' } }));
 });
 

@@ -16,13 +16,27 @@ const EMO = { Grocery: '🛒', Food: '🍛', Fashion: '👗', Electronics: '📱
 let catsLoaded = false;
 async function loadCats() {
   const rows = await db.all('select * from categories order by sort, id');
-  CATS.length = 0; EDU.length = 0;
-  for (const r of rows) { EMO[r.name] = r.emoji || '🏷'; if (r.active) { CATS.push(r.name); if (r.edu) EDU.push(r.name); } }
+  CATS.length = 0; EDU.length = 0; PROPS.length = 0;
+  for (const o of [SUBS, SUBEMO, RENT, PSAMPLE]) for (const k of Object.keys(o)) delete o[k];
+  for (const r of rows) {
+    const kind = r.kind || (r.edu ? 'edu' : 'shop');
+    if (kind === 'property') {
+      SUBS[r.name] = `${r.emoji || '🏠'} ${r.name}`; SUBEMO[r.name] = r.emoji || '🏠'; RENT[r.name] = !!r.rent; PSAMPLE[r.name] = r.sample || '';
+      if (r.active) PROPS.push(r.name);
+      continue;
+    }
+    EMO[r.name] = r.emoji || '🏷';
+    if (r.active) { CATS.push(r.name); if (kind === 'edu') EDU.push(r.name); }
+  }
   catsLoaded = true;
 }
 const ensureCats = () => (catsLoaded ? null : loadCats());
-const SUBS = { Rent: '🔑 Houses for rent', 'Flat sale': '🏢 Flats for sale', 'House sale': '🏡 Houses for sale' };
-const SUBEMO = { Rent: '🔑', 'Flat sale': '🏢', 'House sale': '🏡' };
+// Property types (admin-managed, group "property"): name -> label / emoji / rent? / example title
+const SUBS = { 'Houses for rent': '🔑 Houses for rent', 'Flats for sale': '🏢 Flats for sale', 'Houses for sale': '🏡 Houses for sale' };
+const SUBEMO = { 'Houses for rent': '🔑', 'Flats for sale': '🏢', 'Houses for sale': '🏡' };
+const PROPS = ['Houses for rent', 'Flats for sale', 'Houses for sale']; // shown (active) property types, in order
+const RENT = { 'Houses for rent': true };
+const PSAMPLE = {};
 const SAMPLE = {
   Tuition: ['Maths & Science tuition, Class 6–10', 'First month 50% off + free demo class'],
   Coaching: ['NEET / JEE weekend batch', '₹2,000 off for early joiners'],
@@ -104,7 +118,7 @@ async function nearby(cust, f = {}) {
     if (f.cat && a.cat !== f.cat) continue;
     if (f.sub && a.sub !== f.sub) continue;
     if (f.notEdu && EDU.includes(a.cat)) continue;
-    if (f.q) { const t = `${a.title} ${a.offer} ${a.shop} ${a.cat} ${a.details || ''}`.toLowerCase(); if (!f.q.split(/\s+/).every((w) => t.includes(w))) continue; }
+    if (f.q) { const t = `${a.title} ${a.offer} ${a.shop} ${a.cat} ${a.sub || ''} ${a.details || ''}`.toLowerCase(); if (!f.q.split(/\s+/).every((w) => t.includes(w))) continue; }
     list.push({ ...a, dist: d });
   }
   return list.sort((x, y) => (y.featured - x.featured) || x.dist - y.dist);
@@ -217,8 +231,12 @@ async function customer(c, v, btn) {
   if ((m = v.match(/^cat:(.+)$/)) && CATS.includes(m[1])) return showList(c, await nearby(c.cust, { type: 'deal', cat: m[1] }), `${EMO[m[1]]} ${m[1]}`);
   if (v === 'props') {
     const all = await nearby(c.cust, { type: 'property' });
-    return c.reply(`🏠 *Rent & property* within ${c.cust.radius_km} km`, Object.keys(SUBS).map((k) => [`${SUBS[k]} (${all.filter((a) => a.sub === k).length})`, 'psub:' + k]));
+    const web = await webLink(c.from, 'property');
+    const cnt = (k) => all.filter((a) => a.sub === k).length;
+    const rows = [...PROPS].sort((x, y) => (cnt(y) > 0) - (cnt(x) > 0)).map((k) => [`${SUBS[k]} (${cnt(k)})`, 'psub:' + k]);
+    return c.reply(`🏠 *Rent & property* within ${c.cust.radius_km} km – ${all.length} listing${all.length === 1 ? '' : 's'}${web ? `\n🌐 With photos: ${web}` : ''}\n\n_Or type what you need, e.g. "2 bhk rent", "plot", "PG"._`, [[`🏠 All properties (${all.length})`, 'pall']].concat(rows));
   }
+  if (v === 'pall') return showList(c, await nearby(c.cust, { type: 'property' }), '🏠 All properties');
   if ((m = v.match(/^psub:(.+)$/)) && SUBS[m[1]]) return showList(c, await nearby(c.cust, { type: 'property', sub: m[1] }), SUBS[m[1]]);
   if (v === 'mine') {
     const rows = await db.all(`select c.*, a.title, a.offer, v.name shop from coupons c join ads a on a.id=c.ad_id join advertisers v on v.id=a.adv_id where c.phone=$1 order by c.created_at desc limit 10`, [c.from]);
@@ -365,11 +383,16 @@ async function advertiser(c, v, btn) {
     }
     if (S.state === 'r_name' && !btn) {
       S.data.reg = { name: v.trim().slice(0, 60) }; S.state = 'r_cat';
-      return c.reply(`*${S.data.reg.name}* – choose your category:`, CATS.map((k) => [`${EMO[k]} ${k}`, 'rcat:' + k]).concat([['🏠 Property owner / broker', 'rcat:Property']]));
+      return c.reply(`*${S.data.reg.name}* – what do you want to advertise?`, [['🛍 Shop / service', 'rkind:shop'], ['🎓 Tuition / school', 'rkind:edu'], ['🏠 Property', 'rcat:Property']]);
     }
-    if ((m = v.match(/^rcat:(.+)$/)) && S.state === 'r_cat') {
+    if ((m = v.match(/^rkind:(shop|edu)$/)) && S.state === 'r_cat') {
+      const list = m[1] === 'edu' ? EDU : CATS.filter((k) => !EDU.includes(k));
+      return c.reply(m[1] === 'edu' ? '🎓 Which one fits you best?' : '🛍 Pick your category (you can post offers in any category later):', list.map((k) => [`${EMO[k]} ${k}`, 'rcat:' + k]).concat([['⬅ Back', 'rback']]));
+    }
+    if (v === 'rback' && S.state === 'r_cat') return c.reply(`*${S.data.reg.name}* – what do you want to advertise?`, [['🛍 Shop / service', 'rkind:shop'], ['🎓 Tuition / school', 'rkind:edu'], ['🏠 Property', 'rcat:Property']]);
+    if ((m = v.match(/^rcat:(.+)$/)) && S.state === 'r_cat' && (CATS.includes(m[1]) || m[1] === 'Property')) {
       S.data.reg.cat = m[1]; S.state = 'r_loc';
-      return wa.askLocation(c.from, `📍 Now share the location of *${S.data.reg.name}* so nearby customers find you.\nTap *Send location* – you can send your current location or move the pin.`);
+      return wa.askLocation(c.from, m[1] === 'Property' ? `📍 Share the location of the property (or your office) so nearby people find it.\nTap *Send location* – you can send your current location or move the pin.` : `📍 Now share the location of *${S.data.reg.name}* so nearby customers find you.\nTap *Send location* – you can send your current location or move the pin.`);
     }
     if ((m = v.match(/^loc:(-?[\d.]+),(-?[\d.]+)\|?(.*)$/)) && S.state === 'r_loc') {
       const lat = +m[1], lng = +m[2], L = await nearestLocality(lat, lng);
@@ -382,7 +405,7 @@ async function advertiser(c, v, btn) {
       return planMenu(c, `✅ *${c.adv.name}* registered${L ? ` in *${L.name}*` : ''}.\n\nPick a plan to start:`);
     }
     if (S.state === 'r_loc') return wa.askLocation(c.from, 'Please tap *Send location* to share your shop location 👇');
-    if (S.state === 'r_cat') return c.reply('Please pick a category from the list 👆');
+    if (S.state === 'r_cat') return c.reply('Please tap one of the options above 👆');
     S.state = null; return advertiser(c, 'biz', true);
   }
 
@@ -456,18 +479,18 @@ async function advertiser(c, v, btn) {
     if (lim === 'noplan') return planMenu(c, '⚠️ You need an active plan to post. Pick one:');
     if (lim === 'limit') { const P = await db.plans(); return c.reply(`Your *${P[a.plan].name}* plan covers 1 ad. Upgrade to post more:`, [[`⭐ Monthly – ${rs(P.month.price)}`, 'plan:month'], [`👑 Premium – ${rs(P.premium.price)}`, 'plan:premium'], ['🏪 Business menu', 'menu']]); }
     S.data.d = { type: m[1] };
-    if (m[1] === 'property') { S.state = 'd_sub'; return c.reply('What are you listing?', Object.keys(SUBS).map((k) => [SUBS[k], 'dsub:' + k])); }
+    if (m[1] === 'property') { S.state = 'd_sub'; return c.reply('🏠 What are you listing?', PROPS.map((k) => [SUBS[k], 'dsub:' + k])); }
     if (m[1] === 'deal') return askAdCat(c, 'Which category is this offer for?');
     S.state = 'd_title';
     return c.reply('✍️ Event name? (e.g. "Free health camp")');
   }
-  if ((m = v.match(/^dsub:(.+)$/)) && S.data.d && SUBS[m[1]]) {
+  if ((m = v.match(/^dsub:(.+)$/)) && S.data.d && PROPS.includes(m[1])) {
     S.data.d.sub = m[1]; S.state = 'd_title';
-    return c.reply(`✍️ Short title – BHK, type, landmark\n_e.g. "${{ Rent: '2 BHK house near bus stand', 'Flat sale': '3 BHK flat, 2nd floor', 'House sale': 'Independent 2 BHK house' }[m[1]]}"_`);
+    return c.reply(`${SUBS[m[1]]}\n✍️ Short title – size, type, landmark\n_e.g. "${PSAMPLE[m[1]] || '2 BHK near bus stand'}"_`);
   }
   if (S.state === 'd_title' && !btn && S.data.d) {
     const d = S.data.d; d.title = v.trim().slice(0, 80); S.state = 'd_offer';
-    if (d.type === 'property') return c.reply(d.sub === 'Rent' ? '💰 Monthly rent? (e.g. "₹10,000/month")' : '💰 Asking price? (e.g. "₹55 lakh, negotiable")');
+    if (d.type === 'property') return c.reply(RENT[d.sub] ? '💰 Monthly rent? (e.g. "₹10,000/month")' : '💰 Asking price? (e.g. "₹55 lakh, negotiable")');
     if (d.type === 'event') return c.reply('📝 Event details – day, time, entry? (e.g. "Saturday 6–8 pm · free entry")');
     return c.reply(`🏷 The offer – discount, price or freebie?\n_e.g. "${(SAMPLE[d.cat || a.cat] || SAMPLE._)[1]}"_`);
   }
@@ -589,6 +612,21 @@ async function confirmPayment(id) {
   return pm;
 }
 
+async function addCategory(c) {
+  const nc = c.sess.data.nc; c.sess.state = null; c.sess.data.nc = null;
+  const sort = ((await db.one('select max(sort) m from categories where kind=$1', [nc.kind])).m || (nc.kind === 'property' ? 190 : 0)) + 10;
+  await db.q('insert into categories(name,emoji,edu,kind,rent,sort) values($1,$2,$3,$4,$5,$6)', [nc.name, nc.emoji, nc.kind === 'edu', nc.kind, !!nc.rent, sort]);
+  await loadCats();
+  const where = { shop: 'customers find it in 🗂 Categories and businesses can post offers in it', edu: 'it shows under 🎓 Tuition, coaching & schools', property: 'it shows under 🏠 Rent & property, and owners can list in it' }[nc.kind];
+  return c.reply(`✅ *${nc.emoji} ${nc.name}* added – ${where}. It's on the website too.`, [['🏷 Categories', 'acats'], ['Menu', 'menu']]);
+}
+// Rename a category everywhere it is used (offers use ads.cat, property listings use ads.sub)
+async function renameCategory(r, name) {
+  await db.q('update categories set name=$2 where id=$1', [r.id, name]);
+  if ((r.kind || 'shop') === 'property') await db.q(`update ads set sub=$2 where type='property' and sub=$1`, [r.name, name]);
+  else { await db.q(`update ads set cat=$2 where cat=$1`, [r.name, name]); await db.q('update advertisers set cat=$2 where cat=$1', [r.name, name]); }
+  await loadCats();
+}
 async function admin(c, v, btn) {
   const S = c.sess, low = v.trim().toLowerCase();
   let m;
@@ -678,50 +716,53 @@ async function admin(c, v, btn) {
     const mine = c.isMain ? total - theirs : locs.reduce((t, l) => t + ((rev.find((x) => x.locality_id === l.id) || { s: 0 }).s * l.share), 0);
     return c.reply(`📈 *Revenue this month*\n\n${rows.join('\n') || 'No payments yet.'}\n\nTotal: *${rs(total)}*\n${c.isMain ? 'Your share' : 'Your share'}: *${rs(mine)}*`, [['Menu', 'menu']]);
   }
-  // ---- categories (main admin): add, rename, emoji, education group, hide/show
+  // ---- categories (main admin): three groups – Shops & services, Education (offers) and Property (rent / sale)
   if (c.isMain && v === 'acats') {
-    const rows = await db.all(`select c.*, (select count(*)::int from ads a where a.cat=c.name and a.status='live') live from categories c order by sort, id`);
-    return c.reply('🏷 *Categories*\n' + rows.map((r) => `${r.emoji} ${r.name}${r.edu ? ' · 🎓' : ''}${r.active ? '' : ' · ⏸ hidden'} – ${r.live} live`).join('\n') + '\n\n_🎓 = shown under Tuition, coaching & schools with a "Book free demo" button._',
-      [['➕ Add category', 'cadd']].concat(rows.map((r) => [`✏️ ${r.name}`, 'ced:' + r.id])));
+    const rows = await db.all(`select c.*, (select count(*)::int from ads a where a.status='live' and ((c.kind='property' and a.type='property' and a.sub=c.name) or (c.kind<>'property' and a.type='deal' and a.cat=c.name))) live from categories c order by sort, id`);
+    const grp = (k) => rows.filter((r) => (r.kind || 'shop') === k).map((r) => `${r.emoji} ${r.name}${k === 'property' ? (r.rent ? ' · rent' : ' · sale') : ''}${r.active ? '' : ' · ⏸ hidden'} – ${r.live} live`).join('\n') || '—';
+    return c.reply(`🏷 *Categories*\n\n🛍 *Shops & services* (offers)\n${grp('shop')}\n\n🎓 *Education* (offers + "Book free demo")\n${grp('edu')}\n\n🏠 *Property* (rent / sale listings)\n${grp('property')}`,
+      [['➕ Add category', 'cadd']].concat(['shop', 'edu', 'property'].flatMap((k) => rows.filter((r) => (r.kind || 'shop') === k)).map((r) => [`✏️ ${r.name}`, 'ced:' + r.id])));
   }
-  if (c.isMain && v === 'cadd') { S.state = 'c_name'; S.data.nc = {}; return c.reply('🏷 Name of the new category? (e.g. Medical, Hardware, Mobile repair)', [['❌ Cancel', 'acats']]); }
+  if (c.isMain && v === 'cadd') { S.state = 'c_name'; S.data.nc = {}; return c.reply('🏷 Name of the new category?\nExamples: *Medical*, *Hardware*, *Music classes*, *Commercial land for sale*', [['❌ Cancel', 'acats']]); }
   if (c.isMain && S.state === 'c_name' && !btn) {
-    const name = v.trim().replace(/\s+/g, ' ').slice(0, 24);
+    const name = v.trim().replace(/\s+/g, ' ').slice(0, 28);
     if (name.length < 2) return c.reply('Please send a name with at least 2 letters.');
     if (await db.one('select 1 from categories where lower(name)=lower($1)', [name]) || ['events', 'property'].includes(name.toLowerCase())) return c.reply(`*${name}* already exists. Send another name.`, [['❌ Cancel', 'acats']]);
     S.data.nc = { name }; S.state = 'c_emoji';
-    return c.reply(`Send one emoji for *${name}* (e.g. 💊 🔧 🍰), or tap Skip.`, [['Skip', 'cemo:skip']]);
+    return c.reply(`Send one emoji for *${name}* (e.g. 💊 🔧 🎸 🏭), or tap Skip.`, [['Skip', 'cemo:skip']]);
   }
   if (c.isMain && S.state === 'c_emoji' && (v === 'cemo:skip' || !btn)) {
     S.data.nc.emoji = v === 'cemo:skip' ? '🏷' : [...v.trim()].slice(0, 2).join('') || '🏷'; S.state = 'c_group';
-    return c.reply(`Where should *${S.data.nc.emoji} ${S.data.nc.name}* appear?`, [['🛍 Shops & services', 'cgrp:shop'], ['🎓 Education', 'cgrp:edu']]);
+    return c.reply(`Which group is *${S.data.nc.emoji} ${S.data.nc.name}*?\n🛍 *Shops & services* – offers with coupon codes\n🎓 *Education* – offers with "Book free demo"\n🏠 *Property* – listings with "Contact owner" and "Book a visit"`, [['🛍 Shops & services', 'cgrp:shop'], ['🎓 Education', 'cgrp:edu'], ['🏠 Property', 'cgrp:property']]);
   }
-  if (c.isMain && S.state === 'c_group' && (m = v.match(/^cgrp:(shop|edu)$/))) {
-    const nc = S.data.nc; S.state = null; S.data.nc = null;
-    const sort = ((await db.one('select max(sort) m from categories')).m || 0) + 10;
-    await db.q('insert into categories(name,emoji,edu,sort) values($1,$2,$3,$4)', [nc.name, nc.emoji, m[1] === 'edu', sort]);
-    await loadCats();
-    return c.reply(`✅ *${nc.emoji} ${nc.name}* added. Businesses can pick it now, and it shows in the bot and on the website.`, [['🏷 Categories', 'acats'], ['Menu', 'menu']]);
+  if (c.isMain && S.state === 'c_group' && (m = v.match(/^cgrp:(shop|edu|property)$/))) {
+    S.data.nc.kind = m[1];
+    if (m[1] === 'property') { S.state = 'c_rent'; return c.reply(`Is *${S.data.nc.name}* for rent or for sale?\n(Rent asks owners for "monthly rent", sale asks for "price".)`, [['🔑 For rent', 'crnt:1'], ['🏷 For sale', 'crnt:0']]); }
+    return addCategory(c);
   }
+  if (c.isMain && S.state === 'c_rent' && (m = v.match(/^crnt:(0|1)$/))) { S.data.nc.rent = m[1] === '1'; return addCategory(c); }
   if (c.isMain && (m = v.match(/^ced:(\d+)$/))) {
     const r = await db.one('select * from categories where id=$1', [+m[1]]); if (!r) return admin(c, 'acats', true);
-    const n = (await db.one('select count(*)::int n from ads where cat=$1', [r.name])).n;
-    return c.reply(`${r.emoji} *${r.name}*\nGroup: ${r.edu ? '🎓 Education' : '🛍 Shops & services'} · ${r.active ? 'Shown' : '⏸ Hidden'} · ${n} ads`,
-      [['✏️ Rename', 'cren:' + r.id], ['😀 Change emoji', 'cemj:' + r.id], [r.edu ? '🛍 Move to Shops' : '🎓 Move to Education', 'cgsw:' + r.id], [r.active ? '⏸ Hide' : '▶ Show', 'chid:' + r.id], ['🏷 Categories', 'acats']]);
+    const kind = r.kind || 'shop';
+    const n = (await db.one(kind === 'property' ? `select count(*)::int n from ads where type='property' and sub=$1` : `select count(*)::int n from ads where type='deal' and cat=$1`, [r.name])).n;
+    const b = [['✏️ Rename', 'cren:' + r.id], ['😀 Change emoji', 'cemj:' + r.id]];
+    if (kind === 'property') b.push([r.rent ? '🏷 Make it "for sale"' : '🔑 Make it "for rent"', 'crs:' + r.id]);
+    else b.push([kind === 'edu' ? '🛍 Move to Shops' : '🎓 Move to Education', 'cgsw:' + r.id]);
+    b.push([r.active ? '⏸ Hide' : '▶ Show', 'chid:' + r.id], ['🏷 Categories', 'acats']);
+    return c.reply(`${r.emoji} *${r.name}*\nGroup: ${{ shop: '🛍 Shops & services', edu: '🎓 Education', property: r.rent ? '🏠 Property · for rent' : '🏠 Property · for sale' }[kind]} · ${r.active ? 'Shown' : '⏸ Hidden'} · ${n} ads`, b);
   }
   if (c.isMain && (m = v.match(/^(cren|cemj):(\d+)$/))) { S.state = m[1] === 'cren' ? 'c_ren' : 'c_emj'; S.data.cid = +m[2]; return c.reply(m[1] === 'cren' ? 'Send the new name:' : 'Send the new emoji:', [['❌ Cancel', 'acats']]); }
   if (c.isMain && S.state === 'c_ren' && !btn) {
-    const r = await db.one('select * from categories where id=$1', [S.data.cid]), name = v.trim().replace(/\s+/g, ' ').slice(0, 24); S.state = null;
+    const r = await db.one('select * from categories where id=$1', [S.data.cid]), name = v.trim().replace(/\s+/g, ' ').slice(0, 28); S.state = null;
     if (!r || name.length < 2) return admin(c, 'acats', true);
     if (await db.one('select 1 from categories where lower(name)=lower($1) and id<>$2', [name, r.id])) return c.reply(`*${name}* already exists.`, [['🏷 Categories', 'acats']]);
-    await db.q('update categories set name=$2 where id=$1', [r.id, name]);
-    await db.q('update ads set cat=$2 where cat=$1', [r.name, name]); await db.q('update advertisers set cat=$2 where cat=$1', [r.name, name]);
-    await loadCats(); return c.reply(`✅ Renamed *${r.name}* → *${name}* (ads and businesses updated).`, [['🏷 Categories', 'acats']]);
+    await renameCategory(r, name);
+    return c.reply(`✅ Renamed *${r.name}* → *${name}* (ads and businesses updated).`, [['🏷 Categories', 'acats']]);
   }
   if (c.isMain && S.state === 'c_emj' && !btn) { S.state = null; await db.q('update categories set emoji=$2 where id=$1', [S.data.cid, [...v.trim()].slice(0, 2).join('') || '🏷']); await loadCats(); return admin(c, 'ced:' + S.data.cid, true); }
-  if (c.isMain && (m = v.match(/^(cgsw|chid):(\d+)$/))) {
-    await db.q(m[1] === 'cgsw' ? 'update categories set edu=not edu where id=$1' : 'update categories set active=not active where id=$1', [+m[2]]);
-    await loadCats(); return admin(c, 'ced:' + m[2], true);
+  if (c.isMain && (m = v.match(/^(cgsw|chid|crs):(\d+)$/))) {
+    const sql = { cgsw: `update categories set kind = case when kind='edu' then 'shop' else 'edu' end, edu = (kind<>'edu') where id=$1 and kind<>'property'`, chid: 'update categories set active=not active where id=$1', crs: `update categories set rent=not rent where id=$1 and kind='property'` }[m[1]];
+    await db.q(sql, [+m[2]]); await loadCats(); return admin(c, 'ced:' + m[2], true);
   }
   if (c.isMain && v === 'adigest') { const n = await require('./jobs').runDigest(true); return c.reply(`📢 Daily offers sent to *${n}* subscribers.`, [['Menu', 'menu']]); }
   if (v === 'aweb') return c.reply(`🌐 Web admin panel: ${cfg.PUBLIC_URL || cfg.WEBSITE}/panel\nLog in with this WhatsApp number – you'll get a code here.`, [['Menu', 'menu']]);
@@ -785,4 +826,4 @@ async function handle(from, name, v, btn) {
   }
 }
 
-module.exports = { loadCats, ensureCats, webLink, handle, notify, notifyAdmins, approveAd, rejectAd, confirmPayment, activatePlan, welcomeAreaAdmin, nearby, cardText, imgOf, rs, km, istDate, planActive, REASONS, CATS, EMO, EDU, SUBS };
+module.exports = { renameCategory, PROPS, SUBEMO, RENT, loadCats, ensureCats, webLink, handle, notify, notifyAdmins, approveAd, rejectAd, confirmPayment, activatePlan, welcomeAreaAdmin, nearby, cardText, imgOf, rs, km, istDate, planActive, REASONS, CATS, EMO, EDU, SUBS };

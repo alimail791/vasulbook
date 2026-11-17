@@ -26,6 +26,7 @@ const txt = (m) => !m ? '' : m.type === 'text' ? m.text.body : m.type === 'image
 const opts = (m) => !m || m.type !== 'interactive' ? [] : m.interactive.type === 'button' ? m.interactive.action.buttons.map((b) => [b.reply.title, b.reply.id]) : m.interactive.type === 'list' ? m.interactive.action.sections[0].rows.map((r) => [r.description || r.title, r.id]) : [];
 const find = (p, label) => { for (let i = msgs(p).length - 1; i >= 0; i--) { const o = opts(msgs(p)[i]).find(([l]) => l.includes(label)); if (o) return o[1]; } throw new Error(`no button "${label}" for ${p}`); };
 const say = (p, t) => bot.handle(p, 'User' + p.slice(-1), t, false);
+const tapPaged = async (p, label) => { for (let i = 0; i < 6; i++) { const o = opts(last(p)); const hit = o.find(([l]) => l.includes(label)); if (hit) return bot.handle(p, 'X', hit[1], true); const more = o.find(([l]) => l.includes('More options')); if (!more) break; await bot.handle(p, 'X', more[1], true); } throw new Error('no paged button ' + label); };
 const tap = (p, label) => bot.handle(p, 'User' + p.slice(-1), find(p, label), true);
 const loc = (p, lat, lng, label = '') => bot.handle(p, 'X', `loc:${lat},${lng}|${label}`, true);
 const has = (p, s) => msgs(p).some((m) => txt(m).includes(s));
@@ -47,16 +48,21 @@ const ok = (name) => console.log('✔', name);
   await bot.handle('916383087827', 'EMart', 'Hi', false);
   assert.equal(msgs('916383087827').length, 0, 'no reply to EMart bot');
   // ---- admin adds a category on WhatsApp
-  await say(ADMIN, 'menu'); await tap(ADMIN, 'Categories'); assert(txt(last(ADMIN)).includes('📖 Tuition · 🎓'));
+  await say(ADMIN, 'menu'); await tap(ADMIN, 'Categories'); assert(txt(last(ADMIN)).includes('🎓 *Education*') && txt(last(ADMIN)).includes('📖 Tuition –'));
   await tap(ADMIN, 'Add category'); await say(ADMIN, 'Medical'); await say(ADMIN, '💊'); await tap(ADMIN, 'Shops & services');
   assert(txt(last(ADMIN)).includes('💊 Medical* added')); assert(bot.CATS.includes('Medical'));
-  await tap(ADMIN, 'Categories'); await tap(ADMIN, 'More options'); await tap(ADMIN, 'Medical'); await tap(ADMIN, 'Hide'); assert(!bot.CATS.includes('Medical'));
+  await tap(ADMIN, 'Categories'); await tapPaged(ADMIN, 'Medical'); await tap(ADMIN, 'Hide'); assert(!bot.CATS.includes('Medical'));
   await tap(ADMIN, 'Show'); assert(bot.CATS.includes('Medical'));
+  await say(ADMIN, 'menu'); await tap(ADMIN, 'Categories');
+  assert(txt(last(ADMIN)).includes('🏠 *Property*') && txt(last(ADMIN)).includes('🔑 Houses for rent · rent') && txt(last(ADMIN)).includes('📐 Plots for sale · sale'));
+  await tap(ADMIN, 'Add category'); await say(ADMIN, 'Commercial land'); await say(ADMIN, '🏭'); await tap(ADMIN, 'Property'); await tap(ADMIN, 'For sale');
+  assert(txt(last(ADMIN)).includes('Commercial land* added') && bot.PROPS.includes('Commercial land') && !bot.RENT['Commercial land']);
+  assert(!bot.CATS.includes('Commercial land'), 'property types are not offer categories');
   ok('admin adds / hides / shows a category on WhatsApp');
 
   // ---- tutor registers in Gandhi Nagar, takes free trial, posts an offer
   await say(TUTOR, 'business'); assert(txt(last(TUTOR)).includes('business name'));
-  await say(TUTOR, 'Bright Minds Tuition'); await tap(TUTOR, 'Tuition'); await loc(TUTOR, 13.0410, 80.2030, 'Bright Minds, 4th St');
+  await say(TUTOR, 'Bright Minds Tuition'); assert(txt(last(TUTOR)).includes('what do you want to advertise')); await tap(TUTOR, 'Tuition / school'); await tap(TUTOR, '📖 Tuition'); await loc(TUTOR, 13.0410, 80.2030, 'Bright Minds, 4th St');
   assert(txt(last(TUTOR)).includes('registered in *Gandhi Nagar*'));
   assert(has(ADMIN, 'New advertiser: *Bright Minds Tuition*'));
   await tap(TUTOR, 'free trial'); assert(has(TUTOR, 'Free trial started'));
@@ -72,15 +78,15 @@ const ok = (name) => console.log('✔', name);
   ok('approve on WhatsApp');
   // ---- advertiser changes business category, moves running offers
   await say(TUTOR, 'menu'); assert(txt(last(TUTOR)).includes('🏷 Tuition'));
-  await tap(TUTOR, 'Category: Tuition'); await tap(TUTOR, 'Coaching');
+  await tap(TUTOR, 'Category: Tuition'); await tapPaged(TUTOR, 'Coaching');
   assert(txt(last(TUTOR)).includes('Move it to Coaching'));
   await tap(TUTOR, 'Yes, move them'); assert(has(TUTOR, '1 offer moved to *Coaching*'));
   assert.equal((await db.one(`select cat from ads where title like 'Maths%'`)).cat, 'Coaching');
-  await say(TUTOR, 'menu'); await tap(TUTOR, 'Category: Coaching'); await tap(TUTOR, 'Tuition'); await tap(TUTOR, 'Yes, move them');
+  await say(TUTOR, 'menu'); await tap(TUTOR, 'Category: Coaching'); await tapPaged(TUTOR, 'Tuition'); await tap(TUTOR, 'Yes, move them');
   assert.equal((await db.one(`select cat from ads where title like 'Maths%'`)).cat, 'Tuition');
   ok('advertiser changes category (and moves running offers)');
   // ---- main admin posts their own ad from business view and approves it from there
-  await say(ADMIN, '#business'); await say(ADMIN, 'Akbar Rentals'); await tap(ADMIN, 'More options'); await tap(ADMIN, 'Property owner'); await loc(ADMIN, 13.0402, 80.2002);
+  await say(ADMIN, '#business'); await say(ADMIN, 'Akbar Rentals'); await tap(ADMIN, '🏠 Property'); await loc(ADMIN, 13.0402, 80.2002);
   await tap(ADMIN, 'free trial'); await tap(ADMIN, 'Post a property'); await tap(ADMIN, 'Houses for rent');
   await say(ADMIN, '1 BHK near market'); await say(ADMIN, '₹7,000/month'); await say(ADMIN, 'First floor · 600 sq ft');
   await tap(ADMIN, 'Skip photo'); await tap(ADMIN, '7 days'); await tap(ADMIN, 'Submit');
@@ -91,7 +97,7 @@ const ok = (name) => console.log('✔', name);
   ok('main admin can approve own ad from business view');
 
   // ---- shop in Anna Nagar pays Monthly by direct UPI; admin confirms
-  await say(SHOP, 'advertise'); await say(SHOP, 'Style Point Boutique'); await tap(SHOP, 'Fashion'); await loc(SHOP, 13.0860, 80.2110);
+  await say(SHOP, 'advertise'); await say(SHOP, 'Style Point Boutique'); await tap(SHOP, 'Shop / service'); await tap(SHOP, 'Fashion'); await loc(SHOP, 13.0860, 80.2110);
   assert(has(AREA, 'New advertiser: *Style Point Boutique*'));
   await tap(SHOP, 'Monthly'); assert(txt(last(SHOP)).includes('edeal@okaxis') && txt(last(SHOP)).includes('/pay/'));
   await tap(SHOP, "I've paid"); await say(SHOP, '412345678901');
@@ -109,13 +115,14 @@ const ok = (name) => console.log('✔', name);
   ok('UPI payment claim + admin confirm, area admin approval');
 
   // ---- house owner: property listing
-  await say(OWNER, 'business'); await say(OWNER, 'Owner Kumar'); await tap(OWNER, 'More options'); await tap(OWNER, 'Property owner'); await loc(OWNER, 13.0395, 80.1990);
+  await say(OWNER, 'business'); await say(OWNER, 'Owner Kumar'); await tap(OWNER, '🏠 Property'); await loc(OWNER, 13.0395, 80.1990);
   await tap(OWNER, 'free trial'); await tap(OWNER, 'Post a property'); await tap(OWNER, 'Houses for rent');
   await say(OWNER, '2 BHK house near bus stand'); await say(OWNER, '₹12,000/month'); await say(OWNER, 'Ground floor · 900 sq ft · bike parking');
   await bot.handle(OWNER, 'X', 'img:FAKE', true); await tap(OWNER, '15 days'); await tap(OWNER, 'Submit');
   await tap(ADMIN, 'Approve');
   // property owner can also post an offer in any category (trial = 1 ad, so check the menu + category list only)
   await say(OWNER, 'menu'); assert(opts(last(OWNER)).some(([l]) => l.includes('Post an offer')) && opts(last(OWNER)).some(([l]) => l.includes('Post an event')));
+  { const seen = msgs(OWNER).flatMap((m) => opts(m).map(([l]) => l)).join('|'); assert(seen.includes('Commercial land') && seen.includes('PG & hostels') && seen.includes('Plots for sale'), 'owner sees all property types'); }
   ok('property listing');
 
   // ---- customer near Gandhi Nagar
@@ -135,6 +142,9 @@ const ok = (name) => console.log('✔', name);
   await tap(CUST, 'Menu'); await tap(CUST, "Today's offers"); assert(!has(CUST, 'Buy 2 get 1'));
   await say(CUST, 'tuition'); assert(txt(last(CUST)).includes("That’s all") || has(CUST, 'Results for'));
   await say(CUST, 'menu'); await tap(CUST, 'Daily 9 AM'); assert(txt(last(CUST)).includes('Every morning'));
+  await say(CUST, 'menu'); await tap(CUST, 'Rent & property'); assert(txt(last(CUST)).includes('/u/') && opts(last(CUST)).some(([l]) => l.includes('All properties (2)')));
+  await tap(CUST, 'All properties'); assert(has(CUST, '1 BHK near market'));
+  await say(CUST, 'houses for rent'); assert(has(CUST, 'Results for “houses for rent”'), 'search matches property type');
   ok('customer: location, education, demo lead, coupon + redeem, property visit, search, alerts');
 
   // ---- jobs: digest, reminders, expiry
@@ -163,6 +173,14 @@ const ok = (name) => console.log('✔', name);
   r = await fetch(`${base}/panel/categories/${med.id}?key=testkey`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'name=Pharmacy&emoji=%F0%9F%92%8A&edu=0&active=1&sort=15', redirect: 'manual' });
   assert(bot.CATS.includes('Pharmacy') && !bot.CATS.includes('Medical'));
   r = await fetch(`${base}/offers`); { const hh = await r.text(); assert(hh.includes('Pharmacy') && hh.includes('Hardware'), 'website chips'); }
+  { const hh = await (await fetch(`${base}/panel/categories?key=testkey`)).text(); assert(hh.includes('🏠 Property') && hh.includes('Plots for sale') && hh.includes('For rent – asks monthly rent')); }
+  r = await fetch(`${base}/panel/categories?key=testkey`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'name=Godowns+for+rent&emoji=%F0%9F%8F%AD&kind=property&rent=1', redirect: 'manual' });
+  assert(bot.PROPS.includes('Godowns for rent') && bot.RENT['Godowns for rent']);
+  const hfr = await db.one(`select id from categories where name='Houses for rent'`);
+  r = await fetch(`${base}/panel/categories/${hfr.id}?key=testkey`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'name=Homes+for+rent&emoji=%F0%9F%94%91&rent=1&sample=2+BHK&active=1&sort=200', redirect: 'manual' });
+  assert.equal((await db.one(`select count(*)::int n from ads where sub='Homes for rent'`)).n, 2, 'rename moves property ads');
+  assert.equal((await db.one(`select kind from categories where id=$1`, [hfr.id])).kind, 'property', 'stays property');
+  { const hh = await (await fetch(`${base}/offers?f=property`)).text(); assert(hh.includes('Homes for rent') && hh.includes('Godowns for rent') && hh.includes('2 BHK house near bus stand')); }
   const tutorId = (await db.advertisers.byPhone(TUTOR)).id;
   r = await fetch(`${base}/panel/advertisers/${tutorId}/cat?key=testkey`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'cat=Schools', redirect: 'manual' });
   assert.equal(r.status, 302); assert.equal((await db.advertisers.byPhone(TUTOR)).cat, 'Schools');
@@ -195,6 +213,13 @@ const ok = (name) => console.log('✔', name);
   await say(ADMIN, `Offer #${shopAd}`); assert(/Your code/.test(txt(last(ADMIN))), 'admin can also use web links');
   ok('website offers page, personal link, ad page, share link, WhatsApp deep links');
 
+  // ---- migration: old fixed property types (Rent / Flat sale / House sale) move to the new categories
+  await db.q(`delete from categories where kind='property'`);
+  await db.q(`update ads set sub='Rent' where sub='Homes for rent'`);
+  await db.init(); await bot.loadCats();
+  assert.equal((await db.one(`select count(*)::int n from ads where sub='Houses for rent'`)).n, 2, 'old Rent ads migrated');
+  assert.equal(bot.PROPS.length, 6);
+  ok('property group: admin adds types (WhatsApp + panel), rent/sale, rename, website filters, search, migration');
   console.log('\nAll EDeal tests passed ✅');
   await db.pool.end();
 })().catch(async (e) => { console.error('❌', e); await db.pool.end(); process.exit(1); });

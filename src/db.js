@@ -45,13 +45,33 @@ async function init() {
   create table if not exists otps(phone text primary key, code_hash text, tries int default 0, expires_at timestamptz, created_at timestamptz default now());
   alter table customers add column if not exists web_token text unique;
   create table if not exists categories(id serial primary key, name text unique not null, emoji text default '🏷', edu boolean default false, active boolean default true, sort int default 100, created_at timestamptz default now());
+  -- group of a category: 'shop' (offers), 'edu' (education offers), 'property' (rent / sale listings)
+  alter table categories add column if not exists kind text;
+  alter table categories add column if not exists rent boolean default false;
+  alter table categories add column if not exists sample text;
+  update categories set kind = case when edu then 'edu' else 'shop' end where kind is null;
   create index if not exists ads_status on ads(status);
   create index if not exists ads_adv on ads(adv_id);
   create index if not exists leads_ad on leads(ad_id);
   `);
   if (!(await one('select 1 from categories limit 1'))) {
     const def = [['Grocery', '🛒', false], ['Food', '🍛', false], ['Fashion', '👗', false], ['Electronics', '📱', false], ['Salon & Spa', '💇', false], ['Kids', '🧸', false], ['Tuition', '📖', true], ['Coaching', '🎯', true], ['Schools', '🏫', true]];
-    for (const [i, [n, e, edu]] of def.entries()) await q('insert into categories(name,emoji,edu,sort) values($1,$2,$3,$4) on conflict do nothing', [n, e, edu, (i + 1) * 10]);
+    for (const [i, [n, e, edu]] of def.entries()) await q('insert into categories(name,emoji,edu,kind,sort) values($1,$2,$3,$4,$5) on conflict do nothing', [n, e, edu, edu ? 'edu' : 'shop', (i + 1) * 10]);
+  }
+  // Property types (managed like categories, group "property"). Added once; old fixed types are renamed.
+  if (!(await one(`select 1 from categories where kind='property' limit 1`))) {
+    const props = [
+      ['Houses for rent', '🔑', true, '2 BHK house near bus stand', 'Rent'],
+      ['Flats for sale', '🏢', false, '3 BHK flat, 2nd floor', 'Flat sale'],
+      ['Houses for sale', '🏡', false, 'Independent 2 BHK house', 'House sale'],
+      ['Plots for sale', '📐', false, '1,200 sq ft plot near main road', null],
+      ['Shops & offices for rent', '🏬', true, 'Shop space on main road, 300 sq ft', null],
+      ['PG & hostels', '🛏', true, 'Ladies PG near college, food included', null],
+    ];
+    for (const [i, [n, e, rent, sample, old]] of props.entries()) {
+      await q(`insert into categories(name,emoji,kind,rent,sample,sort) values($1,$2,'property',$3,$4,$5) on conflict (name) do update set kind='property', rent=$3, sample=$4`, [n, e, rent, sample, 200 + i * 10]);
+      if (old) await q('update ads set sub=$2 where sub=$1', [old, n]);
+    }
   }
 }
 
