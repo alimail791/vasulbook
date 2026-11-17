@@ -181,11 +181,6 @@ app.get('/admin/wa-check', async (req, res) => {
 
 async function start() {
   await db.init();
-  if (cfg.IGNORE_PHONES.length) {
-    const del = await db.q('delete from advertisers where phone = any($1)', [cfg.IGNORE_PHONES]);
-    await db.q('delete from customers where phone = any($1)', [cfg.IGNORE_PHONES]); await db.q('delete from sessions where phone = any($1)', [cfg.IGNORE_PHONES]);
-    if (del.rowCount) console.log('removed advertisers from ignored numbers:', del.rowCount);
-  }
   waDiagnose().then((d) => console.log('WA check:', JSON.stringify(d))).catch((e) => console.error('WA check failed', e.message));
   jobs.start();
   return app.listen(cfg.PORT, () => console.log(`${cfg.BRAND} listening on ${cfg.PORT} · admins ${cfg.ADMINS.join(',')}`));

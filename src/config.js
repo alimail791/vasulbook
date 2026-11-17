@@ -26,8 +26,9 @@ module.exports = {
 
   // Main admin(s): comma-separated personal WhatsApp numbers (not the bot number)
   ADMINS: (process.env.ADMIN_PHONES || '').split(',').map(norm).filter(Boolean),
-  // Other bots' numbers (Raise Academy WA-bot, EMart): never reply to them, to avoid bot-to-bot loops
-  IGNORE_PHONES: (process.env.IGNORE_PHONES || '9443424064,6383087827').split(',').map(norm).filter(Boolean),
+  // Numbers that are only bots (e.g. EMart's bot): never reply to them, to avoid bot-to-bot loops.
+  // Do NOT add numbers people also use by hand (like Raise Academy's 9443424064).
+  IGNORE_PHONES: (process.env.IGNORE_PHONES || '6383087827').split(',').map(norm).filter(Boolean),
   ADMIN_KEY: process.env.ADMIN_KEY || 'change-me',
   // Your UPI ID: advertisers can pay directly; you confirm with one tap
   ADMIN_UPI: process.env.ADMIN_UPI || '',

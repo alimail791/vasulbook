@@ -44,8 +44,8 @@ const ok = (name) => console.log('✔', name);
   assert(has(AREA, 'area admin* for *Anna Nagar'));
   ok('localities + area admin via WhatsApp');
   // ---- other bots' numbers are ignored (no bot-to-bot loops)
-  await bot.handle('919443424064', 'Raise Academy', '📊 Leads report · Last 24h: 0 sent', false);
-  assert.equal(msgs('919443424064').length, 0, 'no reply to Raise Academy bot');
+  await bot.handle('916383087827', 'EMart', 'Hi', false);
+  assert.equal(msgs('916383087827').length, 0, 'no reply to EMart bot');
   // ---- admin adds a category on WhatsApp
   await say(ADMIN, 'menu'); await tap(ADMIN, 'Categories'); assert(txt(last(ADMIN)).includes('📖 Tuition · 🎓'));
   await tap(ADMIN, 'Add category'); await say(ADMIN, 'Medical'); await say(ADMIN, '💊'); await tap(ADMIN, 'Shops & services');
