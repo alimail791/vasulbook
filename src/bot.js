@@ -349,6 +349,23 @@ async function activatePlan(adv, planKey, payment) {
   }
   return adv;
 }
+// The question for the field the advertiser is typing right now (asked again when they tap an old button or reply "ok")
+function fieldPrompt(c) {
+  const S = c.sess, d = S.data.d || {}, cat = d.cat || (c.adv && c.adv.cat);
+  if (S.state === 'd_title') {
+    if (d.type === 'property') return `✍️ Short title – size, type, landmark\n_e.g. "${PSAMPLE[d.sub] || '2 BHK near bus stand'}"_`;
+    if (d.type === 'event') return '✍️ Event name? (e.g. "Free health camp")';
+    return `✍️ Headline – what are you offering?\n_e.g. "${(SAMPLE[cat] || SAMPLE._)[0]}"_`;
+  }
+  if (S.state === 'd_offer') {
+    if (d.type === 'property') return RENT[d.sub] ? '💰 Monthly rent? (e.g. "₹10,000/month")' : '💰 Asking price? (e.g. "₹55 lakh, negotiable")';
+    if (d.type === 'event') return '📝 Event details – day, time, entry? (e.g. "Saturday 6–8 pm · free entry")';
+    return `🏷 The offer – discount, price or freebie?\n_e.g. "${(SAMPLE[cat] || SAMPLE._)[1]}"_`;
+  }
+  if (S.state === 'd_details') return '📝 Details – size, floor, furnishing, parking, advance…';
+  return '';
+}
+const NOT_ANSWER = /^(ok+|okay|k|kk|yes|yeah|no|hi|hello|hmm+|thanks?|thank you|done|sari|sure|fine|👍|🙏|\.+)$/i;
 async function postLimit(adv) {
   const P = await db.plans();
   if (!planActive(adv)) return 'noplan';
@@ -517,6 +534,9 @@ async function advertiser(c, v, btn) {
     S.data.d.sub = m[1]; S.state = 'd_title';
     return c.reply(`${SUBS[m[1]]}\n✍️ Short title – size, type, landmark\n_e.g. "${PSAMPLE[m[1]] || '2 BHK near bus stand'}"_`);
   }
+  if (['d_title', 'd_offer', 'd_details'].includes(S.state) && !btn && S.data.d && (NOT_ANSWER.test(v.trim()) || v.trim().length < 3)) {
+    return c.reply(`🙂 I need the actual text for your ad here.\n\n${fieldPrompt(c)}`, [['❌ Cancel', 'menu']]);
+  }
   if (S.state === 'd_title' && !btn && S.data.d) {
     const d = S.data.d; d.title = v.trim().slice(0, 80); S.state = 'd_offer';
     if (d.type === 'property') return c.reply(RENT[d.sub] ? '💰 Monthly rent? (e.g. "₹10,000/month")' : '💰 Asking price? (e.g. "₹55 lakh, negotiable")');
@@ -587,7 +607,7 @@ async function advertiser(c, v, btn) {
     await notify(k.phone, `✅ Code *${code}* used at *${a.name}*. Enjoy! 🙏`);
     return c.reply(`✅ *Valid!* Give the customer:\n*${k.offer}*`, [['✅ Redeem another', 'redeem'], ['🏪 Business menu', 'menu']]);
   }
-  if (S.state === 'd_title' || S.state === 'd_offer' || S.state === 'd_details') return c.reply('Please type your answer 👆');
+  if (S.state === 'd_title' || S.state === 'd_offer' || S.state === 'd_details') return c.reply(`That button is from an earlier message. We're in the middle of a new ad – please *type* this:\n\n${fieldPrompt(c)}`, [['❌ Cancel', 'menu']]);
   return advMenu(c);
 }
 
