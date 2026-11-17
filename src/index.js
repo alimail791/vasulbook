@@ -161,6 +161,8 @@ async function waDiagnose() {
     const ensure = async (name, category, texts, example) => {
       const found = await g(`${w}/message_templates?name=${name}&fields=name,status,category,language&limit=50`);
       const have = new Set(((found && found.data) || []).filter((t) => t.name === name).map((t) => t.language));
+      const ex = ((found && found.data) || []).find((t) => t.name === name);
+      if (ex && ex.category) category = ex.category; // new languages must match the existing template's category
       const res = {};
       for (const [lang, text] of Object.entries(texts)) {
         const code = lang === 'en' ? cfg.WA_TEMPLATE_LANG : lang;
