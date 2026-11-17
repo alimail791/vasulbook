@@ -740,6 +740,7 @@ async function saveMedia(waId) {
 
 /* ================================================================== ROUTER */
 async function handle(from, name, v, btn) {
+  if (cfg.IGNORE_PHONES.includes(from)) return;
   await ensureCats();
   const sess = await db.sessions.get(from);
   sess.data = sess.data || {};

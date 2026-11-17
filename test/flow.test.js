@@ -43,6 +43,9 @@ const ok = (name) => console.log('✔', name);
   await say(ADMIN, 'menu'); await tap(ADMIN, 'Add locality'); await say(ADMIN, 'Anna Nagar'); await say(ADMIN, '90000 00002'); await loc(ADMIN, 13.0850, 80.2100);
   assert(has(AREA, 'area admin* for *Anna Nagar'));
   ok('localities + area admin via WhatsApp');
+  // ---- other bots' numbers are ignored (no bot-to-bot loops)
+  await bot.handle('919443424064', 'Raise Academy', '📊 Leads report · Last 24h: 0 sent', false);
+  assert.equal(msgs('919443424064').length, 0, 'no reply to Raise Academy bot');
   // ---- admin adds a category on WhatsApp
   await say(ADMIN, 'menu'); await tap(ADMIN, 'Categories'); assert(txt(last(ADMIN)).includes('📖 Tuition · 🎓'));
   await tap(ADMIN, 'Add category'); await say(ADMIN, 'Medical'); await say(ADMIN, '💊'); await tap(ADMIN, 'Shops & services');
@@ -169,6 +172,10 @@ const ok = (name) => console.log('✔', name);
   r = await fetch(`${base}/pay/${pid}`); assert((await r.text()).includes('upi://pay'));
   r = await fetch(`${base}/`); assert((await r.text()).includes('free trial'));
   r = await fetch(`${base}/panel`, { redirect: 'manual' }); assert.equal(r.status, 302, 'login required');
+  // remove advertiser from panel
+  const junk = await db.one(`insert into advertisers(phone,name,cat) values('919111111111','Junk','Food') returning id`);
+  r = await fetch(`${base}/panel/advertisers/${junk.id}/delete?key=testkey`, { method: 'POST', redirect: 'manual' }); assert.equal(r.status, 302);
+  assert(!(await db.advertisers.get(junk.id)), 'advertiser removed');
   srv.close();
   ok('web panel pages, price change, locality add, UPI pay page, login guard');
   // ---- public website + personal link + WhatsApp deep links

@@ -206,10 +206,16 @@ r.get('/advertisers', async (req, res) => {
   const popt = Object.entries(P).map(([k, p]) => `<option value="${k}">${esc(p.name)}</option>`).join('');
   const rows = list.filter((a) => !q || a.name.toLowerCase().includes(q) || a.phone.includes(q) || (a.cat || '').toLowerCase().includes(q)).map((a) => `<tr><td><b>${esc(a.name)}</b></td><td>${esc(a.cat || '')}</td><td>+${a.phone}</td><td>${esc(ls[a.locality_id] || '—')}</td>
 <td>${a.plan ? esc(P[a.plan] ? P[a.plan].name : a.plan) : '—'} ${bot.planActive(a) ? `<span class="tag g">till ${d8(a.plan_until)}</span>` : a.plan ? '<span class="tag x">ended</span>' : ''}</td><td>${a.live}</td><td>${a.leads}</td><td>${rs(a.paid)}</td>
-<td><form class="row" method="post" action="/panel/advertisers/${a.id}/cat"><select class="sm" name="cat">${[...bot.CATS, 'Property'].map((k) => `<option${k === a.cat ? ' selected' : ''}>${esc(k)}</option>`).join('')}</select><button class="sm ghost">Set category</button></form>${u.isMain ? `<form class="row" method="post" action="/panel/advertisers/${a.id}/plan"><select class="sm" name="plan">${popt}</select><button class="sm ghost" title="Start a plan without online payment (e.g. paid in cash)">Give plan</button></form>` : ''}</td></tr>`).join('');
+<td><form class="row" method="post" action="/panel/advertisers/${a.id}/cat"><select class="sm" name="cat">${[...bot.CATS, 'Property'].map((k) => `<option${k === a.cat ? ' selected' : ''}>${esc(k)}</option>`).join('')}</select><button class="sm ghost">Set category</button></form>${u.isMain ? `<form class="row" method="post" action="/panel/advertisers/${a.id}/plan"><select class="sm" name="plan">${popt}</select><button class="sm ghost" title="Start a plan without online payment (e.g. paid in cash)">Give plan</button></form><form class="in" method="post" action="/panel/advertisers/${a.id}/delete" onsubmit="return confirm('Remove this advertiser and all their ads?')"><button class="sm warn">Remove</button></form>` : ''}</td></tr>`).join('');
   res.send(page(req, 'Advertisers', `<h1>Advertisers</h1><form class="row" method="get" style="margin-bottom:10px"><input name="q" value="${esc(req.query.q || '')}" placeholder="Search name, phone or category" style="max-width:320px"><button class="ghost">Search</button></form>
 <div class="tw"><table><tr><th>Business</th><th>Category</th><th>WhatsApp</th><th>Locality</th><th>Plan</th><th>Live ads</th><th>Leads</th><th>Paid (all time)</th><th></th></tr>${rows || '<tr><td colspan="9">No advertisers yet. Businesses register by sending <b>business</b> to the bot.</td></tr>'}</table></div>
 ${u.isMain ? '<p class="muted">“Give plan” starts a plan without online payment (for cash payments or a free extension). Cash amounts are recorded as a paid payment.</p>' : ''}`, 'Advertisers'));
+});
+r.post('/advertisers/:id/delete', mainOnly, async (req, res) => {
+  const a = await db.advertisers.get(+req.params.id);
+  if (!a) return back(res, '/panel/advertisers', 'Not found.');
+  await db.q('delete from payments where adv_id=$1', [a.id]); await db.q('delete from advertisers where id=$1', [a.id]); await db.q('delete from sessions where phone=$1', [a.phone]);
+  back(res, '/panel/advertisers', `${a.name.slice(0, 40)} removed with their ads.`);
 });
 r.post('/advertisers/:id/cat', async (req, res) => {
   const a = await db.advertisers.get(+req.params.id), k = req.body.cat;

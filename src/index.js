@@ -78,6 +78,17 @@ app.get('/webhook', (req, res) => {
   res.sendStatus(403);
 });
 const queues = new Map();
+// Flood guard: if one number sends more than 20 messages in 3 minutes (e.g. another bot),
+// stop replying to it for 30 minutes.
+const hits = new Map(), muted = new Map();
+function flooding(phone) {
+  const now = Date.now();
+  if ((muted.get(phone) || 0) > now) return true;
+  const arr = (hits.get(phone) || []).filter((t) => now - t < 3 * 60e3); arr.push(now); hits.set(phone, arr);
+  if (arr.length > 20) { muted.set(phone, now + 30 * 60e3); console.warn('flood guard: muted', phone); return true; }
+  if (hits.size > 5000) hits.clear();
+  return false;
+}
 const seen = new Set();
 function enqueue(phone, job) {
   const prev = queues.get(phone) || Promise.resolve();
@@ -96,6 +107,8 @@ app.post('/webhook', (req, res) => {
     const names = Object.fromEntries((val.contacts || []).map((x) => [x.wa_id, x.profile && x.profile.name]));
     for (const m of val.messages || []) {
       if (seen.has(m.id)) continue;
+      if (cfg.IGNORE_PHONES.includes(m.from)) { seen.add(m.id); continue; }
+      if (flooding(m.from)) { seen.add(m.id); continue; }
       seen.add(m.id); if (seen.size > 5000) seen.delete(seen.values().next().value);
       let v = null, btn = false;
       if (m.type === 'text') v = m.text.body;
@@ -168,6 +181,11 @@ app.get('/admin/wa-check', async (req, res) => {
 
 async function start() {
   await db.init();
+  if (cfg.IGNORE_PHONES.length) {
+    const del = await db.q('delete from advertisers where phone = any($1)', [cfg.IGNORE_PHONES]);
+    await db.q('delete from customers where phone = any($1)', [cfg.IGNORE_PHONES]); await db.q('delete from sessions where phone = any($1)', [cfg.IGNORE_PHONES]);
+    if (del.rowCount) console.log('removed advertisers from ignored numbers:', del.rowCount);
+  }
   waDiagnose().then((d) => console.log('WA check:', JSON.stringify(d))).catch((e) => console.error('WA check failed', e.message));
   jobs.start();
   return app.listen(cfg.PORT, () => console.log(`${cfg.BRAND} listening on ${cfg.PORT} · admins ${cfg.ADMINS.join(',')}`));
