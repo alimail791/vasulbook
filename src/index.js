@@ -214,6 +214,13 @@ app.get('/qr/:code.png', async (req, res) => {
   const z = await zoneByCode(req.params.code); if (!z) return res.sendStatus(404);
   res.type('image/png').set('Cache-Control', 'public, max-age=86400').send(await poster.qrPng(network.refLink(z, 'business')));
 });
+// Shop sticker poster for advertisers (live categories and prices)
+const sticker = require('./sticker');
+const sendSticker = async (req, res, code) => res.type('application/pdf').set('Content-Disposition', `inline; filename="${cfg.BRAND}-sticker${code ? '-' + code : ''}.pdf"`)
+  .send(await sticker.pdf({ size: req.query.size === 'A4' ? 'A4' : 'A5', code }));
+app.get('/sticker.pdf', (req, res) => sendSticker(req, res, null));
+app.get('/sticker/:code.pdf', async (req, res) => { const z = await zoneByCode(req.params.code); if (!z) return res.sendStatus(404); sendSticker(req, res, z.ref_code); });
+
 // From EMart: a new zone admin agreed there, so open the same locality here
 app.post('/internal/zone', express.json(), async (req, res) => {
   if (!network.peerAuth(req)) return res.sendStatus(401);
@@ -295,6 +302,7 @@ app.get('/admin/wa-check', async (req, res) => {
 });
 
 async function start() {
+  db.all('select name from categories where active order by sort, name').then((cs) => console.log(`categories (${cs.length}): ${cs.map((c) => c.name).join(' | ')}`)).catch(() => {});
   await db.init();
   waDiagnose().then((d) => console.log('WA check:', JSON.stringify(d))).catch((e) => console.error('WA check failed', e.message));
   jobs.start();
