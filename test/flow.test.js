@@ -33,7 +33,7 @@ const has = (p, s) => msgs(p).some((m) => txt(m).includes(s));
 const ok = (name) => console.log('✔', name);
 
 (async () => {
-  await db.q('drop table if exists localities, advertisers, media, ads, customers, coupons, leads, payments, settings, broadcasts, sessions, menus, otps, categories cascade');
+  await db.q('drop table if exists localities, advertisers, media, ads, customers, coupons, leads, payments, settings, broadcasts, sessions, menus, otps, categories, earnings, referrals, kv, taluks, districts cascade');
   await db.init();
   for (const p of [ADMIN, AREA, TUTOR, SHOP, CUST, OWNER]) await db.q(`insert into customers(phone,lang) values($1,'en')`, [p]); // existing English users
 
@@ -43,7 +43,7 @@ const ok = (name) => console.log('✔', name);
   assert.equal(last(ADMIN).interactive.type, 'location_request_message');
   await loc(ADMIN, 13.0400, 80.2000); assert(txt(last(ADMIN)).includes('Gandhi Nagar* added'));
   await say(ADMIN, 'menu'); await tap(ADMIN, 'Add locality'); await say(ADMIN, 'Anna Nagar'); await say(ADMIN, '90000 00002'); await loc(ADMIN, 13.0850, 80.2100);
-  assert(has(AREA, 'area admin* for *Anna Nagar'));
+  assert(has(AREA, 'zone admin* for *Anna Nagar') && has(AREA, 'referral link'));
   ok('localities + area admin via WhatsApp');
   // ---- other bots' numbers are ignored (no bot-to-bot loops)
   await bot.handle('916383087827', 'EMart', 'Hi', false);
@@ -109,15 +109,41 @@ const ok = (name) => console.log('✔', name);
   assert(txt(last(ADMIN)).includes('Payment to confirm') && txt(last(ADMIN)).includes('412345678901'));
   await tap(ADMIN, 'Confirm'); assert(has(SHOP, 'Monthly* plan is active'));
   assert(has(AREA, '₹299 received from *Style Point Boutique*'));
+  { // 40% of the plan payment goes to the locality's zone admin
+    const e = await db.all(`select * from earnings`); assert.equal(e.length, 1); assert.equal(e[0].phone, AREA); assert.equal(Number(e[0].amount), 119.6);
+    assert(has(AREA, 'You earned *₹119.6*')); }
   await tap(SHOP, 'Post an ad'); await tap(SHOP, 'Medical'); assert(txt(last(SHOP)).includes('*Medical* offer')); await say(SHOP, 'Season clearance'); await say(SHOP, 'Buy 2 get 1 free on kurtis'); await tap(SHOP, 'Skip photo'); await tap(SHOP, '30 days');
   await tap(SHOP, 'Change category'); await tap(SHOP, 'Kids'); assert(txt(last(SHOP)).includes('🏷 Kids'));
   await tap(SHOP, 'Change category'); await tap(SHOP, 'Fashion'); await tap(SHOP, 'Submit');
   assert.equal((await db.one(`select cat from ads where title='Season clearance'`)).cat, 'Fashion');
   assert.equal((await db.advertisers.byPhone(SHOP)).cat, 'Fashion');
   assert(txt(last(AREA)).includes('Ad waiting for approval'), 'Anna Nagar ad goes to the area admin');
-  await say(AREA, 'hi'); assert(/area admin/.test(txt(last(AREA))));
+  await say(AREA, 'hi'); assert(/zone admin/.test(txt(last(AREA))));
   await tap(AREA, 'Pending ads'); await tap(AREA, 'Approve'); assert(has(SHOP, 'is now *LIVE*'));
   ok('UPI payment claim + admin confirm, area admin approval');
+
+  // ---- network: supervisor, 40/10 split, refund, referral
+  {
+    const network = require('../src/network'); const SUP = '919000000077';
+    const an = (await db.localities.byAdmin(AREA))[0];
+    const tk = await network.taluks.add((await db.one(`select id from districts where name='Chennai'`)).id, 'Aminjikarai', SUP);
+    await db.localities.set(an.id, { taluk_id: tk.id });
+    assert((await db.localities.byAdmin(SUP)).some((l) => l.id === an.id));
+    await say(SUP, 'hi'); assert(/supervisor/.test(txt(last(SUP))), txt(last(SUP)));
+    const adv = await db.advertisers.byPhone(SHOP);
+    const p2 = await db.one(`insert into payments(adv_id,plan,amount,locality_id,status) values($1,'week',100,$2,'claimed') returning *`, [adv.id, an.id]);
+    await bot.confirmPayment(p2.id);
+    const e = await db.all('select role, phone, amount from earnings where payment_id=$1 order by role', [p2.id]);
+    assert.deepEqual(e.map((x) => [x.role, x.phone, Number(x.amount)]), [['admin', AREA, 40], ['supervisor', SUP, 10]]);
+    await bot.refundPayment(p2.id); assert.equal(Number((await network.summary(SUP)).due), 0);
+    await say(SUP, 'menu'); await tap(SUP, 'My earnings'); assert(txt(last(SUP)).includes('Your team'));
+    const code = (await db.localities.get(an.id)).ref_code; const NEWB = '919000000088';
+    await db.q(`insert into customers(phone,lang) values($1,'en') on conflict(phone) do update set lang='en'`, [NEWB]);
+    await say(NEWB, `business ref:${code}`); assert(has(AREA, 'referral link'));
+    await tap(NEWB, 'Advertise with us'); await say(NEWB, 'Far Away Sweets'); await tap(NEWB, 'Shop / service'); await tap(NEWB, 'Food'); await loc(NEWB, 13.20, 80.30);
+    assert.equal((await db.advertisers.byPhone(NEWB)).locality_id, an.id, 'referred advertiser joins the referrer locality');
+    ok('network: supervisor scope, 40/10 split, refund, referral');
+  }
 
   // ---- house owner: property listing
   await say(OWNER, 'business'); await tap(OWNER, 'Advertise with us'); await say(OWNER, 'Owner Kumar'); await tap(OWNER, '🏠 Property'); await loc(OWNER, 13.0395, 80.1990);
@@ -191,8 +217,19 @@ const ok = (name) => console.log('✔', name);
   const tutorId = (await db.advertisers.byPhone(TUTOR)).id;
   r = await fetch(`${base}/panel/advertisers/${tutorId}/cat?key=testkey`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'cat=Schools', redirect: 'manual' });
   assert.equal(r.status, 302); assert.equal((await db.advertisers.byPhone(TUTOR)).cat, 'Schools');
-  r = await fetch(`${base}/panel/localities?key=testkey`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'name=KK+Nagar&admin=9000000002&loc=13.03,80.19&share=50', redirect: 'manual' });
+  r = await fetch(`${base}/panel/localities?key=testkey`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'name=KK+Nagar&admin=9000000002&loc=13.03,80.19', redirect: 'manual' });
   assert.equal((await db.localities.byAdmin(AREA)).length, 2, 'one area admin, two localities');
+  { // panel network page, taluks, localities with codes
+    const form = { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, redirect: 'manual' };
+    let h = await (await fetch(`${base}/panel/network?key=testkey`)).text(); assert(h.includes('Taluks set up') && h.includes('Chennai'));
+    const dch = (await db.one(`select id from districts where name='Chennai'`)).id;
+    r = await fetch(`${base}/panel/network/taluks?key=testkey`, { ...form, body: `district_id=${dch}&name=Egmore&sup=9000000066` }); assert(decodeURIComponent(r.headers.get('location')).includes('Egmore'));
+    h = await (await fetch(`${base}/panel/localities?key=testkey`)).text(); assert(h.includes('Egmore') && h.includes('Code '));
+    const paid = await db.one(`select id from payments where status='paid' order by id limit 1`);
+    r = await fetch(`${base}/panel/payments/${paid.id}/refund?key=testkey`, { ...form, body: '' }); assert(decodeURIComponent(r.headers.get('location')).includes('refunded'));
+    r = await fetch(`${base}/panel?key=testkey`, { redirect: 'manual' }); const ck = r.headers.get('set-cookie').split(';')[0];
+    h = await (await fetch(`${base}/panel`, { headers: { cookie: ck } })).text(); assert(h.includes('Payouts waiting') && h.includes('Your net'));
+  }
   await say(SHOP, 'hi'); await tap(SHOP, 'Plans'); await tap(SHOP, 'Premium'); const pid = (await db.one(`select id from payments where status='created' order by id desc limit 1`)).id;
   r = await fetch(`${base}/pay/${pid}`); assert((await r.text()).includes('upi://pay'));
   r = await fetch(`${base}/`); { const t0 = await r.text(); assert(t0.includes('day trial') && t0.includes('Browse by category') && t0.includes('9443424064')); }

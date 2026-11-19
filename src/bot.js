@@ -6,6 +6,7 @@ const db = require('./db');
 const wa = require('./wa');
 const pay = require('./pay');
 const i18n = require('./strings');
+const network = require('./network');
 
 // ---- language of each person (cached; stored on the customers row)
 const langCache = new Map();
@@ -340,7 +341,11 @@ async function activatePlan(adv, planKey, payment) {
   if (planKey === 'trial') patch.trial_used = true;
   adv = await db.advertisers.set(adv.id, patch);
   if (payment) {
-    await db.q(`update payments set status='paid', paid_at=now() where id=$1`, [payment.id]);
+    const locId = payment.locality_id || adv.locality_id || null;
+    payment = await db.one(`update payments set status='paid', paid_at=coalesce(paid_at,now()), locality_id=$2 where id=$1 returning *`, [payment.id, locId]);
+    // Commission on money received: locality admin 40%, taluk supervisor 10% (see network.js)
+    const earned = await network.record({ paymentId: payment.id, source: 'plan', areaId: locId, amount: Number(payment.amount), paidAt: payment.paid_at });
+    for (const e of earned) await notify(e.phone, `💰 You earned *${rs(e.amount)}* (${e.pct}%) — ${adv.name} paid ${rs(payment.amount)} for ${p.name}.\nIt's added to your next payout.`, [['💰 My earnings', 'aearn']]);
     await notify(adv.phone, `✅ Payment of ${rs(payment.amount)} received. *${p.name}* plan is active till *${istDate(until)}*.`, [['➕ Post an ad', adv.cat === 'Property' ? 'post:property' : 'post:deal'], ['🏪 Business menu', 'menu']]);
     const L = adv.locality_id ? await db.localities.get(adv.locality_id) : null;
     const msg = `💰 ${rs(payment.amount)} received from *${adv.name}* (${p.name})${L ? ' · ' + L.name : ''}.`;
@@ -441,7 +446,8 @@ async function advertiser(c, v, btn) {
       return wa.askLocation(c.from, m[1] === 'Property' ? `📍 Share the location of the property (or your office) so nearby people find it.\nTap *Send location* – you can send your current location or move the pin.` : `📍 Now share the location of *${S.data.reg.name}* so nearby customers find you.\nTap *Send location* – you can send your current location or move the pin.`);
     }
     if ((m = v.match(/^loc:(-?[\d.]+),(-?[\d.]+)\|?(.*)$/)) && S.state === 'r_loc') {
-      const lat = +m[1], lng = +m[2], L = await nearestLocality(lat, lng);
+      // An advertiser who came through a zone admin's referral link belongs to that admin's locality
+      const lat = +m[1], lng = +m[2], L = (await network.referralArea(c.from)) || (await nearestLocality(lat, lng));
       c.adv = await db.one('insert into advertisers(phone,name,cat,lat,lng,address,locality_id) values($1,$2,$3,$4,$5,$6,$7) on conflict(phone) do update set name=$2 returning *',
         [c.from, S.data.reg.name, S.data.reg.cat, lat, lng, (m[3] || '').slice(0, 200) || null, L ? L.id : null]);
       S.state = null; S.data.reg = null; S.data.as = 'business';
@@ -515,7 +521,7 @@ async function advertiser(c, v, btn) {
   if (S.state === 'd_cat' && !btn) return c.reply('Please pick a category from the list 👆');
   if (v === 'aloc') { S.state = 'a_loc'; return wa.askLocation(c.from, 'Tap *Send location* to update your shop location 👇'); }
   if ((m = v.match(/^loc:(-?[\d.]+),(-?[\d.]+)\|?(.*)$/)) && S.state === 'a_loc') {
-    const L = await nearestLocality(+m[1], +m[2]);
+    const L = (await network.referralArea(c.from)) || (await nearestLocality(+m[1], +m[2]));
     c.adv = await db.advertisers.set(a.id, { lat: +m[1], lng: +m[2], address: (m[3] || '').slice(0, 200) || a.address, locality_id: L ? L.id : a.locality_id });
     S.state = null; await c.say('✅ Location updated.'); return advMenu(c);
   }
@@ -630,13 +636,28 @@ async function adminMenu(c) {
   const b = [[`🕒 Pending ads (${pend.length})`, 'apend']];
   if (c.isMain) b.push([`💳 Payments to confirm (${claims})`, 'apays'], ['📍 Localities & admins', 'alocs'], ['➕ Add locality', 'aadd'], ['🏷 Categories', 'acats']);
   b.push(['📈 Revenue this month', 'arev']);
+  if (!c.isMain) b.push(['💰 My earnings', 'aearn']);
   if (c.isMain) b.push(['📢 Send daily offers now', 'adigest']);
   b.push(['🌐 Web admin panel', 'aweb'], ['🛍 Browse as customer', '#customer']);
   if (c.adv) b.push(['🏪 My business', '#business']);
-  return c.reply(`${c.isMain ? '👑 *EDeal main admin*' : '🗺 *EDeal area admin*'}\n${lines.join('\n') || 'No localities yet – add one.'}`, b);
+  const sup = c.isMain ? [] : await network.supervisorOf(c.from);
+  return c.reply(`${c.isMain ? '👑 *EDeal main admin*' : sup.length ? '👥 *EDeal supervisor*' : '🗺 *EDeal zone admin*'}\n${lines.join('\n') || 'No localities yet – add one.'}`, b);
 }
 async function welcomeAreaAdmin(l) {
-  await notify(l.admin_phone, `🗺 You are now the *area admin* for *${l.name}* on ${cfg.BRAND}.\n\nYou approve ads from businesses in your area, bring in new advertisers, and earn *${Math.round(l.share * 100)}%* of what they pay.\nWeb panel: ${cfg.PUBLIC_URL || cfg.WEBSITE}/panel\n\nType *menu* to start.`, [['Menu', 'menu']]);
+  l = await network.ensureRef(l.id);
+  await notify(l.admin_phone, `🗺 You are now the *zone admin* for *${l.name}* on ${cfg.BRAND}.\n\nYou approve ads from businesses in your zone, bring in new advertisers, and earn *${network.ADMIN_PCT}%* of every plan payment they make, paid out every month.\n\n🔗 Your referral link (put it on your posters):\n${network.refLink(l, 'business')}\nWeb panel: ${cfg.PUBLIC_URL || cfg.WEBSITE}/panel\n\nType *menu* to start.`, [['💰 My earnings', 'aearn'], ['Menu', 'menu']]);
+}
+// "My earnings" for zone admins and supervisors
+async function earningsText(c) {
+  const x = await network.summary(c.from), sup = await network.supervisorOf(c.from);
+  const own = c.myLocs.filter((l) => l.admin_phone === c.from), links = [];
+  for (let l of own) { l = await network.ensureRef(l.id); links.push(`📍 ${l.name}: ${network.refLink(l, 'business')}`); }
+  let teamTxt = '';
+  if (sup.length) {
+    const t = await network.team(c.from);
+    teamTxt = `\n\n👥 *Your team* (${sup.map((t2) => t2.name).join(', ')})\n` + (t.map((l) => `• ${l.name}: ${l.admin_phone ? '+' + l.admin_phone : 'no admin'} · ${rs(l.earned)}`).join('\n') || 'No localities yet.');
+  }
+  return `💰 *My earnings*\nThis month: *${rs(x.month)}*\nWaiting for payout: *${rs(x.due)}*\nPaid out so far: ${rs(x.paid)}\n\nYou earn ${own.length ? `${network.ADMIN_PCT}% as zone admin` : ''}${own.length && sup.length ? ' and ' : ''}${sup.length ? `${network.SUP_PCT}% as supervisor` : ''} on plan payments that have come in.${links.length ? `\n\n🔗 *Referral link*\n${links.join('\n')}` : ''}${teamTxt}`;
 }
 async function approveAd(id, byPhone) {
   const a = await db.ads.get(id);
@@ -652,6 +673,13 @@ async function rejectAd(id, reason) {
   await db.ads.set(id, { status: 'rejected', reject_reason: reason });
   await notify(a.adv_phone, `❌ Your ad “*${a.title}*” wasn't approved.\nReason: *${reason}*\nPlease edit and post again – your plan is still active.`, [['➕ Post again', 'post:' + a.type], ['🏪 Business menu', 'menu']]);
   return a;
+}
+// Refund: the payment is marked refunded and the commission on it is taken back
+async function refundPayment(id) {
+  const p = await db.one(`update payments set status='refunded' where id=$1 and status='paid' returning *`, [id]);
+  if (!p) return null;
+  await network.reverse(p.id, 'plan');
+  return p;
 }
 async function confirmPayment(id) {
   const pm = await db.one('select * from payments where id=$1', [id]);
@@ -757,13 +785,15 @@ async function admin(c, v, btn) {
     return c.reply(`✅ *${l.name}* added – run by ${l.admin_phone ? '+' + l.admin_phone : 'you'}.\nBusinesses nearby are matched to it automatically.`, [['📍 Localities', 'alocs'], ['Menu', 'menu']]);
   }
   if (c.isMain && S.state === 'l_loc') return wa.askLocation(c.from, 'Please tap *Send location* 👇');
+  if (v === 'aearn') return c.reply(await earningsText(c), [['Menu', 'menu']]);
   if (v === 'arev') {
-    const locs = await scopeLocs(c), rev = await monthRevenue(c.isMain ? null : c.locIds);
-    let total = 0, theirs = 0;
-    const rows = locs.map((l) => { const r = rev.find((x) => x.locality_id === l.id) || { s: 0, n: 0 }; total += r.s; const sh = l.admin_phone ? r.s * l.share : 0; theirs += sh; return `📍 ${l.name}: ${rs(r.s)} (${r.n} payments)${l.admin_phone && c.isMain ? ` · admin ${rs(sh)}` : ''}`; });
+    const locs = await scopeLocs(c), rev = await monthRevenue(c.isMain ? null : c.locIds), mk = network.monthKey();
+    const sh = await db.all(`select area_id, coalesce(sum(amount) filter (where role='admin'),0) adm, coalesce(sum(amount) filter (where role='supervisor'),0) sup from earnings where month=$1 and status<>'reversed' group by area_id`, [mk]);
+    let total = 0, payable = 0;
+    const rows = locs.map((l) => { const r = rev.find((x) => x.locality_id === l.id) || { s: 0, n: 0 }, e = sh.find((x) => x.area_id === l.id) || { adm: 0, sup: 0 }; total += r.s; payable += e.adm + e.sup; return `📍 ${l.name}: ${rs(r.s)} (${r.n} payments)${c.isMain && (e.adm || e.sup) ? ` · admin ${rs(e.adm)} · supervisor ${rs(e.sup)}` : ''}`; });
     if (c.isMain) { const nl = rev.find((x) => x.locality_id == null); if (nl) { total += nl.s; rows.push(`📍 No locality: ${rs(nl.s)}`); } }
-    const mine = c.isMain ? total - theirs : locs.reduce((t, l) => t + ((rev.find((x) => x.locality_id === l.id) || { s: 0 }).s * l.share), 0);
-    return c.reply(`📈 *Revenue this month*\n\n${rows.join('\n') || 'No payments yet.'}\n\nTotal: *${rs(total)}*\n${c.isMain ? 'Your share' : 'Your share'}: *${rs(mine)}*`, [['Menu', 'menu']]);
+    if (!c.isMain) return c.reply(`📈 *Revenue this month*\n\n${rows.join('\n') || 'No payments yet.'}\n\nTotal: *${rs(total)}*\n\n${await earningsText(c)}`, [['Menu', 'menu']]);
+    return c.reply(`📈 *Revenue this month*\n\n${rows.join('\n') || 'No payments yet.'}\n\nTotal received: *${rs(total)}*\nAdmins & supervisors: *${rs(payable)}*\n👑 Your net: *${rs(total - payable)}*`, [['Menu', 'menu']]);
   }
   // ---- categories (main admin): three groups – Shops & services, Education (offers) and Property (rent / sale)
   if (c.isMain && v === 'acats') {
@@ -868,6 +898,14 @@ async function handle(from, name, v, btn) {
       else if (isMain || myLocs.length || /^(offer|coupon|enquiry|contact|visit|interested|demo|admission)\s*#/i.test(v.trim())) await setLang(from, 'en');
       else { sess.data.pending = v; return await wa.send(from, i18n.PICKER, i18n.PICKER_BTNS); }
     }
+    // Referral links open the bot with "business ref:CODE": remember which zone admin sent this person
+    if (!btn) {
+      const rf = await network.applyRef(from, v);
+      if (rf) {
+        if (rf.isNew && rf.area && rf.area.admin_phone && rf.area.admin_phone !== from) await notify(rf.area.admin_phone, `👋 New contact from your referral link (${rf.area.name}): ${name || 'someone'} +${from}`);
+        v = rf.rest && !/^(hi|hello|hai|hey)$/i.test(rf.rest) ? rf.rest : 'menu'; low = v.trim().toLowerCase();
+      }
+    }
     if (i18n.WORDS.menu.includes(low)) { v = 'menu'; low = 'menu'; }
     if (i18n.WORDS.stop.includes(low)) { v = 'stop'; low = 'stop'; }
     // role switches
@@ -884,7 +922,7 @@ async function handle(from, name, v, btn) {
     let role = sess.data.as || (isAdmin ? 'admin' : c.adv ? 'business' : 'customer');
     if (role === 'admin' && !isAdmin) role = 'customer';
     // Buttons from alerts work in any view: admin actions (approve, payments, localities)…
-    if (isAdmin && btn && /^(ap|rj|rr|pc|pr|lo|lch|lpa|lw|ced|cren|cemj|cgsw|chid|cgrp|cemo):|^(apend|apays|alocs|aadd|arev|adigest|aweb|acats|cadd)$/.test(v)) return await admin(c, v, btn);
+    if (isAdmin && btn && /^(ap|rj|rr|pc|pr|lo|lch|lpa|lw|ced|cren|cemj|cgsw|chid|cgrp|cemo):|^(apend|apays|alocs|aadd|arev|aearn|adigest|aweb|acats|cadd)$/.test(v)) return await admin(c, v, btn);
     // …and an admin's own business buttons while in admin view
     if (role !== 'business' && c.adv && btn && /^(myads|plans|redeem|acat|acatmv|dcat|dskip|dsubmit|okVisit)$|^(post|paid|plan|ad|adp|adr|add|adl|acat|dcat|dsub|dval|drad):/.test(v)) { sess.data.as = 'business'; return await advertiser(c, v, btn); }
     if (role === 'business' || (role === 'customer' && v === 'biz')) { sess.data.as = 'business'; return await advertiser(c, v, btn); }
@@ -895,4 +933,4 @@ async function handle(from, name, v, btn) {
   }
 }
 
-module.exports = { renameCategory, PROPS, SUBEMO, RENT, loadCats, ensureCats, webLink, handle, notify, notifyAdmins, approveAd, rejectAd, confirmPayment, activatePlan, welcomeAreaAdmin, nearby, cardText, imgOf, rs, km, istDate, planActive, REASONS, CATS, EMO, EDU, SUBS };
+module.exports = { refundPayment, earningsText, renameCategory, PROPS, SUBEMO, RENT, loadCats, ensureCats, webLink, handle, notify, notifyAdmins, approveAd, rejectAd, confirmPayment, activatePlan, welcomeAreaAdmin, nearby, cardText, imgOf, rs, km, istDate, planActive, REASONS, CATS, EMO, EDU, SUBS };

@@ -79,6 +79,7 @@ async function init() {
       if (old) await q('update ads set sub=$2 where sub=$1', [old, n]);
     }
   }
+  await require('./network').init();
 }
 
 // ---- plans (defaults from config, prices overridable in settings)
@@ -99,7 +100,8 @@ const localities = {
   all: () => all('select * from localities order by name'),
   active: () => all('select * from localities where active order by name'),
   get: (id) => one('select * from localities where id=$1', [id]),
-  byAdmin: (phone) => all('select * from localities where admin_phone=$1 order by name', [phone]),
+  // localities a person runs, plus every locality in the taluks they supervise
+  byAdmin: (phone) => all('select * from localities where admin_phone=$1 or taluk_id in (select id from taluks where supervisor_phone=$1) order by name', [phone]),
   set: setter('localities'),
 };
 const advertisers = {
