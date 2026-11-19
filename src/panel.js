@@ -134,6 +134,7 @@ r.post('/verify', async (req, res) => {
 r.get('/logout', (req, res) => { res.setHeader('Set-Cookie', 'em_s=; Path=/panel; Max-Age=0'); res.redirect('/panel/login'); });
 
 r.use(auth);
+r.use(network.auditMiddleware);
 
 // ---------- helpers
 async function typeOptions(selected) {
@@ -149,7 +150,7 @@ async function myNetwork(u) {
   const own = u.myAreas.filter((a) => a.admin_phone === u.phone);
   for (let a of own) {
     a = await network.ensureRef(a.id); const link = network.refLink(a);
-    h += `<div class="card row" style="align-items:flex-start"><img src="${esc(network.qrUrl(link))}" width="140" height="140" alt="QR code"><div style="flex:1;min-width:220px"><b>Your referral link · ${esc(a.name)}</b><p class="muted">Print this QR on your posters. Shops and customers who open it are linked to you.</p><input readonly value="${esc(link)}" onclick="this.select()"><p class="muted">Code: <b>${esc(a.ref_code)}</b></p></div></div>`;
+    h += `<div class="card row" style="align-items:flex-start"><img src="${esc(network.qrUrl(link))}" width="140" height="140" alt="QR code"><div style="flex:1;min-width:220px"><b>Your referral link · ${esc(a.name)}</b><p class="muted">Print this QR on your posters. Shops and customers who open it are linked to you.</p><input readonly value="${esc(link)}" onclick="this.select()"><p class="muted">Code: <b>${esc(a.ref_code)}</b> · ${esc(a.level || 'Bronze')} admin · <a href="/poster/${esc(a.ref_code)}.pdf" target="_blank">Poster (PDF)</a> · <a href="/qr/${esc(a.ref_code)}.png" target="_blank">QR image</a></p></div></div>`;
   }
   if (u.sups.length) {
     const t = await network.team(u.phone);
@@ -188,7 +189,7 @@ r.get('/areas', superOnly, async (req, res) => {
   for (let a of areas) {
     a = await network.ensureRef(a.id);
     const x = await bot.areaMoney(a), t = tk[a.taluk_id];
-    rows += `<tr><td><b>${esc(a.name)}</b><br><span class="muted">Code ${esc(a.ref_code)}</span></td><td>${t ? `${esc(t.name)}<br><span class="muted">${esc(t.district)}</span>` : '<span class="tag y">No taluk</span>'}</td><td>${a.admin_phone ? '+' + a.admin_phone : '—'}</td><td>${a.lat != null ? `${a.radius_km} km` : '<span class="tag y">no location</span>'}</td><td>${x.shops}</td><td>${rs(x.received)}</td><td>${rs(x.admin)}</td><td>${a.active ? '<span class="tag g">Active</span>' : '<span class="tag r">Paused</span>'}</td>
+    rows += `<tr><td><b>${esc(a.name)}</b><br><span class="muted">Code ${esc(a.ref_code)}</span></td><td>${t ? `${esc(t.name)}<br><span class="muted">${esc(t.district)}</span>` : '<span class="tag y">No taluk</span>'}</td><td>${a.admin_phone ? '+' + a.admin_phone : '—'}</td><td>${a.lat != null ? `${a.radius_km} km` : '<span class="tag y">no location</span>'}</td><td>${x.shops}${a.admin_phone && a.admin_since ? `<br><span class="muted">${a.level || 'Bronze'} · day ${Math.floor((Date.now() - new Date(a.admin_since)) / 864e5)}${a.review_note ? ' · ' + esc(a.review_note) : ''}</span>` : ''}</td><td>${rs(x.received)}</td><td>${rs(x.admin)}</td><td>${a.active ? '<span class="tag g">Active</span>' : '<span class="tag r">Paused</span>'}</td>
 <td><details><summary>Edit</summary><form method="post" action="/panel/areas/${a.id}"><div class="grid"><div><label>Name</label><input name="name" value="${esc(a.name)}"></div><div><label>Zone admin WhatsApp (blank = none)</label><input name="admin" value="${a.admin_phone ? esc(a.admin_phone.slice(2)) : ''}"></div>
 <div><label>Taluk</label><select name="taluk_id">${await talukOptions(a.taluk_id)}</select></div>
 <div><label>Centre (Google Maps link or lat,lng)</label><input name="loc" value="${a.lat != null ? a.lat + ',' + a.lng : ''}"></div><div><label>Radius (km)</label><input name="radius" type="number" step="0.5" min="0.5" max="5" value="${a.radius_km}"></div>
@@ -221,14 +222,21 @@ r.post('/areas/:id', superOnly, async (req, res) => {
 
 // ---------- network: districts, taluks, supervisors, payouts (main admin)
 r.get('/network', superOnly, async (req, res) => {
-  const ds = await network.districtStats(), tks = await network.taluks.all(), pays = await network.payouts();
+  const ds = await network.districtStats(), tks = await network.taluks.all(), pays = await network.payoutRows();
+  const apps = await db.all(`select a.*, t.name taluk from applications a left join taluks t on t.id=a.taluk_id where a.status in ('pending','waitlist','approved') order by a.id`);
+  const sentToday = await network.sentToday(), msgs = await network.msgStats();
+  const appOpts = {}; for (const a of apps) appOpts[a.id] = await talukOptions(a.taluk_id);
   const zonesBy = Object.fromEntries((await db.all('select taluk_id, count(*)::int n, count(admin_phone)::int a from areas where taluk_id is not null group by taluk_id')).map((x) => [x.taluk_id, x]));
   const tot = ds.reduce((t, d) => ({ p: t.p + d.taluks_planned, t: t.t + d.taluks, s: t.s + d.sups, z: t.z + d.zones, a: t.a + d.admins }), { p: 0, t: 0, s: 0, z: 0, a: 0 });
   const dOpts = ds.map((d) => `<option value="${d.id}">${esc(d.name)}</option>`).join('');
   res.send(page(req, 'Network', `<h1>Network — Tamil Nadu</h1>
-<div class="kp"><div class="k"><small>Taluks set up</small><b>${tot.t} / ${tot.p}</b></div><div class="k"><small>Supervisors</small><b>${tot.s}</b></div><div class="k"><small>Zones</small><b>${tot.z}</b></div><div class="k"><small>Zone admins</small><b>${tot.a}</b></div><div class="k"><small>Payouts waiting</small><b>${rs(pays.reduce((t, p) => t + Number(p.due), 0))}</b></div></div>
-<h2>Payouts waiting</h2><div class="tw"><table><tr><th>WhatsApp</th><th>Role</th><th>Entries</th><th>Amount due</th><th></th></tr>${pays.map((p) => `<tr><td>+${p.phone}</td><td>${esc(p.roles)}</td><td>${p.n}</td><td><b>${rs(p.due)}</b></td><td><form class="row" method="post" action="/panel/network/payout" onsubmit="return confirm('Mark ${rs(p.due)} as paid to +${p.phone}?')"><input type="hidden" name="phone" value="${p.phone}"><input name="ref" placeholder="UPI ref (optional)" style="width:170px"><button class="sm">Mark paid</button></form></td></tr>`).join('') || '<tr><td colspan="5">Nothing due.</td></tr>'}</table></div>
-<p class="muted">Pay each person by UPI, then mark it paid here. Commission is added only when a shop's payment has actually come in; refunds take it back.</p>
+<div class="kp"><div class="k"><small>Taluks set up</small><b>${tot.t} / ${tot.p}</b></div><div class="k"><small>Supervisors</small><b>${tot.s}</b></div><div class="k"><small>Zones</small><b>${tot.z}</b></div><div class="k"><small>Zone admins</small><b>${tot.a}</b></div><div class="k"><small>Payouts waiting</small><b>${rs(pays.reduce((t, p) => t + Number(p.net), 0))}</b></div><div class="k"><small>WhatsApp chats we started today</small><b>${sentToday} / ${network.DAILY_LIMIT}</b></div></div>
+<h2 id="apps">Admin applications</h2><div class="tw"><table><tr><th>#</th><th>Name</th><th>Place</th><th>Taluk</th><th>Status</th><th></th></tr>${apps.map((a) => `<tr><td>${a.id}</td><td><b>${esc(a.name)}</b><br><span class="muted">+${a.phone}</span></td><td>${esc(a.place)}<br><a href="https://maps.google.com/?q=${a.lat},${a.lng}" target="_blank">map</a></td><td>${a.taluk ? esc(a.taluk) : '<span class="tag y">not matched</span>'}</td><td><span class="tag ${a.status === 'approved' ? 'b' : 'y'}">${a.status === 'approved' ? 'waiting for "I agree"' : a.status}</span></td>
+<td>${a.status === 'approved' ? '' : `<form class="row" method="post" action="/panel/applications/${a.id}"><select name="taluk_id" style="width:170px">${appOpts[a.id]}</select><button class="sm" name="do" value="approve">Approve</button><button class="sm warn" name="do" value="reject">Reject</button></form>`}</td></tr>`).join('') || '<tr><td colspan="6">No applications. People apply by sending <b>ADMIN</b> to the bot.</td></tr>'}</table></div>
+<h2>Payouts waiting</h2><p><a class="btn ghost" href="/panel/network/payouts.csv">Download payout list (CSV)</a></p><div class="tw"><table><tr><th>Name</th><th>UPI ID</th><th>Role</th><th>Commission</th><th>TDS ${network.TDS_PCT}%</th><th>Pay</th><th></th></tr>${pays.map((p) => `<tr><td>${esc(p.payee ? p.payee.name : '')}<br><span class="muted">+${p.phone}</span></td><td>${p.payee && p.payee.upi ? esc(p.payee.upi) : '<span class="tag y">no UPI</span>'}</td><td>${esc(p.roles)}</td><td>${rs(p.due)}</td><td>${rs(p.tds)}</td><td><b>${rs(p.net)}</b></td><td><form class="row" method="post" action="/panel/network/payout" onsubmit="return confirm('Mark ${rs(p.net)} as paid to +${p.phone}?')"><input type="hidden" name="phone" value="${p.phone}"><input name="ref" placeholder="UPI ref (optional)" style="width:170px"><button class="sm">Mark paid</button></form></td></tr>`).join('') || '<tr><td colspan="7">Nothing due.</td></tr>'}</table></div>
+<p class="muted">Pay each person the <b>Pay</b> amount by UPI, then mark it paid. TDS (${network.TDS_PCT}%, Section 194H) starts once a person's commission in the financial year passes ₹${network.TDS_LIMIT.toLocaleString('en-IN')} — deposit it and file the TDS return with your CA. Commission is added only when a shop's payment has actually come in; refunds take it back.</p>
+<h2>WhatsApp messages we started (${MONTH()})</h2><div class="tw"><table><tr><th>Zone</th><th>Alerts (utility)</th></tr>${msgs.map((x) => `<tr><td>${esc(x.name || 'All / not by zone')}</td><td>${x.utility || 0}</td></tr>`).join('') || '<tr><td colspan="2">None yet.</td></tr>'}</table></div>
+<p class="muted">Meta allows about ${network.DAILY_LIMIT} new chats a day for your number now (set WA_DAILY_LIMIT when Meta raises it). <a href="/panel/audit">Change log →</a></p>
 <h2 id="taluks">Taluks & supervisors</h2><div class="tw"><table><tr><th>District</th><th>Taluk</th><th>Supervisor</th><th>Zones</th><th>Zone admins</th><th></th></tr>${tks.map((t) => `<tr><td>${esc(t.district)}</td><td><b>${esc(t.name)}</b></td><td>${t.supervisor_phone ? '+' + t.supervisor_phone : '<span class="tag y">None</span>'}</td><td>${(zonesBy[t.id] || {}).n || 0}</td><td>${(zonesBy[t.id] || {}).a || 0} / 10</td>
 <td><form class="row" method="post" action="/panel/network/taluks/${t.id}"><input name="sup" placeholder="Supervisor WhatsApp" value="${t.supervisor_phone ? esc(t.supervisor_phone.slice(2)) : ''}" style="width:170px"><button class="sm ghost">Save</button></form></td></tr>`).join('') || '<tr><td colspan="6">No taluks yet. Add your first one below.</td></tr>'}</table></div>
 <div class="card"><form method="post" action="/panel/network/taluks"><div class="grid"><div><label>District</label><select name="district_id" required>${dOpts}</select></div><div><label>Taluk name</label><input name="name" required placeholder="Ambattur"></div><div><label>Supervisor WhatsApp (optional)</label><input name="sup" placeholder="9xxxxxxxxx"></div></div><p></p><button>Add taluk</button></form></div>
@@ -253,9 +261,39 @@ r.post('/network/taluks/:id', superOnly, async (req, res) => {
   back(res, '/panel/network#taluks', `${t0.name}: supervisor ${t.supervisor_phone ? 'set to +' + t.supervisor_phone : 'removed'}.`);
 });
 r.post('/network/payout', superOnly, async (req, res) => {
-  const phone = cfg.norm(req.body.phone), x = await network.markPaid(phone, String(req.body.ref || '').slice(0, 60));
-  if (x.n) await bot.notify(phone, `✅ ${cfg.BRAND} payout of *${rs(x.s)}* sent to you.${req.body.ref ? ' Ref: ' + String(req.body.ref).slice(0, 60) : ''} Thank you!`, [['💰 My earnings', 'myearn']]);
-  back(res, '/panel/network', x.n ? `Marked ${rs(x.s)} paid to +${phone}.` : 'Nothing was due.');
+  const phone = cfg.norm(req.body.phone), ref = String(req.body.ref || '').slice(0, 60), x = await network.markPaid(phone, ref);
+  if (x.n) await bot.notify(phone, `✅ ${cfg.BRAND} payout sent\nCommission: ${rs(x.due)}${x.tds ? `\nTDS (${network.TDS_PCT}%): −${rs(x.tds)}` : ''}\n*Paid to you: ${rs(x.net)}*${ref ? '\nRef: ' + ref : ''}\nThank you!`, [['💰 My earnings', 'myearn']]);
+  back(res, '/panel/network', x.n ? `Marked ${rs(x.net)} paid to +${phone}${x.tds ? ` (TDS ${rs(x.tds)})` : ''}.` : 'Nothing was due.');
+});
+r.get('/network/payouts.csv', superOnly, async (req, res) => {
+  res.type('text/csv').set('Content-Disposition', `attachment; filename="payouts-${network.monthKey()}.csv"`).send(await network.payoutCsv());
+});
+r.post('/applications/:id', superOnly, async (req, res) => {
+  const ok = req.body.do === 'approve', id = +req.params.id;
+  if (Number(req.body.taluk_id) > 0) await db.q('update applications set taluk_id=$2 where id=$1', [id, +req.body.taluk_id]);
+  const a = await network.decide(id, ok, req.u.phone);
+  if (!a) return back(res, '/panel/network#apps', 'Already handled.');
+  if (ok) await bot.notify(a.phone, network.agreementText(), [['✅ I agree', 'rcagree']]);
+  else await bot.notify(a.phone, `Thank you for applying to ${cfg.BRAND}. We can't take your application right now. We'll message you if a place opens in your area.`);
+  back(res, '/panel/network#apps', ok ? `Approved ${a.name}. The zone opens when they tap "I agree" on WhatsApp.` : `Rejected ${a.name}.`);
+});
+r.get('/audit', superOnly, async (req, res) => {
+  const rows = await network.auditRows(300);
+  res.send(page(req, 'Change log', `<h1>Change log</h1><div class="tw"><table><tr><th>When</th><th>Who</th><th>What</th><th>Details</th></tr>${rows.map((x) => `<tr><td>${new Date(x.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' })}</td><td>${x.phone ? '+' + x.phone : '—'}</td><td>${esc(x.action)}</td><td class="muted" style="max-width:520px;word-break:break-all">${esc(x.detail)}</td></tr>`).join('') || '<tr><td colspan="4">Nothing yet.</td></tr>'}</table></div>`, 'Network'));
+});
+
+// ---------- payout details (UPI + PAN) for zone admins and supervisors
+async function payeeForm(u) {
+  const p = (await db.one('select * from payees where phone=$1', [u.phone])) || {};
+  const pv = await network.payoutPreview(u.phone);
+  return `<div class="card"><b>Payout details</b>${pv.tds ? `<p class="muted">Next payout: ${rs(pv.due)} − TDS ${rs(pv.tds)} = <b>${rs(pv.net)}</b></p>` : ''}<form method="post" action="/panel/earnings/payee"><div class="grid"><div><label>Name (as on PAN)</label><input name="name" value="${esc(p.name || '')}" required></div><div><label>UPI ID for payouts</label><input name="upi" value="${esc(p.upi || '')}" placeholder="name@okaxis" required></div><div><label>PAN</label><input name="pan" value="${esc(p.pan || '')}" placeholder="ABCDE1234F" maxlength="10"></div></div><p class="muted">Needed for TDS: without a PAN the law asks for 20% TDS.</p><button class="sm">Save</button></form></div>`;
+}
+r.post('/earnings/payee', async (req, res) => {
+  const b = req.body, upi = String(b.upi || '').trim(), pan = String(b.pan || '').trim().toUpperCase();
+  if (!/^[\w.\-]{2,}@[a-zA-Z][\w.\-]{1,}$/.test(upi)) return back(res, '/panel/earnings', 'Please enter a UPI ID like name@okaxis.');
+  if (pan && !/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(pan)) return back(res, '/panel/earnings', 'PAN should look like ABCDE1234F.');
+  await db.q(`insert into payees(phone,name,upi,pan) values($1,$2,$3,$4) on conflict(phone) do update set name=$2, upi=$3, pan=coalesce(nullif($4,''),payees.pan), updated_at=now()`, [req.u.phone, String(b.name || '').trim().slice(0, 80), upi, pan]);
+  back(res, '/panel/earnings', 'Payout details saved.');
 });
 
 // ---------- earnings (zone admins and supervisors)
@@ -264,7 +302,7 @@ r.get('/earnings', async (req, res) => {
   const rows = await db.all(`select e.*, s.name shop from earnings e left join payments p on p.id=e.payment_id left join shops s on s.id=p.ref where e.phone=$1 order by e.id desc limit 200`, [u.phone]);
   const st = { due: 'y', paid: 'g', reversed: 'r' };
   res.send(page(req, 'Earnings', `<h1>My earnings</h1><div class="kp"><div class="k"><small>${MONTH()}</small><b>${rs(x.month)}</b></div><div class="k"><small>Waiting for payout</small><b>${rs(x.due)}</b></div><div class="k"><small>Paid out so far</small><b>${rs(x.paid)}</b></div></div>
-${await myNetwork(u)}<h2>Every payment</h2><div class="tw"><table><tr><th>Date</th><th>Shop</th><th>Payment</th><th>Role</th><th>Your share</th><th>Status</th></tr>${rows.map((e) => `<tr><td>${new Date(e.created_at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}</td><td>${esc(e.shop || '—')}</td><td>${e.source === 'setup' ? 'Setup fee' : 'Monthly fee'} ${rs(e.base)}</td><td>${e.role === 'admin' ? 'Zone admin' : 'Supervisor'} ${e.pct}%</td><td>${rs(e.amount)}${e.kind === 'reverse' ? ' (refund)' : ''}</td><td><span class="tag ${st[e.status] || 'b'}">${e.status}</span></td></tr>`).join('') || '<tr><td colspan="6">No earnings yet. You earn when shops in your zone pay.</td></tr>'}</table></div>`, 'Earnings'));
+${await payeeForm(u)}${await myNetwork(u)}<h2>Every payment</h2><div class="tw"><table><tr><th>Date</th><th>Shop</th><th>Payment</th><th>Role</th><th>Your share</th><th>Status</th></tr>${rows.map((e) => `<tr><td>${new Date(e.created_at).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata' })}</td><td>${esc(e.shop || '—')}</td><td>${e.source === 'setup' ? 'Setup fee' : 'Monthly fee'} ${rs(e.base)}</td><td>${e.role === 'admin' ? 'Zone admin' : 'Supervisor'} ${e.pct}%</td><td>${rs(e.amount)}${e.kind === 'reverse' ? ' (refund)' : ''}</td><td><span class="tag ${st[e.status] || 'b'}">${e.status}</span></td></tr>`).join('') || '<tr><td colspan="6">No earnings yet. You earn when shops in your zone pay.</td></tr>'}</table></div>`, 'Earnings'));
 });
 
 // ---------- shops

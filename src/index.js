@@ -7,6 +7,7 @@ const pay = require('./pay');
 const bot = require('./bot');
 const invoice = require('./invoice');
 const dashboard = require('./dashboard');
+const network = require('./network');
 
 const app = express();
 app.use(express.json({ verify: (req, _res, buf) => { req.raw = buf; } }));
@@ -177,6 +178,15 @@ app.get('/admin/wa-check', async (req, res) => {
 });
 
 // Monthly bills: last month's 2% bill goes out on the 1st (from 10 AM IST); reminders on the 5th and 10th.
+// EMart 3-month target: at least 15 shops in the zone have paid the setup fee since the admin started
+const SHOP_TARGET = Number(process.env.NET_SHOP_TARGET || 15);
+async function zoneTarget(a) {
+  const n = (await db.one(`select count(*)::int n from shops where area_id=$1 and paid and paid_at >= $2`, [a.id, a.admin_since])).n;
+  return { ok: n >= SHOP_TARGET, line: `${n} of ${SHOP_TARGET} shops onboarded` };
+}
+network.setIdleCheck(async (a) => !(await db.one(`select 1 from shops where area_id=$1 and created_at > now() - interval '60 days'
+  union all select 1 from payments where area_id=$1 and status='paid' and paid_at > now() - interval '60 days' limit 1`, [a.id])));
+require('./wa').setTemplateHook(() => network.countMsg('template'));
 async function billingJob() {
   const ist = new Date(Date.now() + 5.5 * 36e5), day = ist.getUTCDate(), hour = ist.getUTCHours();
   if (hour < 10 || process.env.AUTO_BILLS === '0') return;
@@ -186,10 +196,38 @@ async function billingJob() {
     if (r) { const n = await fn(); console.log(key, n); }
   };
   await once('bills:' + mk, () => bot.sendBills(mk));
+  // Monthly statement to every zone admin and supervisor
+  await once('stmt:' + mk, async () => { const ps = await network.statementPhones(mk); for (const p of ps) await bot.notify(p, await network.statementText(p, mk), [['💰 My earnings', 'myearn']]); return ps.length; });
+  await once('gold:' + mk, () => network.goldCheck(bot.notify));
+  // Daily: 3-month reviews and zones with no activity
+  await once('review:' + new Date(Date.now() + 5.5 * 36e5).toISOString().slice(0, 10), async () => (await network.reviewZones(zoneTarget, bot.notify, bot.notifyAdmins)).length);
   if (day >= 5) await once('remind5:' + mk, () => bot.remindBills(mk));
   if (day >= 10) await once('remind10:' + mk, () => bot.remindBills(mk));
 }
 app.get('/r/:code', (req, res) => res.redirect(`/?ref=${encodeURIComponent(req.params.code)}`));
+
+// Zone admin posters and QR codes (public: they only carry the referral link)
+const poster = require('./poster');
+const zoneByCode = (c) => db.one('select * from areas where upper(ref_code)=$1', [String(c || '').toUpperCase()]);
+app.get('/poster/:code.pdf', async (req, res) => {
+  const z = await zoneByCode(req.params.code); if (!z) return res.sendStatus(404);
+  const p = z.admin_phone ? await db.one('select name from payees where phone=$1', [z.admin_phone]) : null;
+  res.type('application/pdf').set('Content-Disposition', `inline; filename="${cfg.BRAND}-poster-${z.ref_code}.pdf"`).send(await poster.pdf(z, 'emart', p && p.name));
+});
+app.get('/qr/:code.png', async (req, res) => {
+  const z = await zoneByCode(req.params.code); if (!z) return res.sendStatus(404);
+  res.type('image/png').set('Cache-Control', 'public, max-age=86400').send(await poster.qrPng(network.refLink(z)));
+});
+// From EDeal: a new zone admin agreed there, so open the same zone here
+app.post('/internal/zone', async (req, res) => {
+  if (!network.peerAuth(req)) return res.sendStatus(401);
+  const b = req.body || {};
+  const t = await network.talukByName(b.district, b.taluk, b.supervisor);
+  const z = await network.createZone({ name: b.name, admin_phone: cfg.norm(b.admin_phone), lat: +b.lat, lng: +b.lng, taluk_id: t ? t.id : null });
+  if (b.payee) await db.q(`insert into payees(phone,name,upi,pan) values($1,$2,$3,$4) on conflict(phone) do update set name=$2, upi=$3, pan=$4, updated_at=now()`, [z.admin_phone, b.payee.name, b.payee.upi, b.payee.pan]);
+  if (!b.quiet) await bot.newAreaAdminWelcome(z);
+  res.json({ ok: true, id: z.id, ref_code: z.ref_code });
+});
 
 async function start() {
   await db.init();

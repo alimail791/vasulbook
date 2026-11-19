@@ -1,7 +1,7 @@
 {
   "name": "vasulbook-bazaar",
   "version": "1.0.0",
-  "description": "VasulBook Bazaar \u2013 multi-shop grocery ordering on WhatsApp",
+  "description": "VasulBook Bazaar – multi-shop grocery ordering on WhatsApp",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
@@ -15,6 +15,7 @@
     "express": "^4.21.2",
     "multer": "^2.5.0",
     "pdfkit": "^0.15.2",
-    "pg": "^8.13.1"
+    "pg": "^8.13.1",
+    "qrcode": "^1.5.4"
   }
 }

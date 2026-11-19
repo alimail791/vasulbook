@@ -22,7 +22,7 @@ const say = (p, t) => bot.handle(p, p === CUST ? 'Priya' : 'X', t, false);
 const loc = (p, lat, lng, label = '') => bot.handle(p, 'X', `loc:${lat},${lng}|${label}`, true);
 const tap = (p, label) => bot.handle(p, p === CUST ? 'Priya' : 'X', find(p, label), true);
 (async () => {
-  await db.q('drop table if exists shops, items, orders, sessions, menus, payments, areas, otps, cust_links, web_orders, categories, shop_types, cust_lang, earnings, referrals, kv, taluks, districts cascade'); await db.init();
+  await db.q('drop table if exists shops, items, orders, sessions, menus, payments, areas, otps, cust_links, web_orders, categories, shop_types, cust_lang, earnings, referrals, kv, taluks, districts, applications, payees, payouts, audit, msg_log cascade'); await db.init();
   await db.q("insert into cust_lang(phone,lang) select unnest(array['919003264537','919111122222','919222233333','919333344444','919444455555','919555566666','919811112222','919840011111','919876543210']),'en' on conflict do nothing");
   await say(ADMIN, 'hi'); assert(/admin/i.test(txt(last(ADMIN))));
   await tap(ADMIN, 'Add new shop'); await say(ADMIN, 'Sri Murugan Stores'); await say(ADMIN, '98400 11111'); await say(ADMIN, 'Anna Nagar'); await tap(ADMIN, 'Yes, opt in'); await tap(ADMIN, 'Other / not listed');
@@ -117,6 +117,32 @@ const tap = (p, label) => bot.handle(p, p === CUST ? 'Priya' : 'X', find(p, labe
   assert((await network.referralArea(NEWP)).id === zone.id); assert(txt(last(AADMIN)).includes('referral link'));
   assert(!txt(last(NEWP)).includes('ref:'), 'ref text not treated as a command');
   console.log('✔ network: supervisor scope, 40/10 split on bills, refunds, payouts, referral');
+  // ---------- 6. recruiting on WhatsApp
+  const APL = '919777788888'; await db.q(`insert into cust_lang(phone,lang) values($1,'en') on conflict do nothing`, [APL]);
+  await say(APL, 'ADMIN'); assert(txt(last(APL)).includes('Step 1 of 5'));
+  await say(APL, 'Kumar Raja'); await say(APL, 'West Mambalam, Mambalam taluk, Chennai'); await loc(APL, 13.03, 80.22);
+  await say(APL, 'abcd1234'); assert(txt(last(APL)).includes('does not look like a PAN'));
+  await say(APL, 'ABCDE1234F'); await say(APL, 'kumar@okaxis'); assert(txt(last(APL)).includes('Application *#'));
+  const ap = await db.one('select * from applications where phone=$1', [APL]); assert.equal(ap.taluk_id, tk.id, 'taluk matched from text');
+  assert(txt(last(ADMIN)).includes('Admin application #' + ap.id)); assert(box[SUP].some((m) => txt(m).includes('New admin application')));
+  await bot.handle(ADMIN, 'X', 'rcok:' + ap.id, true); assert(txt(last(APL)).includes('I agree') || opts(last(APL)).some(([l]) => l.includes('I agree')));
+  await tap(APL, 'I agree');
+  const nz = await db.one('select * from areas where admin_phone=$1', [APL]); assert(nz && nz.taluk_id === tk.id && nz.ref_code);
+  assert(box[APL].some((m) => txt(m).includes('zone admin')), 'welcome after agreeing');
+  assert.equal((await db.one('select upi from payees where phone=$1', [APL])).upi, 'kumar@okaxis');
+  // ---------- 7. TDS once the year's commission passes ₹20,000
+  await db.q(`insert into earnings(payment_id,source,role,phone,base,pct,amount,month) values(99001,'setup','admin',$1,62500,40,25000,'2026-11')`, [AADMIN]);
+  const pv = await network.payoutPreview(AADMIN); assert.equal(pv.due, 24200); assert.equal(pv.tds, 500); assert.equal(pv.net, 23700);
+  assert((await network.payoutCsv()).includes('23700.00'));
+  assert((await network.statementText(AADMIN, '2026-11')).includes('TDS'));
+  // ---------- 9. poster + QR
+  const poster = require('../src/poster'); assert((await poster.pdf(nz, 'emart', 'Kumar')).slice(0, 4).toString() === '%PDF');
+  assert((await poster.qrPng(network.refLink(nz))).slice(1, 4).toString() === 'PNG');
+  // ---------- 10. 3-month review: target missed → one more month
+  await db.q(`update areas set admin_since=now() - interval '95 days' where id=$1`, [nz.id]);
+  const rv = await network.reviewZones(async () => ({ ok: false, line: '2 of 15 shops onboarded' }), bot.notify, bot.notifyAdmins);
+  assert(rv.some(([n, st]) => n === nz.name && st === 'extended')); assert(txt(last(APL)).includes('one more month'));
+  console.log('✔ recruiting, agreement, TDS payouts, poster, 3-month review');
   // far-away customer sees no shops
   await loc(CUST2, 13.20, 80.30); assert(txt(last(CUST2)).includes('No shops'));
   // ---------- shop types: customer chooses what to shop for when many nearby shops

@@ -158,8 +158,11 @@ async function activate(s, p = null) {
   if (!p) p = await db.one(`insert into payments(kind,ref,amount,status,paid_at,area_id) values('setup',$1,$2,'paid',now(),$3) returning *`, [s.id, cfg.SETUP_FEE, s.area_id || null]);
   await db.q(`update payments set status='cancelled' where kind='setup' and ref=$1 and id<>$2 and status='created'`, [s.id, p.id]);
   await earn(p, s);
+  // Bundle: 1 month of EDeal Premium for the shop (works once PEER_URL / PEER_KEY are set on both bots)
+  const z = s.area_id ? await db.areas.get(s.area_id) : null;
+  const bundle = await network.peer('/internal/bundle', { phone: s.owner_phone, name: s.name, lat: s.lat ?? (z && z.lat), lng: s.lng ?? (z && z.lng), admin_phone: z && z.admin_phone, days: 30 });
   const n = await itemCount(s.id);
-  await notify(s.owner_phone, `🎉 Payment of ${rs(cfg.SETUP_FEE)} received.\n*${s.name} is now LIVE* — customers can order from you on WhatsApp.\n\nBilling: ${cfg.COMM * 100}% of monthly sales, sent at the start of every month.${n ? '' : '\n\n👉 Add your items to start getting orders.'}`,
+  await notify(s.owner_phone, `🎉 Payment of ${rs(cfg.SETUP_FEE)} received.\n*${s.name} is now LIVE* — customers can order from you on WhatsApp.\n\nBilling: ${cfg.COMM * 100}% of monthly sales, sent at the start of every month.${bundle && bundle.ok ? '\n\n🎁 Bonus: *1 month of EDeal Premium free* — post your offers for people within 5 km. EDeal will message you.' : ''}${n ? '' : '\n\n👉 Add your items to start getting orders.'}`,
     [['➕ Add items', 'additem'], ['Menu', 'menu']]);
   await notifyShopAdmins(s, `💰 Setup fee ${rs(cfg.SETUP_FEE)} received from *${s.name}*. Shop is now live.`, [['🏪 Manage shops', 'list']]);
   return true;
@@ -213,8 +216,10 @@ async function adminMenu(c) {
   const sup = c.isSuper ? [] : await network.supervisorOf(c.from);
   const title = c.isSuper ? `👑 *${cfg.BRAND} — Main admin*` : `🗺 *${cfg.BRAND} — ${sup.length ? 'Supervisor' : 'Zone admin'}*\n${c.myAreas.map((a) => a.name).join(', ') || sup.map((t) => t.name + ' taluk').join(', ')}`;
   const b = [['➕ Add new shop', 'add'], ['🏪 Manage shops', 'list'], ['📊 Sales & earnings', 'sales'], ['🛵 Delivery desk', 'deliv']];
-  if (c.isSuper) b.push(['🗺 Areas & admins', 'areas']);
-  else b.push(['💰 My earnings', 'myearn']);
+  if (c.isSuper) {
+    const n = (await db.one(`select count(*)::int n from applications where status in ('pending','waitlist')`)).n;
+    b.push(['🗺 Areas & admins', 'areas'], [`📝 Applications (${n})`, 'apps']);
+  } else b.push(['💰 My earnings', 'myearn'], ['🖼 My poster', 'myposter']);
   b.push(['🌐 Web admin panel', 'web']);
   return c.reply(`${title}\nWhat would you like to do?`, b);
 }
@@ -235,8 +240,40 @@ async function areaMoney(a) {
   return { shops: shops.length, paid, sales, received: got.s, admin: e.adm, supervisor: e.sup };
 }
 async function newAreaAdminWelcome(a) {
+  await network.adminChanged(a.id);
   a = await network.ensureRef(a.id);
-  await notify(a.admin_phone, `🗺 You are now the *zone admin* for *${a.name}* on ${cfg.BRAND}.\n\nYou add and manage shops in your zone, handle home deliveries, and earn *${network.ADMIN_PCT}% of every payment* your shops make (setup fee and monthly fee), paid out every month.\n\n🔗 Your referral link (put it on your posters):\n${network.refLink(a)}\n\nType *menu* to start.`, [['💰 My earnings', 'myearn'], ['Menu', 'menu']]);
+  await notify(a.admin_phone, `🗺 You are now the *zone admin* for *${a.name}* on ${cfg.BRAND}.\n\nYou add and manage shops in your zone, handle home deliveries, and earn *${network.ADMIN_PCT}% of every payment* your shops make (setup fee and monthly fee), paid out every month.\n\n🔗 Your referral link (put it on your posters):\n${network.refLink(a)}\n\nType *menu* to start.`, [['💰 My earnings', 'myearn'], ['🖼 My poster', 'myposter'], ['Menu', 'menu']]);
+}
+// ---- recruiting zone admins (WhatsApp "ADMIN")
+async function newApplication(a) {
+  await notifyAdmins(await network.appLine(a), [['✅ Approve', 'rcok:' + a.id], ['❌ Reject', 'rcno:' + a.id]]);
+  const t = a.taluk_id ? await network.taluks.get(a.taluk_id) : null;
+  if (t && t.supervisor_phone) await notify(t.supervisor_phone, `📝 New admin application in *${t.name}* taluk: ${a.name} (+${a.phone}). The main admin will review it.`);
+}
+async function decideApp(c, id, ok) {
+  const a = await network.decide(id, ok, c.from);
+  if (!a) return c.reply('Already handled.', [['Menu', 'menu']]);
+  if (ok) await notify(a.phone, network.agreementText(), [['✅ I agree', 'rcagree']]);
+  else await notify(a.phone, `Thank you for applying to ${cfg.BRAND}. We can't take your application right now. We'll message you if a place opens in your area.`);
+  return c.reply(ok ? `✅ Approved #${a.id}. ${a.name} was sent the agreement; the zone opens when they tap *I agree*.` : `Rejected #${a.id}.`, [['📝 Applications', 'apps'], ['Menu', 'menu']]);
+}
+async function agreeAdmin(c) {
+  const r = await network.agree(c.from);
+  if (!r) return c.reply(`There is no approved application for this number. Send *ADMIN* to apply.`);
+  await newAreaAdminWelcome(r.zone);
+  await network.peer('/internal/zone', await network.zonePayload(r.zone));
+  await notifyAdmins(`🎉 ${r.app.name} (+${c.from}) agreed and now runs *${r.zone.name}*.${r.zone.taluk_id ? '' : ' Set its taluk on the panel.'}`);
+}
+// Poster (PDF to print) and QR image for each zone this admin runs
+async function sendPosters(c) {
+  const own = c.myAreas.filter((a) => a.admin_phone === c.from);
+  if (!own.length) return c.reply('Posters are for zone admins.', [['Menu', 'menu']]);
+  for (let a of own) {
+    a = await network.ensureRef(a.id);
+    await wa.sendDoc(c.from, `${cfg.PUBLIC_URL}/poster/${a.ref_code}.pdf`, `${cfg.BRAND}-poster-${a.ref_code}.pdf`, `🖨 Poster for ${a.name} — print it A4 and put it up in shops.`);
+    await wa.sendImage(c.from, `${cfg.PUBLIC_URL}/qr/${a.ref_code}.png`, `📲 Put this QR on your WhatsApp Status:\n${network.refLink(a)}`);
+  }
+  return c.reply('Your poster and QR are above 👆', [['Menu', 'menu']]);
 }
 // "My earnings" for zone admins and supervisors
 async function earningsText(c) {
@@ -306,6 +343,14 @@ async function admin(c, v, btn) {
   }
   if (v === 'add') { S.state = 'a_name'; return c.reply('➕ *New shop*\nSend the shop name.'); }
   if (v === 'myearn') return c.reply(await earningsText(c), [['Menu', 'menu']]);
+  if (v === 'myposter') return sendPosters(c);
+  if (c.isSuper && v === 'apps') {
+    const as = await db.all(`select * from applications where status in ('pending','waitlist') order by id limit 8`);
+    if (!as.length) return c.reply('No admin applications waiting.', [['Menu', 'menu']]);
+    for (const a of as) await c.reply(await network.appLine(a), [['✅ Approve', 'rcok:' + a.id], ['❌ Reject', 'rcno:' + a.id]]);
+    return null;
+  }
+  if (c.isSuper && (m = v.match(/^rc(ok|no):(\d+)$/))) return decideApp(c, +m[2], m[1] === 'ok');
   if (v === 'web') return c.reply(cfg.PUBLIC_URL ? `🌐 Web admin panel:\n${cfg.PUBLIC_URL}/panel\nLog in with your WhatsApp number — the code comes here.` : 'Set PUBLIC_URL to enable the web dashboard.', [['Menu', 'menu']]);
 
   // --- areas (main admin)
@@ -852,6 +897,12 @@ async function handle(from, name, v, btn) {
     }
     if (low === '#customer') { sess.data.mode = 'customer'; return await custWelcome(c); }
     if (low === '#admin' || low === '#shop') delete sess.data.mode;
+    // ---- becoming a zone admin: anyone who is not an admin can send ADMIN
+    if (v === 'rcagree') return await agreeAdmin(c);
+    if (!isAdmin) {
+      const rr = await network.recruitStep(from, sess, v, c.loc);
+      if (rr) { if (rr.done) await newApplication(rr.done); return await c.reply(rr.text, rr.btns || []); }
+    }
     let role = sess.data.mode === 'customer' ? 'customer' : isAdmin ? 'admin' : c.ownShops.length ? 'owner' : 'customer';
     if (/^order\s+w[a-z0-9]{5,8}\b/.test(low)) role = 'customer';
     if (low === '#shop' && c.ownShops.length) role = 'owner';
@@ -868,4 +919,4 @@ async function handle(from, name, v, btn) {
   }
 }
 
-module.exports = { earn, billPaid, confirmPayment, refundPayment, remindBills, earningsText, PREV_MONTH_KEY, MONTH_NAME, langOf, setLang, createOrder, orderPlaced, webLink, nearbyShops, handle, activate, notify, notifyAdmins, notifyShopAdmins, rs, setStatus, ownerWelcome, mkCode, newAreaAdminWelcome, sendBills, areaMoney, out };
+module.exports = { decideApp, newApplication, sendPosters, earn, billPaid, confirmPayment, refundPayment, remindBills, earningsText, PREV_MONTH_KEY, MONTH_NAME, langOf, setLang, createOrder, orderPlaced, webLink, nearbyShops, handle, activate, notify, notifyAdmins, notifyShopAdmins, rs, setStatus, ownerWelcome, mkCode, newAreaAdminWelcome, sendBills, areaMoney, out };

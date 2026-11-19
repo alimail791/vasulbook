@@ -71,9 +71,17 @@ async function sendDoc(to, link, filename, caption) {
   return api({ to, type: 'document', document: { link, filename, caption: cut(i18n.tr(await L(to), caption || ''), 1000) } });
 }
 
+async function sendImage(to, link, caption) {
+  return api({ to, type: 'image', image: { link, caption: cut(i18n.tr(await L(to), caption || ''), 1000) } });
+}
+// Counts business-initiated (template) messages for the daily limit and cost report
+let onTemplate = null;
+const setTemplateHook = (fn) => { onTemplate = fn; };
+
 // Business-initiated message outside the 24h window needs an approved template.
 async function sendTemplate(to, text) {
   if (!cfg.WA_TEMPLATE) throw new Error('No WA_NOTIFY_TEMPLATE configured');
+  if (onTemplate) { try { await onTemplate(to, 'template'); } catch (_) { /* ignore */ } }
   const lang = await L(to);
   const param = cut(i18n.tr(lang, String(text)).replace(/\s*\n+\s*/g, ' · ').replace(/\s{4,}/g, ' '), 1000);
   const tpl = (code) => api({
@@ -90,4 +98,4 @@ async function markRead(id) {
   try { await api({ status: 'read', message_id: id }); } catch (_) { /* ignore */ }
 }
 
-module.exports = { send, sendText, sendDoc, sendTemplate, markRead, setSink, setLangResolver };
+module.exports = { sendImage, setTemplateHook, send, sendText, sendDoc, sendTemplate, markRead, setSink, setLangResolver };
