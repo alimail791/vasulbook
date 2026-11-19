@@ -4,7 +4,7 @@ const assert = require('assert'); const db = require('../src/db'); const wa = re
 const sent = []; wa.setSink((b) => { sent.push(b); return {}; });
 const { app } = require('../src/index');
 (async () => {
-  await db.q('drop table if exists shops, items, orders, sessions, menus, payments, areas, otps, cust_links, web_orders, categories, shop_types, cust_lang cascade'); await db.init();
+  await db.q('drop table if exists shops, items, orders, sessions, menus, payments, areas, otps, cust_links, web_orders, categories, shop_types, cust_lang, earnings, referrals, kv, taluks, districts cascade'); await db.init();
   await db.q("insert into cust_lang(phone,lang) select unnest(array['919003264537','919111122222','919222233333','919333344444','919444455555','919555566666','919811112222','919840011111','919876543210']),'en' on conflict do nothing");
   const srv = app.listen(3998); const B = 'http://localhost:3998';
   let cookie = '';
@@ -79,14 +79,27 @@ const { app } = require('../src/index');
   for (const to of ['Accepted', 'Ready', 'Completed']) { x = await go(`/panel/orders/${o.id}/status`, { to }); assert(decodeURIComponent(x.loc).includes(to), to); }
   x = await go(`/panel/orders/${o.id}/status`, { to: 'Accepted' }); assert(decodeURIComponent(x.loc).includes('already'));
   assert.equal((await db.orders.get(o.id)).status, 'Completed');
-  x = await go('/panel/bills'); assert(x.text.includes('Fresh Mart')); x = await go('/panel/bills', {}); assert(decodeURIComponent(x.loc).includes('Bills sent to 1'));
+  x = await go('/panel/bills'); assert(x.text.includes('Fresh Mart')); x = await go('/panel/bills', {}); assert(decodeURIComponent(x.loc).includes('Bills sent to'));
+  // network page: add a taluk with a supervisor, put the zone in it, see payments
+  x = await go('/panel/network'); assert(x.text.includes('Taluks set up') && x.text.includes('Chennai') && x.text.includes('+919111122222'), 'payout row for zone admin');
+  const dch = await db.one(`select id from districts where name='Chennai'`);
+  x = await go('/panel/network/taluks', { district_id: String(dch.id), name: 'Ambattur', sup: '9555566666' }); assert(decodeURIComponent(x.loc).includes('Ambattur'));
+  const tk = await db.one(`select * from taluks where name='Ambattur'`); assert.equal(tk.supervisor_phone, '919555566666');
+  x = await go(`/panel/areas/${area.id}`, { name: area.name, admin: '9111122222', taluk_id: String(tk.id), loc: '13.04,80.20', radius: '3', active: '1' });
+  x = await go('/panel/areas'); assert(x.text.includes('Ambattur') && x.text.includes('Code '));
+  const sp = await db.one(`select * from payments where kind='setup' and status='paid'`);
+  x = await go(`/panel/payments/${sp.id}/refund`, {}); assert(decodeURIComponent(x.loc).includes('refunded'));
+  x = await go('/panel/network/payout', { phone: '919111122222', ref: 'U1' }); assert(decodeURIComponent(x.loc).includes('Nothing was due'), 'refund cancelled the unpaid commission');
   x = await go('/panel'); console.log('DASH KPIs:', x.text.match(/<div class="kp">.*?<div class="row"/s)[0].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 300));
   // area admin login: scoped
   cookie = ''; sent.length = 0;
   await go('/panel/login', { phone: '9111122222' }); const c2 = JSON.stringify(sent.at(-1)).match(/\*(\d{6})\*/)[1];
   await go('/panel/verify', { phone: '919111122222', code: c2 });
-  x = await go('/panel'); assert(x.text.includes('Area admin'));
+  x = await go('/panel'); assert(x.text.includes('Zone admin') && x.text.includes('referral link'));
   x = await go('/panel/areas'); assert.equal(x.status, 403);
+  x = await go('/panel/earnings'); assert(x.text.includes('My earnings') && x.text.includes('Setup fee'));
+  x = await go(`/panel/shops/${shop.id}/paid`, {}); assert.equal(x.status, 403);
+  x = await go('/panel/network'); assert.equal(x.status, 403);
   x = await go('/panel/bills'); assert.equal(x.status, 403);
   x = await go('/panel/catalog'); assert.equal(x.status, 403);
   dl = await fetch(B + `/panel/shops/${shop.id}/items.xlsx`, { headers: { cookie } }); assert.equal(dl.status, 200);
@@ -94,7 +107,8 @@ const { app } = require('../src/index');
   const other = await db.one(`insert into shops(code,name,owner_phone,area) values('OTH','Other Shop','919444455555','Elsewhere') returning *`);
   x = await go('/panel/shops'); assert(x.text.includes('Fresh Mart') && !x.text.includes('Other Shop'));
   x = await go('/panel/shops/' + other.id); assert.equal(x.status, 404);
-  x = await go('/panel/shops/' + other.id + '/paid', {}); assert(decodeURIComponent(x.loc).includes('not found'));
+  x = await go('/panel/shops/' + other.id + '/paid', {}); assert.equal(x.status, 403);
+  x = await go('/panel/shops/' + other.id + '/plink', {}); assert(decodeURIComponent(x.loc).includes('not found'));
   x = await go('/panel/logout'); x = await go('/panel'); assert.equal(x.loc, '/panel/login');
   // admin key login form
   cookie = ''; x = await go('/panel/keylogin', { key: 'wrong' }); assert.equal(x.status, 401);

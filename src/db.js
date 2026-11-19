@@ -52,6 +52,8 @@ async function init() {
   const c = await one('select count(*)::int c from orders');
   if (c.c === 0) await q("select setval('orders_id_seq', 1000, true)");
   await require('./catalog').init();
+  await q('alter table payments add column if not exists area_id int');
+  await require('./network').init();
 }
 
 // ---- domain helpers
@@ -67,6 +69,10 @@ const shops = {
   monthSales: async (id) =>
     (await one(`select coalesce(sum(subtotal),0) s from orders where shop_id=$1 and status<>'Cancelled'
       and created_at >= date_trunc('month', now() at time zone 'Asia/Kolkata') at time zone 'Asia/Kolkata'`, [id])).s,
+  // sales in a month 'YYYY-MM' (IST)
+  salesIn: async (id, mk) =>
+    (await one(`select coalesce(sum(subtotal),0) s from orders where shop_id=$1 and status<>'Cancelled'
+      and to_char(created_at at time zone 'Asia/Kolkata','YYYY-MM')=$2`, [id, mk])).s,
   todaySales: async (id) =>
     one(`select count(*)::int n, coalesce(sum(subtotal),0) s from orders where shop_id=$1 and status<>'Cancelled'
       and created_at >= date_trunc('day', now() at time zone 'Asia/Kolkata') at time zone 'Asia/Kolkata'`, [id]),
@@ -96,7 +102,8 @@ const areas = {
   all: () => all('select * from areas order by name'),
   active: () => all('select * from areas where active order by name'),
   get: (id) => one('select * from areas where id=$1', [id]),
-  byAdmin: (phone) => all('select * from areas where admin_phone=$1 order by name', [phone]),
+  // zones a person runs, plus every zone in the taluks they supervise
+  byAdmin: (phone) => all('select * from areas where admin_phone=$1 or taluk_id in (select id from taluks where supervisor_phone=$1) order by name', [phone]),
   set: (id, f) => {
     const k = Object.keys(f);
     return one(`update areas set ${k.map((x, i) => `${x}=$${i + 2}`).join(',')} where id=$1 returning *`, [id, ...k.map((x) => f[x])]);

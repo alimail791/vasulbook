@@ -26,7 +26,7 @@ function english(p, from) {
   return bad;
 }
 (async () => {
-  await db.q('drop table if exists shops, items, orders, sessions, menus, payments, areas, otps, cust_links, web_orders, categories, shop_types, cust_lang cascade'); await db.init();
+  await db.q('drop table if exists shops, items, orders, sessions, menus, payments, areas, otps, cust_links, web_orders, categories, shop_types, cust_lang, earnings, referrals, kv, taluks, districts cascade'); await db.init();
   await say(ADMIN, 'hi'); assert(/admin/i.test(txt(last(ADMIN))), 'admin gets English without a picker');
   await tap(ADMIN, 'Add new shop'); await say(ADMIN, 'Sri Murugan Stores'); await say(ADMIN, '97000 00001'); await say(ADMIN, 'Anna Nagar'); await tap(ADMIN, 'Yes, opt in'); await tap(ADMIN, 'Other / not listed');
   await tap(ADMIN, 'received');

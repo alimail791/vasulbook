@@ -78,11 +78,8 @@ app.post('/razorpay/webhook', async (req, res) => {
     const p = await db.one(`update payments set status='paid', paid_at=now() where link_id=$1 and status<>'paid' returning *`, [link.id]);
     if (!p) return;
     const s = await db.shops.get(p.ref);
-    if (p.kind === 'setup') await bot.activate(s);
-    if (p.kind === 'bill') {
-      await bot.notify(s.owner_phone, `✅ Payment of ${bot.rs(p.amount)} received. Thank you!`);
-      await bot.notifyAdmins(`💰 ${s.name} paid the ${p.month} bill: ${bot.rs(p.amount)}`);
-    }
+    if (p.kind === 'setup') { if (!(await bot.activate(s, p))) await bot.earn(p, s); }
+    if (p.kind === 'bill') await bot.billPaid(p);
   } catch (e) { console.error('razorpay webhook', e); }
 });
 
@@ -179,10 +176,27 @@ app.get('/admin/wa-check', async (req, res) => {
   res.json(await waDiagnose());
 });
 
+// Monthly bills: last month's 2% bill goes out on the 1st (from 10 AM IST); reminders on the 5th and 10th.
+async function billingJob() {
+  const ist = new Date(Date.now() + 5.5 * 36e5), day = ist.getUTCDate(), hour = ist.getUTCHours();
+  if (hour < 10 || process.env.AUTO_BILLS === '0') return;
+  const mk = bot.PREV_MONTH_KEY();
+  const once = async (key, fn) => {
+    const r = await db.one(`insert into kv(key,value) values($1,'1') on conflict(key) do nothing returning key`, [key]);
+    if (r) { const n = await fn(); console.log(key, n); }
+  };
+  await once('bills:' + mk, () => bot.sendBills(mk));
+  if (day >= 5) await once('remind5:' + mk, () => bot.remindBills(mk));
+  if (day >= 10) await once('remind10:' + mk, () => bot.remindBills(mk));
+}
+app.get('/r/:code', (req, res) => res.redirect(`/?ref=${encodeURIComponent(req.params.code)}`));
+
 async function start() {
   await db.init();
+  setInterval(() => billingJob().catch((e) => console.error('billing job', e)), 30 * 60e3);
+  setTimeout(() => billingJob().catch((e) => console.error('billing job', e)), 60e3);
   waDiagnose().then((d) => console.log('WA check:', JSON.stringify(d))).catch((e) => console.error('WA check failed', e.message));
   return app.listen(cfg.PORT, () => console.log(`${cfg.BRAND} listening on ${cfg.PORT} · admins ${cfg.ADMINS.join(',')}`));
 }
 if (require.main === module) start().catch((e) => { console.error(e); process.exit(1); });
-module.exports = { app, start };
+module.exports = { app, start, billingJob };

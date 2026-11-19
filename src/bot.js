@@ -8,6 +8,7 @@ const pay = require('./pay');
 const invoice = require('./invoice');
 const catalog = require('./catalog');
 const i18n = require('./strings');
+const network = require('./network');
 
 /* -------------------------------------------------------------- language */
 const langCache = new Map();
@@ -28,6 +29,9 @@ wa.setLangResolver(langOf);
 const rs = (n) => '₹' + Number(n).toLocaleString('en-IN', { maximumFractionDigits: 2 });
 const MONTH = () => new Date().toLocaleString('en-IN', { month: 'long', timeZone: 'Asia/Kolkata' });
 const MONTH_KEY = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }).slice(0, 7);
+// 'YYYY-MM' of last month (IST) and a month key as words, e.g. 'October 2026'
+const PREV_MONTH_KEY = () => { const [y, mo] = MONTH_KEY().split('-').map(Number); return mo === 1 ? `${y - 1}-12` : `${y}-${String(mo - 1).padStart(2, '0')}`; };
+const MONTH_NAME = (mk) => new Date(mk + '-15T00:00:00Z').toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 const MENU_WORDS = ['hi', 'hello', 'hey', 'menu', 'start', '0', 'hii', 'vanakkam', 'namaste'];
 const CLOSED = ['Completed', 'Cancelled'];
 
@@ -137,10 +141,23 @@ async function ownerWelcome(s) {
     [['💳 Pay setup fee', 'paysetup'], ['➕ Add items', 'additem'], ['Menu', 'menu']]);
 }
 
-async function activate(s) {
+// Commission for money that has come in: zone admin 40%, taluk supervisor 10% (see network.js)
+async function earn(p, s) {
+  await db.q('update payments set area_id=$2 where id=$1', [p.id, s.area_id || null]);
+  const rows = await network.record({ paymentId: p.id, source: p.kind, areaId: s.area_id, amount: Number(p.amount), paidAt: p.paid_at });
+  const what = p.kind === 'setup' ? 'setup fee' : `${p.month ? MONTH_NAME(p.month) + ' ' : ''}service fee`;
+  for (const e of rows) await notify(e.phone, `💰 You earned *${rs(e.amount)}* (${e.pct}%) — ${s.name} paid the ${rs(p.amount)} ${what}.
+It's added to your next payout.`, [['💰 My earnings', 'myearn']]);
+  return rows;
+}
+
+// Setup fee received. p = the paid payment (from Razorpay, or confirmed by the main admin).
+async function activate(s, p = null) {
   if (s.paid) return false;
   s = await db.shops.set(s.id, { paid: true, active: true, paid_at: new Date() });
-  await db.q(`update payments set status='paid', paid_at=coalesce(paid_at,now()) where kind='setup' and ref=$1`, [s.id]);
+  if (!p) p = await db.one(`insert into payments(kind,ref,amount,status,paid_at,area_id) values('setup',$1,$2,'paid',now(),$3) returning *`, [s.id, cfg.SETUP_FEE, s.area_id || null]);
+  await db.q(`update payments set status='cancelled' where kind='setup' and ref=$1 and id<>$2 and status='created'`, [s.id, p.id]);
+  await earn(p, s);
   const n = await itemCount(s.id);
   await notify(s.owner_phone, `🎉 Payment of ${rs(cfg.SETUP_FEE)} received.\n*${s.name} is now LIVE* — customers can order from you on WhatsApp.\n\nBilling: ${cfg.COMM * 100}% of monthly sales, sent at the start of every month.${n ? '' : '\n\n👉 Add your items to start getting orders.'}`,
     [['➕ Add items', 'additem'], ['Menu', 'menu']]);
@@ -148,24 +165,56 @@ async function activate(s) {
   return true;
 }
 
-async function sendBills() {
+// Monthly 2% bill for a finished month (default: last month). A shop is billed once per month.
+async function sendBills(mk = PREV_MONTH_KEY()) {
   const live = (await db.shops.all()).filter((s) => s.paid);
   let sent = 0;
   for (const s of live) {
-    const ms = await db.shops.monthSales(s.id), amt = Math.round(ms * cfg.COMM * 100) / 100;
+    if (await db.one(`select 1 from payments where kind='bill' and ref=$1 and month=$2 and status not in ('cancelled','refunded')`, [s.id, mk])) continue;
+    const ms = await db.shops.salesIn(s.id, mk), amt = Math.round(ms * cfg.COMM * 100) / 100;
     if (amt <= 0) continue;
-    const p = await pay.createLink({ kind: 'bill', ref: s.id, month: MONTH_KEY(), amount: amt, description: `${cfg.BRAND} ${MONTH()} service fee – ${s.name}`, phone: s.owner_phone, name: s.name });
-    await notify(s.owner_phone, `🧾 *${cfg.BRAND} — ${MONTH()} bill*\nYour sales: ${rs(ms)}\nService fee (${cfg.COMM * 100}%): *${rs(amt)}*\n\n${pay.payText(p)}`);
+    const p = await pay.createLink({ kind: 'bill', ref: s.id, month: mk, amount: amt, description: `${cfg.BRAND} ${MONTH_NAME(mk)} service fee – ${s.name}`, phone: s.owner_phone, name: s.name });
+    await notify(s.owner_phone, `🧾 *${cfg.BRAND} — ${MONTH_NAME(mk)} bill*\nYour sales: ${rs(ms)}\nService fee (${cfg.COMM * 100}%): *${rs(amt)}*\n\n${pay.payText(p)}`);
     sent++;
   }
   return sent;
 }
+// Reminder for bills still unpaid
+async function remindBills(mk = PREV_MONTH_KEY()) {
+  const ps = await db.all(`select p.*, s.name, s.owner_phone from payments p join shops s on s.id=p.ref where p.kind='bill' and p.month=$1 and p.status='created'`, [mk]);
+  for (const p of ps) await notify(p.owner_phone, `⏰ *Reminder:* your ${cfg.BRAND} ${MONTH_NAME(mk)} bill of *${rs(p.amount)}* is still unpaid.\n\n${pay.payText(p)}`);
+  return ps.length;
+}
+// A bill payment came in (Razorpay, or confirmed by the main admin)
+async function billPaid(p) {
+  const s = await db.shops.get(p.ref);
+  await earn(p, s);
+  await notify(s.owner_phone, `✅ Payment of ${rs(p.amount)} received. Thank you!`);
+  await notifyAdmins(`💰 ${s.name} paid the ${p.month ? MONTH_NAME(p.month) : ''} bill: ${rs(p.amount)}`);
+}
+// Main admin confirms a payment made outside Razorpay (direct UPI)
+async function confirmPayment(id) {
+  const p = await db.one(`update payments set status='paid', paid_at=now() where id=$1 and status='created' returning *`, [id]);
+  if (!p) return null;
+  const s = await db.shops.get(p.ref);
+  if (p.kind === 'setup') { if (!(await activate(s, p))) await earn(p, s); } else await billPaid(p);
+  return p;
+}
+// Refund: the payment is marked refunded and the commission on it is taken back
+async function refundPayment(id) {
+  const p = await db.one(`update payments set status='refunded' where id=$1 and status='paid' returning *`, [id]);
+  if (!p) return null;
+  await network.reverse(p.id, p.kind);
+  return p;
+}
 
 async function adminMenu(c) {
   c.sess.state = null;
-  const title = c.isSuper ? `👑 *${cfg.BRAND} — Main admin*` : `🗺 *${cfg.BRAND} — Area admin*\n${c.myAreas.map((a) => a.name).join(', ')}`;
+  const sup = c.isSuper ? [] : await network.supervisorOf(c.from);
+  const title = c.isSuper ? `👑 *${cfg.BRAND} — Main admin*` : `🗺 *${cfg.BRAND} — ${sup.length ? 'Supervisor' : 'Zone admin'}*\n${c.myAreas.map((a) => a.name).join(', ') || sup.map((t) => t.name + ' taluk').join(', ')}`;
   const b = [['➕ Add new shop', 'add'], ['🏪 Manage shops', 'list'], ['📊 Sales & earnings', 'sales'], ['🛵 Delivery desk', 'deliv']];
   if (c.isSuper) b.push(['🗺 Areas & admins', 'areas']);
+  else b.push(['💰 My earnings', 'myearn']);
   b.push(['🌐 Web admin panel', 'web']);
   return c.reply(`${title}\nWhat would you like to do?`, b);
 }
@@ -175,16 +224,33 @@ async function areaLine(a) {
   const n = (await db.one('select count(*)::int c from shops where area_id=$1', [a.id])).c;
   return `*${a.name}* ${a.active ? '' : '⏸'}\n   👤 Admin: ${a.admin_phone ? '+' + a.admin_phone : 'not set'} · ${n} shops · ${a.lat != null ? `📍 ${a.radius_km} km radius` : '📍 location not set'}`;
 }
+// This month's numbers for one zone. Commission comes from the earnings ledger (money received only).
 async function areaMoney(a) {
   const shops = await db.all('select * from shops where area_id=$1', [a.id]);
   let sales = 0; for (const s of shops) sales += await db.shops.monthSales(s.id);
   const paid = shops.filter((s) => s.paid).length;
-  const setupTotal = paid * cfg.SETUP_FEE, setupArea = setupTotal * a.setup_share;
-  const comm = sales * cfg.COMM, commArea = (sales * a.comm_pct) / 100;
-  return { shops: shops.length, paid, sales, setupTotal, setupArea, comm, commArea };
+  const mk = network.monthKey();
+  const got = await db.one(`select coalesce(sum(amount),0) s from payments where area_id=$1 and status='paid' and to_char(paid_at at time zone 'Asia/Kolkata','YYYY-MM')=$2`, [a.id, mk]);
+  const e = await db.one(`select coalesce(sum(amount) filter (where role='admin'),0) adm, coalesce(sum(amount) filter (where role='supervisor'),0) sup from earnings where area_id=$1 and month=$2 and status<>'reversed'`, [a.id, mk]);
+  return { shops: shops.length, paid, sales, received: got.s, admin: e.adm, supervisor: e.sup };
 }
 async function newAreaAdminWelcome(a) {
-  await notify(a.admin_phone, `🗺 You are now the *area admin* for *${a.name}* on ${cfg.BRAND}.\n\nYou can add and manage shops in your area, handle home deliveries, and see your earnings.\nYour share: *${Math.round(a.setup_share * 100)}% of each ₹${cfg.SETUP_FEE} setup fee + ${a.comm_pct}% of your shops' sales*.\n\nType *menu* to start.`, [['Menu', 'menu']]);
+  a = await network.ensureRef(a.id);
+  await notify(a.admin_phone, `🗺 You are now the *zone admin* for *${a.name}* on ${cfg.BRAND}.\n\nYou add and manage shops in your zone, handle home deliveries, and earn *${network.ADMIN_PCT}% of every payment* your shops make (setup fee and monthly fee), paid out every month.\n\n🔗 Your referral link (put it on your posters):\n${network.refLink(a)}\n\nType *menu* to start.`, [['💰 My earnings', 'myearn'], ['Menu', 'menu']]);
+}
+// "My earnings" for zone admins and supervisors
+async function earningsText(c) {
+  const x = await network.summary(c.from);
+  const sup = await network.supervisorOf(c.from);
+  const own = c.myAreas.filter((a) => a.admin_phone === c.from);
+  const links = [];
+  for (let a of own) { a = await network.ensureRef(a.id); links.push(`📍 ${a.name}: ${network.refLink(a)}`); }
+  let teamTxt = '';
+  if (sup.length) {
+    const t = await network.team(c.from);
+    teamTxt = `\n\n👥 *Your team* (${sup.map((x2) => x2.name).join(', ')})\n` + (t.map((a) => `• ${a.name}: ${a.admin_phone ? '+' + a.admin_phone : 'no admin'} · ${rs(a.earned)}`).join('\n') || 'No zones yet.');
+  }
+  return `💰 *My earnings*\nThis month: *${rs(x.month)}*\nWaiting for payout: *${rs(x.due)}*\nPaid out so far: ${rs(x.paid)}\n\nYou earn ${own.length ? `${network.ADMIN_PCT}% as zone admin` : ''}${own.length && sup.length ? ' and ' : ''}${sup.length ? `${network.SUP_PCT}% as supervisor` : ''} on payments that have come in.${links.length ? `\n\n🔗 *Referral link*\n${links.join('\n')}` : ''}${teamTxt}`;
 }
 
 async function areaStep(c) {
@@ -199,12 +265,14 @@ async function areaStep(c) {
 }
 
 async function createShop(c, ns, areaId) {
+  // No zone picked: the zone whose admin referred this owner gets the shop
+  if (!areaId) { const ra = await network.referralArea(ns.owner); if (ra) areaId = ra.id; }
   const a = areaId ? await db.areas.get(areaId) : null;
   const s = await db.one('insert into shops(code,name,owner_phone,area,delivery,area_id,type_id) values($1,$2,$3,$4,$5,$6,$7) returning *',
     [await mkCode(ns.name), ns.name, ns.owner, ns.area, ns.delivery, areaId || null, ns.type_id || null]);
   const st = s.type_id ? await catalog.type(s.type_id) : null;
   await c.reply(`✅ *${s.name}* added (code ${s.code})\n📍 ${s.area}${a ? ' · 🗺 ' + a.name : ''}${st ? ' · 🏷 ' + st.name : ''} · 📱 +${s.owner_phone}\n${s.delivery ? '🛵 Home delivery: ON' : '🏃 Pickup only'}\n\n📩 Welcome message + ${rs(cfg.SETUP_FEE)} setup-fee request sent to the owner. Ask the owner to share the shop's 📍 location from *Settings* so nearby customers can find it.\n_If the owner has never messaged this bot, ask them to send *hi* to this number once._`,
-    [[`✅ Mark ${rs(cfg.SETUP_FEE)} received`, 'paid:' + s.id], ['🏪 Manage shops', 'list'], ['Menu', 'menu']]);
+    [c.isSuper ? [`✅ Mark ${rs(cfg.SETUP_FEE)} received`, 'paid:' + s.id] : ['📩 Send payment link', 'plink:' + s.id], ['🏪 Manage shops', 'list'], ['Menu', 'menu']]);
   if (c.isSuper && a && a.admin_phone && a.admin_phone !== c.from) await notify(a.admin_phone, `🏪 New shop added in *${a.name}*: ${s.name} (+${s.owner_phone}).`);
   else if (!c.isSuper) await notifyAdmins(`🏪 Area admin +${c.from} added *${s.name}* in ${a ? a.name : s.area}.`);
   return ownerWelcome(s);
@@ -237,6 +305,7 @@ async function admin(c, v, btn) {
     return createShop(c, ns, id || null);
   }
   if (v === 'add') { S.state = 'a_name'; return c.reply('➕ *New shop*\nSend the shop name.'); }
+  if (v === 'myearn') return c.reply(await earningsText(c), [['Menu', 'menu']]);
   if (v === 'web') return c.reply(cfg.PUBLIC_URL ? `🌐 Web admin panel:\n${cfg.PUBLIC_URL}/panel\nLog in with your WhatsApp number — the code comes here.` : 'Set PUBLIC_URL to enable the web dashboard.', [['Menu', 'menu']]);
 
   // --- areas (main admin)
@@ -244,7 +313,7 @@ async function admin(c, v, btn) {
     if (v === 'areas') {
       const as = await db.areas.all();
       const lines = []; for (const a of as) lines.push(await areaLine(a));
-      return c.reply(`🗺 *Areas & area admins*\nArea admin share: ${Math.round(cfg.AREA_SETUP_SHARE * 100)}% of setup fee + ${cfg.AREA_COMM_PCT}% of sales\n\n${lines.join('\n\n') || 'No areas yet.'}`,
+      return c.reply(`🗺 *Zones & admins*\nOn money received: zone admin ${network.ADMIN_PCT}% · taluk supervisor ${network.SUP_PCT}% · you the rest.\nSet each zone's taluk and supervisors on the web panel → Network.\n\n${lines.join('\n\n') || 'No areas yet.'}`,
         [['➕ Add area', 'ar_add']].concat(as.map((a) => ['⚙️ ' + a.name, 'ar:' + a.id]), [['Menu', 'menu']]));
     }
     if (v === 'ar_add') { S.state = 'ar_name'; S.data.na = {}; return c.reply('🗺 *New area*\nSend the area / locality name (e.g. Anna Nagar).'); }
@@ -268,7 +337,8 @@ async function admin(c, v, btn) {
     if ((m = v.match(/^ar:(\d+)$/))) {
       const a = await db.areas.get(+m[1]); if (!a) return c.reply('Area not found.');
       const x = await areaMoney(a);
-      return c.reply(`${await areaLine(a)}\n\n💰 *${MONTH()}*\nShop sales: ${rs(x.sales)}\n${cfg.COMM * 100}% commission: ${rs(x.comm)}\n  → Area admin ${a.comm_pct}%: *${rs(x.commArea)}*\n  → You: *${rs(x.comm - x.commArea)}*\n\n💳 Setup fees (all time): ${x.paid} × ${rs(cfg.SETUP_FEE)} = ${rs(x.setupTotal)}\n  → Area admin ${Math.round(a.setup_share * 100)}%: *${rs(x.setupArea)}*\n  → You: *${rs(x.setupTotal - x.setupArea)}*`,
+      const ar = await network.ensureRef(a.id);
+      return c.reply(`${await areaLine(a)}\n\n💰 *${MONTH()}*\nShop sales: ${rs(x.sales)}\nPayments received: *${rs(x.received)}*\n  → Zone admin ${network.ADMIN_PCT}%: ${rs(x.admin)}\n  → Supervisor ${network.SUP_PCT}%: ${rs(x.supervisor)}\n  → You: *${rs(x.received - x.admin - x.supervisor)}*\n\n🔗 Referral link: ${network.refLink(ar)}`,
         [['👤 Change area admin', 'ar_chg:' + a.id], [a.active ? '⏸ Pause area' : '▶️ Resume area', 'ar_tog:' + a.id], ['📍 Set centre location', 'ar_loc:' + a.id], ['🗺 All areas', 'areas'], ['Menu', 'menu']]);
     }
     if ((m = v.match(/^ar_chg:(\d+)$/))) { S.state = 'ar_chg'; S.data.aid = +m[1]; return c.reply('Send the new area admin\'s WhatsApp number (or *none* to remove).'); }
@@ -292,19 +362,29 @@ async function admin(c, v, btn) {
     for (const [i, s] of shops.entries()) lines.push(`${i + 1}. ` + shopLine(s, await itemCount(s.id)));
     return c.reply('🏪 *Shops*\n\n' + lines.join('\n\n'), shops.map((s) => ['⚙️ ' + s.name, 'shop:' + s.id]).concat([['Menu', 'menu']]));
   }
-  if ((m = v.match(/^(shop|paid|tog|dtog):(\d+)$/))) {
+  if ((m = v.match(/^(shop|paid|tog|dtog|plink):(\d+)$/))) {
     let s = await db.shops.get(+m[2]);
     if (!inScope(c, s)) return c.reply('Shop not found in your area.', [['Menu', 'menu']]);
     if (m[1] === 'shop') {
       const b = [];
-      if (!s.paid) b.push([`✅ Mark ${rs(cfg.SETUP_FEE)} received`, 'paid:' + s.id]);
+      if (!s.paid) b.push(c.isSuper ? [`✅ Mark ${rs(cfg.SETUP_FEE)} received`, 'paid:' + s.id] : ['📩 Send payment link', 'plink:' + s.id]);
       else b.push([s.active ? '⏸ Pause shop' : '▶️ Resume shop', 'tog:' + s.id]);
       b.push([s.delivery ? '🛵 Turn delivery OFF' : '🛵 Turn delivery ON', 'dtog:' + s.id], ['🏪 All shops', 'list'], ['Menu', 'menu']);
       const ms = await db.shops.monthSales(s.id);
       const a = s.area_id ? await db.areas.get(s.area_id) : null;
       return c.reply(shopLine(s, await itemCount(s.id)) + `\n\n🗺 Area: ${a ? a.name : '—'}\n📍 Location: ${s.lat != null ? 'set' : 'not set'}\n📱 Owner: +${s.owner_phone}\n💳 UPI: ${s.upi || 'not set'}\n💰 ${MONTH()} sales: ${rs(ms)}\n🧾 ${cfg.COMM * 100}% fee: ${rs(ms * cfg.COMM)}\n🛵 Delivery charge: ${rs(s.del_fee)} · Min order ${rs(s.min_order)}`, b);
     }
-    if (m[1] === 'paid') { if (!(await activate(s))) return c.reply('✅ Setup fee was already received.', [['Menu', 'menu']]); return; }
+    if (m[1] === 'paid') {
+      // Cash or direct UPI: only the main admin may confirm. Zone admins send the payment link instead.
+      if (!c.isSuper) return c.reply(`Setup fees are paid only by link or to the company UPI, not in cash. Tap *Send payment link* and the owner pays ${rs(cfg.SETUP_FEE)} directly.`, [['📩 Send payment link', 'plink:' + s.id], ['Menu', 'menu']]);
+      if (!(await activate(s))) return c.reply('✅ Setup fee was already received.', [['Menu', 'menu']]); return;
+    }
+    if (m[1] === 'plink') {
+      if (s.paid) return c.reply('✅ Setup fee was already received.', [['Menu', 'menu']]);
+      const p = await pay.createLink({ kind: 'setup', ref: s.id, amount: cfg.SETUP_FEE, description: `${cfg.BRAND} setup fee – ${s.name}`, phone: s.owner_phone, name: s.name });
+      await notify(s.owner_phone, `*Setup fee: ${rs(cfg.SETUP_FEE)}* (one-time)\n\n${pay.payText(p)}\n\nYour shop goes live as soon as payment is confirmed.`);
+      return c.reply(`📩 Payment link sent to ${s.name} (+${s.owner_phone}). The shop goes live by itself once they pay.`, [['⚙️ ' + s.name, 'shop:' + s.id], ['Menu', 'menu']]);
+    }
     if (m[1] === 'tog') {
       s = await db.shops.set(s.id, { active: !s.active });
       await notify(s.owner_phone, s.active ? `▶️ Your shop is live again on ${cfg.BRAND}.` : '⏸ Your shop has been paused by the admin. Contact admin to resume.');
@@ -322,18 +402,19 @@ async function admin(c, v, btn) {
       and o.created_at >= date_trunc('month', now() at time zone 'Asia/Kolkata') at time zone 'Asia/Kolkata'`, [c.isSuper ? null : c.areaIds])).s;
     let split = '';
     const areaList = c.isSuper ? await db.areas.all() : c.myAreas;
-    let areaComm = 0, areaSetup = 0;
-    for (const a of areaList) { const x = await areaMoney(a); if (!x.shops) continue; areaComm += x.commArea; areaSetup += x.setupArea; split += `\n🗺 ${a.name}: sales ${rs(x.sales)} · area admin ${rs(x.commArea)} + setup ${rs(x.setupArea)}`; }
+    let received = 0, payable = 0;
+    for (const a of areaList) { const x = await areaMoney(a); if (!x.shops) continue; received += x.received; payable += x.admin + x.supervisor; split += `\n🗺 ${a.name}: received ${rs(x.received)} · admin ${rs(x.admin)} · supervisor ${rs(x.supervisor)}`; }
     const comm = gmv * cfg.COMM, setup = shops.filter((s) => s.paid).length * cfg.SETUP_FEE;
+    const got = c.isSuper ? (await db.one(`select coalesce(sum(amount),0) s from payments where status='paid' and to_char(paid_at at time zone 'Asia/Kolkata','YYYY-MM')=$1`, [network.monthKey()])).s : received;
     if (c.isSuper) {
-      return c.reply(`📊 *${MONTH()} summary — all areas*\n\n${lines.join('\n') || 'No shops yet.'}\n\nTotal shop sales: ${rs(gmv)}\n💰 ${cfg.COMM * 100}% commission: ${rs(comm)}\n💳 Setup fees (all time): ${rs(setup)}\n🛵 Delivery charges: ${rs(del)}\n${split ? `\n*Area admin shares*${split}\nPayable to area admins: *${rs(areaComm + areaSetup)}*\n` : ''}\n👑 *Your net: ${rs(comm - areaComm + setup - areaSetup)}*`,
-        [['📩 Send commission bills', 'bills'], ['🗺 Areas & admins', 'areas'], ['Menu', 'menu']]);
+      return c.reply(`📊 *${MONTH()} summary — all areas*\n\n${lines.join('\n') || 'No shops yet.'}\n\nTotal shop sales: ${rs(gmv)}\n💰 ${cfg.COMM * 100}% commission: ${rs(comm)}\n💳 Setup fees (all time): ${rs(setup)}\n🛵 Delivery charges: ${rs(del)}\n\n💳 Payments received this month: *${rs(got)}*${split ? `\n\n*Zone shares (money received)*${split}\nPayable to admins & supervisors: *${rs(payable)}*` : ''}\n\n👑 *Your net this month: ${rs(got - payable)}*`,
+        [['📩 Send last month\'s bills', 'bills'], ['🗺 Areas & admins', 'areas'], ['Menu', 'menu']]);
     }
-    return c.reply(`📊 *${MONTH()} — ${c.myAreas.map((a) => a.name).join(', ')}*\n\n${lines.join('\n') || 'No shops yet.'}\n\nShop sales: ${rs(gmv)}\n🛵 Delivery charges: ${rs(del)}\n\n💰 *Your earnings*\n${c.myAreas[0] ? c.myAreas[0].comm_pct : cfg.AREA_COMM_PCT}% of sales: *${rs(areaComm)}*\nSetup fee share (all time): *${rs(areaSetup)}*`, [['Menu', 'menu']]);
+    return c.reply(`📊 *${MONTH()} — ${c.myAreas.map((a) => a.name).join(', ')}*\n\n${lines.join('\n') || 'No shops yet.'}\n\nShop sales: ${rs(gmv)}\n🛵 Delivery charges: ${rs(del)}\n\n${await earningsText(c)}`, [['Menu', 'menu']]);
   }
   if (v === 'bills' && c.isSuper) {
     const sent = await sendBills();
-    return c.reply(`📩 Commission bills sent to ${sent} shop(s) on WhatsApp.`, [['Menu', 'menu']]);
+    return c.reply(`📩 ${MONTH_NAME(PREV_MONTH_KEY())} bills sent to ${sent} shop(s) on WhatsApp.`, [['Menu', 'menu']]);
   }
   if (v === 'deliv') {
     const ds = (await db.orders.activeDeliveries()).filter((o) => c.isSuper || c.areaIds.includes(o.area_id));
@@ -451,7 +532,14 @@ async function owner(c, v, btn) {
   if (!btn && (m = v.match(/^\s*upi\s+([\w.\-]+@[\w.\-]+)\s*$/i))) { await db.shops.set(s.id, { upi: m[1] }); return c.reply(`✅ UPI ID saved: *${m[1]}*\nCustomers choosing "Pay now (UPI)" will pay to this ID.`, [['⚙️ Settings', 'settings'], ['Menu', 'menu']]); }
   if (v === 'setloc') { S.state = 'shoploc'; return c.reply('📍 Stand at your shop and send its location: tap 📎 → *Location* → *Send your current location*.\nNearby customers will then see your shop.'); }
   if (c.loc) {
-    await db.shops.set(s.id, { lat: c.loc.lat, lng: c.loc.lng }); S.state = null;
+    const patch = { lat: c.loc.lat, lng: c.loc.lng };
+    // A shop without a zone joins the nearest active zone that covers it
+    if (!s.area_id) {
+      let best = null, bd = Infinity;
+      for (const a of await db.areas.active()) if (a.lat != null) { const d = km(c.loc, a); if (d <= Number(a.radius_km) && d < bd) { bd = d; best = a; } }
+      if (best) { patch.area_id = best.id; if (best.admin_phone) await notify(best.admin_phone, `📍 *${s.name}* set its location and joined your zone *${best.name}*.`); }
+    }
+    await db.shops.set(s.id, patch); S.state = null;
     return c.reply(`✅ Shop location saved. Customers within the area radius will now see *${s.name}* when they share their location.`, [['⚙️ Settings', 'settings'], ['Menu', 'menu']]);
   }
   if (v === 'stock') return stockMsg(c, s, false);
@@ -740,6 +828,14 @@ async function handle(from, name, v, btn) {
       if (guess) await setLang(from, guess);
       else { sess.data.pending = { v, btn }; return await out(from, i18n.PICKER, i18n.PICKER_BTNS); }
     }
+    // Referral links open the bot with "Hi ref:CODE": remember which zone admin sent this person
+    if (!btn) {
+      const rf = await network.applyRef(from, v);
+      if (rf) {
+        if (rf.isNew && rf.area && rf.area.admin_phone && rf.area.admin_phone !== from) await notify(rf.area.admin_phone, `👋 New contact from your referral link (${rf.area.name}): ${name || 'someone'} +${from}`);
+        v = rf.rest && !/^(hi|hello|hai|hey)$/i.test(rf.rest) ? rf.rest : 'menu';
+      }
+    }
     if (!btn && i18n.WORDS.menu.includes(lw)) v = 'menu';
     if (!btn && i18n.WORDS.stop.includes(lw)) v = 'menu';
     const lm = String(v).match(/^loc:(-?[\d.]+),(-?[\d.]+)\|?(.*)$/s);
@@ -772,4 +868,4 @@ async function handle(from, name, v, btn) {
   }
 }
 
-module.exports = { langOf, setLang, createOrder, orderPlaced, webLink, nearbyShops, handle, activate, notify, notifyAdmins, notifyShopAdmins, rs, setStatus, ownerWelcome, mkCode, newAreaAdminWelcome, sendBills, areaMoney, out };
+module.exports = { earn, billPaid, confirmPayment, refundPayment, remindBills, earningsText, PREV_MONTH_KEY, MONTH_NAME, langOf, setLang, createOrder, orderPlaced, webLink, nearbyShops, handle, activate, notify, notifyAdmins, notifyShopAdmins, rs, setStatus, ownerWelcome, mkCode, newAreaAdminWelcome, sendBills, areaMoney, out };

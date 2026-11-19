@@ -22,7 +22,7 @@ const say = (p, t) => bot.handle(p, p === CUST ? 'Priya' : 'X', t, false);
 const loc = (p, lat, lng, label = '') => bot.handle(p, 'X', `loc:${lat},${lng}|${label}`, true);
 const tap = (p, label) => bot.handle(p, p === CUST ? 'Priya' : 'X', find(p, label), true);
 (async () => {
-  await db.q('drop table if exists shops, items, orders, sessions, menus, payments, areas, otps, cust_links, web_orders, categories, shop_types, cust_lang cascade'); await db.init();
+  await db.q('drop table if exists shops, items, orders, sessions, menus, payments, areas, otps, cust_links, web_orders, categories, shop_types, cust_lang, earnings, referrals, kv, taluks, districts cascade'); await db.init();
   await db.q("insert into cust_lang(phone,lang) select unnest(array['919003264537','919111122222','919222233333','919333344444','919444455555','919555566666','919811112222','919840011111','919876543210']),'en' on conflict do nothing");
   await say(ADMIN, 'hi'); assert(/admin/i.test(txt(last(ADMIN))));
   await tap(ADMIN, 'Add new shop'); await say(ADMIN, 'Sri Murugan Stores'); await say(ADMIN, '98400 11111'); await say(ADMIN, 'Anna Nagar'); await tap(ADMIN, 'Yes, opt in'); await tap(ADMIN, 'Other / not listed');
@@ -60,15 +60,23 @@ const tap = (p, label) => bot.handle(p, p === CUST ? 'Priya' : 'X', find(p, labe
   const AADMIN = '919111122222', OWNER2 = '919222233333', CUST2 = '919333344444';
   await say(ADMIN, 'hi'); await tap(ADMIN, 'Areas'); await tap(ADMIN, 'Add area');
   await say(ADMIN, 'KK Nagar'); await say(ADMIN, '91111 22222'); await loc(ADMIN, 13.0400, 80.2000); await tap(ADMIN, '3 km');
-  assert(txt(box[AADMIN][0]).includes('area admin'));
-  await say(AADMIN, 'hi'); assert(/Area admin/.test(txt(last(AADMIN))));
+  assert(txt(box[AADMIN][0]).includes('zone admin') && txt(box[AADMIN][0]).includes('referral link'));
+  await say(AADMIN, 'hi'); assert(/Zone admin/.test(txt(last(AADMIN))));
   await tap(AADMIN, 'Add new shop'); await say(AADMIN, 'Fresh Mart'); await say(AADMIN, '92222 33333'); await say(AADMIN, 'KK Nagar Main Rd'); await tap(AADMIN, 'Yes, opt in'); await tap(AADMIN, 'Vegetables & Fruits');
   assert(txt(last(OWNER2)).includes('Welcome'));
   const fm = await db.one("select * from shops where name='Fresh Mart'"); assert(fm.area_id);
   await say(OWNER2, 'Tomato 1kg | Vegetables | 32 | 40'); await say(OWNER2, 'upi fresh@okaxis');
   await tap(OWNER2, 'Menu'); await tap(OWNER2, 'Settings'); await tap(OWNER2, 'Set shop location'); await loc(OWNER2, 13.0410, 80.2010);
   assert(txt(last(OWNER2)).includes('location saved'));
-  await tap(AADMIN, 'Mark'); assert(txt(last(OWNER2)).includes('LIVE'));
+  // zone admin can't take cash: sends the payment link; the main admin confirms the money
+  await bot.handle(AADMIN, 'X', 'paid:' + fm.id, true); assert(txt(last(AADMIN)).includes('not in cash'));
+  await tap(AADMIN, 'Send payment link'); assert(txt(last(OWNER2)).includes('Setup fee'));
+  const sp = await db.one(`select * from payments where kind='setup' and ref=$1 and status='created'`, [fm.id]);
+  await bot.confirmPayment(sp.id); assert(box[OWNER2].some((m) => txt(m).includes('LIVE')));
+  let ern = await db.all('select * from earnings where payment_id=$1', [sp.id]);
+  assert.equal(ern.length, 1); assert.equal(ern[0].phone, AADMIN); assert.equal(Number(ern[0].amount), 800);
+  assert(txt(last(AADMIN)).includes('You earned') || box[AADMIN].some((m) => txt(m).includes('₹800')));
+  console.log('✔ setup fee: link only for zone admins, 40% to zone admin');
   // area admin must not see shop 1 (no area)
   await say(AADMIN, 'menu'); await tap(AADMIN, 'Manage shops'); assert(!txt(last(AADMIN)).includes('Sri Murugan'));
   // customer near KK Nagar sees Fresh Mart with distance; Sri Murugan (no location) not listed
@@ -87,6 +95,28 @@ const tap = (p, label) => bot.handle(p, p === CUST ? 'Priya' : 'X', find(p, labe
   await tap(AADMIN, 'Dispatch #' + o2.id); await tap(AADMIN, 'Delivered #' + o2.id);
   await say(AADMIN, 'menu'); await tap(AADMIN, 'Sales'); console.log('AREA ADMIN SALES:', txt(last(AADMIN)));
   await say(ADMIN, 'menu'); await tap(ADMIN, 'Sales'); console.log('MAIN SALES:', txt(last(ADMIN)));
+  // ---------- network: taluk supervisor, bill commission, refund, payout, referral
+  const network = require('../src/network'); const SUP = '919444455555';
+  const dist = await db.one(`select id from districts where name='Chennai'`); assert(dist);
+  const tk = await network.taluks.add(dist.id, 'Mambalam', SUP);
+  await db.areas.set(fm.area_id, { taluk_id: tk.id });
+  assert((await db.areas.byAdmin(SUP)).some((a) => a.id === fm.area_id), 'supervisor sees zones of the taluk');
+  await say(SUP, 'hi'); assert(/Supervisor/.test(txt(last(SUP))), txt(last(SUP)));
+  const bp = await db.one(`insert into payments(kind,ref,month,amount) values('bill',$1,'2026-10',150) returning *`, [fm.id]);
+  await bot.confirmPayment(bp.id);
+  ern = await db.all('select * from earnings where payment_id=$1 order by role', [bp.id]);
+  assert.deepEqual(ern.map((e) => [e.role, e.phone, Number(e.amount)]), [['admin', AADMIN, 60], ['supervisor', SUP, 15]]);
+  let sm = await network.summary(AADMIN); assert.equal(Number(sm.due), 860);
+  await bot.refundPayment(bp.id); sm = await network.summary(AADMIN); assert.equal(Number(sm.due), 800, 'unpaid commission cancelled on refund');
+  const po = await network.markPaid(AADMIN, 'UTR1'); assert.equal(Number(po.s), 800);
+  await bot.refundPayment(sp.id); sm = await network.summary(AADMIN); assert.equal(Number(sm.due), -800, 'paid-out commission taken from next payout');
+  await tap(SUP, 'My earnings'); assert(txt(last(SUP)).includes('Your team'), txt(last(SUP)));
+  const zone = await db.areas.get(fm.area_id); assert(zone.ref_code && zone.ref_code.length === 5);
+  const NEWP = '919666677777'; await db.q(`insert into cust_lang(phone,lang) values($1,'en') on conflict do nothing`, [NEWP]);
+  await bot.handle(NEWP, 'Kumar', `Hi ref:${zone.ref_code}`, false);
+  assert((await network.referralArea(NEWP)).id === zone.id); assert(txt(last(AADMIN)).includes('referral link'));
+  assert(!txt(last(NEWP)).includes('ref:'), 'ref text not treated as a command');
+  console.log('✔ network: supervisor scope, 40/10 split on bills, refunds, payouts, referral');
   // far-away customer sees no shops
   await loc(CUST2, 13.20, 80.30); assert(txt(last(CUST2)).includes('No shops'));
   // ---------- shop types: customer chooses what to shop for when many nearby shops
