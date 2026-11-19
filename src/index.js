@@ -10,12 +10,15 @@ const dashboard = require('./dashboard');
 const network = require('./network');
 
 const app = express();
+// Logo, icon and WhatsApp profile picture
+app.use(express.static(require('path').join(__dirname, '..', 'public'), { maxAge: '7d' }));
+app.get('/favicon.ico', (_req, res) => res.redirect(301, '/emart-icon.png'));
 app.use(express.json({ verify: (req, _res, buf) => { req.raw = buf; } }));
 
 app.get('/', (_req, res) => res.redirect('/shops'));
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
-const page = (title, body) => `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} – ${cfg.BRAND}</title>
+const page = (title, body) => `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} – ${cfg.BRAND}</title><link rel="icon" href="/emart-icon.png">
 <style>body{font-family:system-ui,sans-serif;max-width:720px;margin:0 auto;padding:24px;line-height:1.6;color:#222}h1{font-size:22px}h2{font-size:17px;margin-top:22px}</style></head><body>${body}</body></html>`;
 app.get('/privacy', (_req, res) => res.send(page('Privacy Policy', `<h1>${cfg.BRAND} – Privacy Policy</h1>
 <p>${cfg.BRAND} (operated by VasulBook, vasulbook.com) lets customers order from local shops on WhatsApp.</p>
@@ -100,7 +103,8 @@ app.use('/panel', require('./panel'));
 
 // --- web dashboard for the admin
 app.get('/admin', async (req, res) => {
-  if (req.query.key !== cfg.ADMIN_KEY) return res.status(401).send('Unauthorized');
+  // Without the key, /admin opens the admin panel (log in there)
+  if (req.query.key !== cfg.ADMIN_KEY) return res.redirect('/panel');
   res.send(await dashboard.html(req.query.key));
 });
 

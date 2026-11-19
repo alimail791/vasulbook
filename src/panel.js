@@ -54,7 +54,7 @@ const back = (res, url, msg) => res.redirect(url + (url.includes('?') ? '&' : '?
 
 // ---------- layout
 const CSS = `*{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:#f1f5f2;color:#14231a}
-header{background:#166534;color:#fff;padding:12px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+header{background:#166534;color:#fff;padding:12px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}header .logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:18px}header .logo img{height:30px;border-radius:7px}
 header b{font-size:18px}header nav{display:flex;gap:4px;flex-wrap:wrap}header a{color:#dcfce7;text-decoration:none;padding:6px 10px;border-radius:8px}
 header a.on,header a:hover{background:rgba(255,255,255,.15);color:#fff}header .me{margin-left:auto;font-size:13px;opacity:.9}
 main{max-width:1200px;margin:0 auto;padding:16px}h1{font-size:20px;margin:6px 0 14px}h2{font-size:16px;margin:22px 0 10px;color:#3b4a3f}
@@ -77,14 +77,14 @@ function page(req, title, body, tab) {
   const nav = u ? [['', 'Dashboard'], ...(u.isSuper ? [['/network', 'Network'], ['/areas', 'Zones']] : [['/earnings', 'Earnings']]), ['/shops', 'Shops'], ...(u.isSuper ? [['/catalog', 'Shop types']] : []), ['/orders', 'Orders'], ...(u.isSuper ? [['/bills', 'Bills']] : [])]
     .map(([p, n]) => `<a href="/panel${p}" class="${tab === n ? 'on' : ''}">${n}</a>`).join('') : '';
   const msg = req.query && req.query.m ? `<div class="msg">${esc(req.query.m)}</div>` : '';
-  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)} – ${esc(cfg.BRAND)} admin</title><style>${CSS}</style></head><body>
-<header><b>${esc(cfg.BRAND)} admin</b><nav>${nav}</nav>${u ? `<span class="me">${u.isSuper ? 'Main admin' : esc(u.role) + ' · ' + esc(u.myAreas.map((a) => a.name).join(', ') || u.sups.map((t) => t.name).join(', '))} · +${u.phone} · <a href="/panel/logout" style="color:#fff">Log out</a></span>` : ''}</header>
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="icon" href="/emart-icon.png"><title>${esc(title)} – ${esc(cfg.BRAND)} admin</title><style>${CSS}</style></head><body>
+<header><span class="logo"><img src="/emart-icon.png" alt="">${esc(cfg.BRAND)} admin</span><nav>${nav}</nav>${u ? `<span class="me">${u.isSuper ? 'Main admin' : esc(u.role) + ' · ' + esc(u.myAreas.map((a) => a.name).join(', ') || u.sups.map((t) => t.name).join(', '))} · +${u.phone} · <a href="/panel/logout" style="color:#fff">Log out</a></span>` : ''}</header>
 <main>${msg}${body}</main></body></html>`;
 }
 const STAT = { New: 'y', Accepted: 'b', Ready: 'b', 'Out for delivery': 'b', Completed: 'g', Cancelled: 'r' };
 
 // ---------- login with WhatsApp code
-r.get('/login', (req, res) => res.send(page(req, 'Log in', `<div class="login card"><h1>Admin log in</h1>
+r.get('/login', (req, res) => res.send(page(req, 'Log in', `<div class="login card"><p style="text-align:center"><img src="/emart-logo.png" style="height:130px;border-radius:18px" alt="${esc(cfg.BRAND)} – Local shops on WhatsApp"></p><h1>Admin log in</h1>
 <form method="post" action="/panel/keylogin"><label>Admin key</label><input name="key" type="password" autocomplete="current-password" required autofocus>
 <p></p><button>Log in</button></form>
 <hr style="border:0;border-top:1px solid #e2e8e4;margin:20px 0">

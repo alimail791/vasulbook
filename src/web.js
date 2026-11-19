@@ -54,8 +54,8 @@ function layout(req, title, body, chips = '') {
   const t = req.t, L = req.lang;
   const sw = Object.entries(i18n.LANGS).map(([k, n]) => k === L ? `<b>${n}</b>` : `<a href="?${esc(new URLSearchParams({ ...req.query, lang: k }).toString())}" style="color:#fff">${n}</a>`).join(' · ');
   return `<!DOCTYPE html><html lang="${L}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>
-<meta property="og:title" content="${esc(title)}"><meta property="og:description" content="Order from shops near you – pickup or home delivery"><style>${CSS}</style></head><body>
-<header><div class="top"><a href="/shops" style="text-decoration:none;display:flex;gap:8px;align-items:center"><span style="font-size:24px">🛒</span><b>${esc(cfg.BRAND)}</b></a><a class="wa" href="${waLink('Hi')}">💬 WhatsApp</a></div><div style="max-width:900px;margin:6px auto 0;font-size:12.5px">🌐 ${sw}</div>${chips ? `<div class="bar">${chips}</div>` : ''}</header>
+<link rel="icon" href="/emart-icon.png"><meta property="og:image" content="${cfg.PUBLIC_URL}/emart-logo.png"><meta property="og:title" content="${esc(title)}"><meta property="og:description" content="Order from shops near you – pickup or home delivery"><style>${CSS}</style></head><body>
+<header><div class="top"><a href="/shops" style="text-decoration:none;display:flex;gap:8px;align-items:center"><img src="/emart-icon.png" alt="" style="height:32px;border-radius:8px"><b>${esc(cfg.BRAND)}</b></a><a class="wa" href="${waLink('Hi')}">💬 WhatsApp</a></div><div style="max-width:900px;margin:6px auto 0;font-size:12.5px">🌐 ${sw}</div>${chips ? `<div class="bar">${chips}</div>` : ''}</header>
 <main>${body}</main><footer>${esc(cfg.BRAND)} · ${t('order from local shops')} · <a href="/privacy">${t('Privacy')}</a> · <a href="/terms">${t('Terms')}</a></footer></body></html>`;
 }
 
@@ -103,7 +103,8 @@ ${tsel ? ` · ${tsel === 'other' ? t('Other shops') : typeIcon(tname[tsel]) + ' 
 <button type="button" onclick="loc()">${t('Use my location')}</button>${areas.length ? `<select onchange="if(this.value)location=this.value"><option value="">${t('Pick an area…')}</option>${areas.map((a) => `<option value="/shops?area=${a.id}"${a.id === area ? ' selected' : ''}>${esc(a.name)}</option>`).join('')}</select>` : ''}</div>
 <script>function loc(){if(!navigator.geolocation)return alert(${JSON.stringify(t('Location not available'))});navigator.geolocation.getCurrentPosition(function(p){location='/shops?lat='+p.coords.latitude.toFixed(5)+'&lng='+p.coords.longitude.toFixed(5)},function(){alert(${JSON.stringify(t('Please allow location, or pick an area'))})})}</script>`;
   const rows = list.map(({ s, d }) => `<a class="shop" href="/s/${s.id}"><span class="ic">${typeIcon(tname[s.type_id])}</span><span><b>${esc(s.name)}</b><span class="mt">${tname[s.type_id] ? esc(tname[s.type_id]) + ' · ' : ''}${esc(s.area || '')}${d != null ? ' · 📍 ' + fmtKm(d) : ''} · ${t((counts[s.id] || 0) + ' items')}<br>${s.delivery ? t(`🛵 Delivery ${rs(s.del_fee)} · 🏃 Pickup`) : t('🏃 Pickup only')}</span></span><span class="go">›</span></a>`).join('');
-  res.send(layout(req, `${cfg.BRAND} – Shops near you`, where + (rows || `<div class="box">${t(tsel ? 'No shops of this type here yet.' : 'No shops here yet. Try another area.')}${tsel ? ` <a href="${href('')}">${t('See all shops')}</a>` : ''}</div>`), chips));
+  const hero = `<div style="text-align:center;margin:4px 0 14px"><img src="/emart-logo.png" alt="${esc(cfg.BRAND)} – Local shops on WhatsApp" style="width:132px;height:132px;border-radius:20px"></div>`;
+  res.send(layout(req, `${cfg.BRAND} – Shops near you`, hero + where + (rows || `<div class="box">${t(tsel ? 'No shops of this type here yet.' : 'No shops here yet. Try another area.')}${tsel ? ` <a href="${href('')}">${t('See all shops')}</a>` : ''}</div>`), chips));
 });
 
 // ---------- one shop
