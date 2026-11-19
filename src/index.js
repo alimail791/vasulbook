@@ -217,7 +217,7 @@ app.get('/qr/:code.png', async (req, res) => {
 // Shop sticker poster for advertisers (live categories and prices)
 const sticker = require('./sticker');
 const sendSticker = async (req, res, code) => res.type('application/pdf').set('Content-Disposition', `inline; filename="${cfg.BRAND}-sticker${code ? '-' + code : ''}.pdf"`)
-  .send(await sticker.pdf({ size: req.query.size === 'A4' ? 'A4' : 'A5', code }));
+  .send(await sticker.pdf({ size: req.query.size === 'A5' ? 'A5' : 'A4', code }));
 app.get('/sticker.pdf', (req, res) => sendSticker(req, res, null));
 app.get('/sticker/:code.pdf', async (req, res) => { const z = await zoneByCode(req.params.code); if (!z) return res.sendStatus(404); sendSticker(req, res, z.ref_code); });
 
