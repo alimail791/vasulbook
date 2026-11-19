@@ -32,7 +32,7 @@ function englishLeft(p) {
 }
 
 (async () => {
-  await db.q('drop table if exists localities, advertisers, media, ads, customers, coupons, leads, payments, settings, broadcasts, sessions, menus, otps, categories, earnings, referrals, kv, taluks, districts cascade');
+  await db.q('drop table if exists localities, advertisers, media, ads, customers, coupons, leads, payments, settings, broadcasts, sessions, menus, otps, categories, earnings, referrals, kv, taluks, districts, applications, payees, payouts, audit, msg_log cascade');
   await db.init();
   // admin adds a locality
   await say(ADMIN, 'hi'); await byId(ADMIN, 'aadd'); await say(ADMIN, 'Gandhi Nagar'); await byId(ADMIN, 'lw:me'); await loc(ADMIN, 13.04, 80.2);

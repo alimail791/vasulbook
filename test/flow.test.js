@@ -6,6 +6,7 @@ process.env.ADMIN_PHONES = '9000000001';
 process.env.ADMIN_UPI = 'edeal@okaxis';
 process.env.ADMIN_KEY = 'testkey';
 process.env.BOT_PHONE = '9003264537';
+process.env.PEER_KEY = 'peer-secret';
 const assert = require('assert');
 const db = require('../src/db'); const wa = require('../src/wa'); const bot = require('../src/bot'); const jobs = require('../src/jobs');
 const ADMIN = '919000000001', AREA = '919000000002', TUTOR = '919000000003', SHOP = '919000000004', CUST = '919000000005', OWNER = '919000000006';
@@ -33,7 +34,7 @@ const has = (p, s) => msgs(p).some((m) => txt(m).includes(s));
 const ok = (name) => console.log('✔', name);
 
 (async () => {
-  await db.q('drop table if exists localities, advertisers, media, ads, customers, coupons, leads, payments, settings, broadcasts, sessions, menus, otps, categories, earnings, referrals, kv, taluks, districts cascade');
+  await db.q('drop table if exists localities, advertisers, media, ads, customers, coupons, leads, payments, settings, broadcasts, sessions, menus, otps, categories, earnings, referrals, kv, taluks, districts, applications, payees, payouts, audit, msg_log cascade');
   await db.init();
   for (const p of [ADMIN, AREA, TUTOR, SHOP, CUST, OWNER]) await db.q(`insert into customers(phone,lang) values($1,'en')`, [p]); // existing English users
 
@@ -143,6 +144,19 @@ const ok = (name) => console.log('✔', name);
     await tap(NEWB, 'Advertise with us'); await say(NEWB, 'Far Away Sweets'); await tap(NEWB, 'Shop / service'); await tap(NEWB, 'Food'); await loc(NEWB, 13.20, 80.30);
     assert.equal((await db.advertisers.byPhone(NEWB)).locality_id, an.id, 'referred advertiser joins the referrer locality');
     ok('network: supervisor scope, 40/10 split, refund, referral');
+    // recruiting on WhatsApp
+    const APL = '919000000099'; await db.q(`insert into customers(phone,lang) values($1,'en') on conflict(phone) do update set lang='en'`, [APL]);
+    await say(APL, 'admin'); assert(txt(last(APL)).includes('Step 1 of 5'));
+    await say(APL, 'Selvi'); await say(APL, 'Aminjikarai, Chennai'); await loc(APL, 13.07, 80.22);
+    await say(APL, 'ABCDE1234F'); await say(APL, 'selvi@oksbi');
+    const ap = await db.one('select * from applications where phone=$1', [APL]); assert.equal(ap.taluk_id, tk.id);
+    await bot.handle(ADMIN, 'X', 'rcok:' + ap.id, true); assert(has(APL, 'I agree'));
+    await bot.handle(APL, 'Selvi', 'rcagree', true);
+    const nl = await db.one('select * from localities where admin_phone=$1', [APL]); assert(nl && nl.taluk_id === tk.id && nl.ref_code);
+    assert(has(APL, 'zone admin'));
+    ok('recruiting: ADMIN → application → approve → I agree → locality');
+  }
+  {
   }
 
   // ---- house owner: property listing
@@ -219,6 +233,18 @@ const ok = (name) => console.log('✔', name);
   assert.equal(r.status, 302); assert.equal((await db.advertisers.byPhone(TUTOR)).cat, 'Schools');
   r = await fetch(`${base}/panel/localities?key=testkey`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: 'name=KK+Nagar&admin=9000000002&loc=13.03,80.19', redirect: 'manual' });
   assert.equal((await db.localities.byAdmin(AREA)).length, 2, 'one area admin, two localities');
+  { // EMart → EDeal: bundle and zone sync (need the shared PEER_KEY)
+    const network = require('../src/network');
+    const post = (p, body, key = 'peer-secret') => fetch(base + p, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-peer-key': key }, body: JSON.stringify(body) });
+    assert.equal((await post('/internal/bundle', { phone: '919000000055' }, 'wrong')).status, 401);
+    let j = await (await post('/internal/bundle', { phone: '919000000055', name: 'Murugan Stores', lat: 13.086, lng: 80.211, days: 30 })).json(); assert(j.ok);
+    const ba = await db.advertisers.byPhone('919000000055'); assert.equal(ba.plan, 'premium'); assert(new Date(ba.plan_until) > new Date(Date.now() + 29 * 864e5));
+    j = await (await post('/internal/bundle', { phone: '919000000055' })).json(); assert(!j.ok, 'only once');
+    j = await (await post('/internal/zone', { name: 'Porur', admin_phone: '919000000044', lat: 13.03, lng: 80.15, district: 'Chennai', taluk: 'Maduravoyal', supervisor: '919000000043' })).json();
+    const pz = await db.localities.get(j.id); assert.equal(pz.admin_phone, '919000000044'); assert((await network.taluks.get(pz.taluk_id)).supervisor_phone === '919000000043');
+    let h = await (await fetch(`${base}/poster/${pz.ref_code}.pdf`)).arrayBuffer(); assert(Buffer.from(h).slice(0, 4).toString() === '%PDF');
+    ok('EMart bundle → EDeal Premium, zone sync, poster');
+  }
   { // panel network page, taluks, localities with codes
     const form = { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, redirect: 'manual' };
     let h = await (await fetch(`${base}/panel/network?key=testkey`)).text(); assert(h.includes('Taluks set up') && h.includes('Chennai'));
@@ -229,6 +255,8 @@ const ok = (name) => console.log('✔', name);
     r = await fetch(`${base}/panel/payments/${paid.id}/refund?key=testkey`, { ...form, body: '' }); assert(decodeURIComponent(r.headers.get('location')).includes('refunded'));
     r = await fetch(`${base}/panel?key=testkey`, { redirect: 'manual' }); const ck = r.headers.get('set-cookie').split(';')[0];
     h = await (await fetch(`${base}/panel`, { headers: { cookie: ck } })).text(); assert(h.includes('Payouts waiting') && h.includes('Your net'));
+    h = await (await fetch(`${base}/panel/network`, { headers: { cookie: ck } })).text(); assert(h.includes('Admin applications') && h.includes('Daily offers (marketing)'));
+    h = await (await fetch(`${base}/panel/audit`, { headers: { cookie: ck } })).text(); assert(h.includes('panel /network/taluks'));
   }
   await say(SHOP, 'hi'); await tap(SHOP, 'Plans'); await tap(SHOP, 'Premium'); const pid = (await db.one(`select id from payments where status='created' order by id desc limit 1`)).id;
   r = await fetch(`${base}/pay/${pid}`); assert((await r.text()).includes('upi://pay'));

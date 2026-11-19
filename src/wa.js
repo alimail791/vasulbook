@@ -79,9 +79,18 @@ async function sendLocation(to, lat, lng, name, address) {
   return api({ to, type: 'location', location: { latitude: lat, longitude: lng, name: cut(name, 100), address: cut(address || '', 200) } });
 }
 
+async function sendDoc(to, link, filename, caption) {
+  return api({ to, type: 'document', document: { link, filename, caption: cut(i18n.tr(await langOf(to), caption || ''), 1000) } });
+}
+// Counts business-initiated (template) messages for the daily limit and cost report
+let onTemplate = null;
+const setTemplateHook = (fn) => { onTemplate = fn; };
+
 // Business-initiated message outside the 24h window needs an approved template.
 async function sendTemplate(to, text, name = cfg.WA_TEMPLATE) {
   if (!name) throw new Error('No template configured');
+  // daily offers (marketing) are counted per locality by the digest job itself
+  if (onTemplate && name !== cfg.WA_DIGEST_TEMPLATE) { try { await onTemplate(to, 'template'); } catch (_) { /* ignore */ } }
   const L = await langOf(to);
   const param = cut(String(i18n.tr(L, text)).replace(/\s*\n+\s*/g, ' · ').replace(/\s{4,}/g, ' '), 1000);
   const body = (code) => ({ to, type: 'template', template: { name, language: { code }, components: [{ type: 'body', parameters: [{ type: 'text', text: param }] }] } });
@@ -103,4 +112,4 @@ async function downloadMedia(id) {
   return { mime: meta.mime_type || 'image/jpeg', data: Buffer.from(await r.arrayBuffer()) };
 }
 
-module.exports = { setLangResolver, send, sendText, askLocation, sendLocation, sendTemplate, markRead, downloadMedia, graph, setSink, cut };
+module.exports = { sendDoc, setTemplateHook, setLangResolver, send, sendText, askLocation, sendLocation, sendTemplate, markRead, downloadMedia, graph, setSink, cut };

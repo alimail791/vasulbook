@@ -200,6 +200,45 @@ app.use('/', require('./web'));
 
 // ---------- web admin panel
 app.use('/panel', require('./panel'));
+
+// Zone admin posters and QR codes (public: they only carry the referral link)
+const network = require('./network'); const poster = require('./poster');
+wa.setTemplateHook(() => network.countMsg('template'));
+const zoneByCode = (c) => db.one('select * from localities where upper(ref_code)=$1', [String(c || '').toUpperCase()]);
+app.get('/poster/:code.pdf', async (req, res) => {
+  const z = await zoneByCode(req.params.code); if (!z) return res.sendStatus(404);
+  const p = z.admin_phone ? await db.one('select name from payees where phone=$1', [z.admin_phone]) : null;
+  res.type('application/pdf').set('Content-Disposition', `inline; filename="${cfg.BRAND}-poster-${z.ref_code}.pdf"`).send(await poster.pdf(z, 'edeal', p && p.name));
+});
+app.get('/qr/:code.png', async (req, res) => {
+  const z = await zoneByCode(req.params.code); if (!z) return res.sendStatus(404);
+  res.type('image/png').set('Cache-Control', 'public, max-age=86400').send(await poster.qrPng(network.refLink(z, 'business')));
+});
+// From EMart: a new zone admin agreed there, so open the same locality here
+app.post('/internal/zone', express.json(), async (req, res) => {
+  if (!network.peerAuth(req)) return res.sendStatus(401);
+  const b = req.body || {};
+  const t = await network.talukByName(b.district, b.taluk, b.supervisor);
+  const z = await network.createZone({ name: b.name, admin_phone: cfg.norm(b.admin_phone), lat: +b.lat, lng: +b.lng, taluk_id: t ? t.id : null });
+  if (b.payee) await db.q(`insert into payees(phone,name,upi,pan) values($1,$2,$3,$4) on conflict(phone) do update set name=$2, upi=$3, pan=$4, updated_at=now()`, [z.admin_phone, b.payee.name, b.payee.upi, b.payee.pan]);
+  if (!b.quiet) await bot.welcomeAreaAdmin(z);
+  res.json({ ok: true, id: z.id, ref_code: z.ref_code });
+});
+// From EMart: a shop paid its setup fee, so it gets EDeal Premium free for 30 days (once per number)
+app.post('/internal/bundle', express.json(), async (req, res) => {
+  if (!network.peerAuth(req)) return res.sendStatus(401);
+  const b = req.body || {}, phone = cfg.norm(b.phone), days = Math.min(60, Number(b.days) || 30);
+  if (!phone || !(await db.one(`insert into kv(key,value) values($1,'1') on conflict do nothing returning key`, ['bundle:' + phone]))) return res.json({ ok: false, reason: 'already given' });
+  let loc = b.admin_phone ? (await db.localities.byAdmin(cfg.norm(b.admin_phone)))[0] : null;
+  if (!loc && b.lat != null) { let bd = Infinity; for (const l of await db.localities.active()) if (l.lat != null) { const d = bot.km({ lat: +b.lat, lng: +b.lng }, l); if (d < bd) { bd = d; loc = l; } } }
+  let adv = await db.advertisers.byPhone(phone);
+  if (!adv) adv = await db.one(`insert into advertisers(phone,name,cat,lat,lng,locality_id) values($1,$2,'Grocery',$3,$4,$5) returning *`, [phone, String(b.name || 'Shop').slice(0, 80), b.lat ?? null, b.lng ?? null, loc ? loc.id : null]);
+  const base = adv.plan_until && new Date(adv.plan_until) > new Date() ? new Date(adv.plan_until) : new Date();
+  adv = await db.advertisers.set(adv.id, { plan: 'premium', plan_until: new Date(base.getTime() + days * 864e5), active: true });
+  await bot.notify(phone, `🎁 *${cfg.BRAND} Premium is free for ${days} days* — a gift with your EMart shop.\n\nPost your offers and people within 5 km see them every day.`, [['➕ Post an offer', 'post:deal'], ['🏪 Business menu', 'menu']]);
+  await network.log(null, 'bundle', `${adv.name} +${phone} premium ${days} days`);
+  res.json({ ok: true, adv_id: adv.id });
+});
 app.get('/admin', (_req, res) => res.redirect('/panel'));
 
 // ---------- WhatsApp setup check: token, webhook subscription, templates, business profile

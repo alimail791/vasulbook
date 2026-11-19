@@ -636,7 +636,8 @@ async function adminMenu(c) {
   const b = [[`🕒 Pending ads (${pend.length})`, 'apend']];
   if (c.isMain) b.push([`💳 Payments to confirm (${claims})`, 'apays'], ['📍 Localities & admins', 'alocs'], ['➕ Add locality', 'aadd'], ['🏷 Categories', 'acats']);
   b.push(['📈 Revenue this month', 'arev']);
-  if (!c.isMain) b.push(['💰 My earnings', 'aearn']);
+  if (!c.isMain) b.push(['💰 My earnings', 'aearn'], ['🖼 My poster', 'aposter']);
+  else { const n = (await db.one(`select count(*)::int n from applications where status in ('pending','waitlist')`)).n; if (n) b.push([`📝 Applications (${n})`, 'aapps']); }
   if (c.isMain) b.push(['📢 Send daily offers now', 'adigest']);
   b.push(['🌐 Web admin panel', 'aweb'], ['🛍 Browse as customer', '#customer']);
   if (c.adv) b.push(['🏪 My business', '#business']);
@@ -644,8 +645,39 @@ async function adminMenu(c) {
   return c.reply(`${c.isMain ? '👑 *EDeal main admin*' : sup.length ? '👥 *EDeal supervisor*' : '🗺 *EDeal zone admin*'}\n${lines.join('\n') || 'No localities yet – add one.'}`, b);
 }
 async function welcomeAreaAdmin(l) {
+  await network.adminChanged(l.id);
   l = await network.ensureRef(l.id);
-  await notify(l.admin_phone, `🗺 You are now the *zone admin* for *${l.name}* on ${cfg.BRAND}.\n\nYou approve ads from businesses in your zone, bring in new advertisers, and earn *${network.ADMIN_PCT}%* of every plan payment they make, paid out every month.\n\n🔗 Your referral link (put it on your posters):\n${network.refLink(l, 'business')}\nWeb panel: ${cfg.PUBLIC_URL || cfg.WEBSITE}/panel\n\nType *menu* to start.`, [['💰 My earnings', 'aearn'], ['Menu', 'menu']]);
+  await notify(l.admin_phone, `🗺 You are now the *zone admin* for *${l.name}* on ${cfg.BRAND}.\n\nYou approve ads from businesses in your zone, bring in new advertisers, and earn *${network.ADMIN_PCT}%* of every plan payment they make, paid out every month.\n\n🔗 Your referral link (put it on your posters):\n${network.refLink(l, 'business')}\nWeb panel: ${cfg.PUBLIC_URL || cfg.WEBSITE}/panel\n\nType *menu* to start.`, [['💰 My earnings', 'aearn'], ['🖼 My poster', 'aposter'], ['Menu', 'menu']]);
+}
+// ---- recruiting zone admins (WhatsApp "ADMIN")
+async function newApplication(a) {
+  await notifyAdmins(await network.appLine(a), [['✅ Approve', 'rcok:' + a.id], ['❌ Reject', 'rcno:' + a.id]]);
+  const t = a.taluk_id ? await network.taluks.get(a.taluk_id) : null;
+  if (t && t.supervisor_phone) await notify(t.supervisor_phone, `📝 New admin application in *${t.name}* taluk: ${a.name} (+${a.phone}). The main admin will review it.`);
+}
+async function decideApp(c, id, ok) {
+  const a = await network.decide(id, ok, c.from);
+  if (!a) return c.reply('Already handled.', [['Menu', 'menu']]);
+  if (ok) await notify(a.phone, network.agreementText(), [['✅ I agree', 'rcagree']]);
+  else await notify(a.phone, `Thank you for applying to ${cfg.BRAND}. We can't take your application right now. We'll message you if a place opens in your area.`);
+  return c.reply(ok ? `✅ Approved #${a.id}. ${a.name} was sent the agreement; the locality opens when they tap *I agree*.` : `Rejected #${a.id}.`, [['📝 Applications', 'aapps'], ['Menu', 'menu']]);
+}
+async function agreeAdmin(c) {
+  const r = await network.agree(c.from);
+  if (!r) return c.reply(`There is no approved application for this number. Send *ADMIN* to apply.`);
+  await welcomeAreaAdmin(r.zone);
+  await network.peer('/internal/zone', await network.zonePayload(r.zone));
+  await notifyAdmins(`🎉 ${r.app.name} (+${c.from}) agreed and now runs *${r.zone.name}*.${r.zone.taluk_id ? '' : ' Set its taluk on the panel.'}`);
+}
+async function sendPosters(c) {
+  const own = c.myLocs.filter((l) => l.admin_phone === c.from);
+  if (!own.length) return c.reply('Posters are for zone admins.', [['Menu', 'menu']]);
+  for (let l of own) {
+    l = await network.ensureRef(l.id);
+    await wa.sendDoc(c.from, `${cfg.PUBLIC_URL}/poster/${l.ref_code}.pdf`, `${cfg.BRAND}-poster-${l.ref_code}.pdf`, `🖨 Poster for ${l.name} — print it A4 and put it up in shops.`);
+    await out(c.from, `📲 Put this QR on your WhatsApp Status:\n${network.refLink(l, 'business')}`, [], `${cfg.PUBLIC_URL}/qr/${l.ref_code}.png`);
+  }
+  return c.reply('Your poster and QR are above 👆', [['Menu', 'menu']]);
 }
 // "My earnings" for zone admins and supervisors
 async function earningsText(c) {
@@ -786,6 +818,14 @@ async function admin(c, v, btn) {
   }
   if (c.isMain && S.state === 'l_loc') return wa.askLocation(c.from, 'Please tap *Send location* 👇');
   if (v === 'aearn') return c.reply(await earningsText(c), [['Menu', 'menu']]);
+  if (v === 'aposter') return sendPosters(c);
+  if (c.isMain && v === 'aapps') {
+    const as = await db.all(`select * from applications where status in ('pending','waitlist') order by id limit 8`);
+    if (!as.length) return c.reply('No admin applications waiting.', [['Menu', 'menu']]);
+    for (const a of as) await c.reply(await network.appLine(a), [['✅ Approve', 'rcok:' + a.id], ['❌ Reject', 'rcno:' + a.id]]);
+    return null;
+  }
+  if (c.isMain && (m = v.match(/^rc(ok|no):(\d+)$/))) return decideApp(c, +m[2], m[1] === 'ok');
   if (v === 'arev') {
     const locs = await scopeLocs(c), rev = await monthRevenue(c.isMain ? null : c.locIds), mk = network.monthKey();
     const sh = await db.all(`select area_id, coalesce(sum(amount) filter (where role='admin'),0) adm, coalesce(sum(amount) filter (where role='supervisor'),0) sup from earnings where month=$1 and status<>'reversed' group by area_id`, [mk]);
@@ -919,10 +959,20 @@ async function handle(from, name, v, btn) {
       return await c.say('🗑 Your customer data has been deleted. Businesses can contact info@vasulbook.com to close their account.');
     }
     if (/^(offer|coupon|enquiry|contact|visit|interested|demo|admission)\s*#\s*\d+/i.test(v.trim())) return await customer(c, v, false);
+    // ---- becoming a zone admin: anyone who is not an admin can send ADMIN
+    if (v === 'rcagree') return await agreeAdmin(c);
+    if (!isAdmin) {
+      const lm = v.match(/^loc:(-?[\d.]+),(-?[\d.]+)/);
+      const rr = await network.recruitStep(from, sess, v, lm ? { lat: +lm[1], lng: +lm[2] } : null);
+      if (rr) {
+        if (rr.done) await newApplication(rr.done);
+        return rr.ask === 'location' ? await wa.askLocation(from, rr.text) : await c.reply(rr.text, rr.btns || []);
+      }
+    }
     let role = sess.data.as || (isAdmin ? 'admin' : c.adv ? 'business' : 'customer');
     if (role === 'admin' && !isAdmin) role = 'customer';
     // Buttons from alerts work in any view: admin actions (approve, payments, localities)…
-    if (isAdmin && btn && /^(ap|rj|rr|pc|pr|lo|lch|lpa|lw|ced|cren|cemj|cgsw|chid|cgrp|cemo):|^(apend|apays|alocs|aadd|arev|aearn|adigest|aweb|acats|cadd)$/.test(v)) return await admin(c, v, btn);
+    if (isAdmin && btn && /^(ap|rj|rr|pc|pr|lo|lch|lpa|lw|ced|cren|cemj|cgsw|chid|cgrp|cemo|rcok|rcno):|^(apend|apays|alocs|aadd|arev|aearn|aposter|aapps|adigest|aweb|acats|cadd)$/.test(v)) return await admin(c, v, btn);
     // …and an admin's own business buttons while in admin view
     if (role !== 'business' && c.adv && btn && /^(myads|plans|redeem|acat|acatmv|dcat|dskip|dsubmit|okVisit)$|^(post|paid|plan|ad|adp|adr|add|adl|acat|dcat|dsub|dval|drad):/.test(v)) { sess.data.as = 'business'; return await advertiser(c, v, btn); }
     if (role === 'business' || (role === 'customer' && v === 'biz')) { sess.data.as = 'business'; return await advertiser(c, v, btn); }
@@ -933,4 +983,4 @@ async function handle(from, name, v, btn) {
   }
 }
 
-module.exports = { refundPayment, earningsText, renameCategory, PROPS, SUBEMO, RENT, loadCats, ensureCats, webLink, handle, notify, notifyAdmins, approveAd, rejectAd, confirmPayment, activatePlan, welcomeAreaAdmin, nearby, cardText, imgOf, rs, km, istDate, planActive, REASONS, CATS, EMO, EDU, SUBS };
+module.exports = { decideApp, newApplication, sendPosters, refundPayment, earningsText, renameCategory, PROPS, SUBEMO, RENT, loadCats, ensureCats, webLink, handle, notify, notifyAdmins, approveAd, rejectAd, confirmPayment, activatePlan, welcomeAreaAdmin, nearby, cardText, imgOf, rs, km, istDate, planActive, REASONS, CATS, EMO, EDU, SUBS };
