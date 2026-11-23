@@ -45,9 +45,9 @@ app.use((req, res, next) => {
   res.setHeader("X-Frame-Options", "DENY");
   res.setHeader("Permissions-Policy", "camera=(), geolocation=()");
   res.setHeader("Content-Security-Policy",
-    "default-src 'self'; script-src 'self' https://checkout.razorpay.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; " +
-    "img-src 'self' data: blob: https://*.razorpay.com https://i.ytimg.com; media-src 'self'; connect-src 'self' https://api.razorpay.com https://lumberjack.razorpay.com; " +
-    "frame-src https://api.razorpay.com https://checkout.razorpay.com https://www.youtube-nocookie.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://api.razorpay.com");
+    "default-src 'self'; script-src 'self' https://checkout.razorpay.com https://www.googletagmanager.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; " +
+    "img-src 'self' data: blob: https://*.razorpay.com https://i.ytimg.com https://*.google-analytics.com https://*.googletagmanager.com; media-src 'self'; connect-src 'self' https://api.razorpay.com https://lumberjack.razorpay.com https://*.google-analytics.com https://*.analytics.google.com https://*.googletagmanager.com; " +
+    "frame-src https://www.googletagmanager.com https://api.razorpay.com https://checkout.razorpay.com https://www.youtube-nocookie.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self' https://api.razorpay.com");
   if (PROD) res.setHeader("Strict-Transport-Security", "max-age=31536000");
   next();
 });
