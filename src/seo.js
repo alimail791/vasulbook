@@ -3,6 +3,7 @@ const fs = require("fs");
 const path = require("path");
 const VBLang = require("../public/i18n/meta");
 const billing = require("./billing");
+const guides = require("./guides");
 
 const ROOT = path.join(__dirname, "..");
 const TEMPLATE = fs.readFileSync(path.join(ROOT, "views", "landing.html"), "utf8");
@@ -84,7 +85,8 @@ module.exports = function mountSeo(app, { baseUrl }) {
     const urls = VBLang.CODES.map((c) => `  <url>\n    <loc>${base}${pagePath(c)}</loc>\n    <lastmod>${UPDATED}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>${c === "en" ? "1.0" : "0.9"}</priority>\n${alts}\n  </url>`).join("\n");
     res.type("application/xml").setHeader("Cache-Control", "public, max-age=300");
     const legal = ["/contact", "/terms", "/privacy", "/refund-policy", "/delivery-policy"].map((p) => `  <url>\n    <loc>${base}${p}</loc>\n    <changefreq>yearly</changefreq>\n    <priority>0.3</priority>\n  </url>`).join("\n");
-    res.send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n${urls}\n${legal}\n</urlset>\n`);
+    const guideUrls = guides.PATHS.map((p) => `  <url>\n    <loc>${base}${p}</loc>\n    <changefreq>monthly</changefreq>\n    <priority>0.8</priority>\n  </url>`).join("\n");
+    res.send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">\n${urls}\n${guideUrls}\n${legal}\n</urlset>\n`);
   });
 
   app.get("/robots.txt", (req, res) => {
