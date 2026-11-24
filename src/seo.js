@@ -56,6 +56,7 @@ function render(lang, base) {
     appHref: "/app?lang=" + lang, startHref: "/app?lang=" + lang + "#register",
     priceFmt: inr(P.priceInr), year: new Date().getFullYear(),
     jsonld: JSON.stringify(jsonld).replace(/</g, "\\u003c"),
+    gsv: process.env.GOOGLE_SITE_VERIFICATION ? `<meta name="google-site-verification" content="${esc(process.env.GOOGLE_SITE_VERIFICATION)}">` : "",
   };
   return TEMPLATE
     .replace(/\{\{=(\w+)\}\}/g, (m, k) => (raw[k] !== undefined ? String(raw[k]) : ""))
