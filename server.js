@@ -599,6 +599,7 @@ if (!PROD) {
 // ---------- static PWA ----------
 require("./src/seo")(app, { baseUrl: (req) => appUrl(req).replace(/\/+$/, "") });
 require("./src/legal")(app, { baseUrl: (req) => appUrl(req).replace(/\/+$/, "") });
+require("./src/guides")(app, { baseUrl: (req) => appUrl(req).replace(/\/+$/, "") });
 require("./src/traffic")(app, { limit, secret: SECRET, PROD });
 require("./src/botapi")(app, { wrap, bad });
 require("./src/pay")(app, { auth, wrap, bad, baseUrl: (req) => appUrl(req).replace(/\/+$/, "") });

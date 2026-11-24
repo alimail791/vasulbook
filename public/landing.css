@@ -186,3 +186,4 @@ details p{margin-top:8px;color:var(--muted)}
 
 .cmp-legend b{font-size:15px}
 .cmp-y-i{color:#1B7A3E}.cmp-n-i{color:var(--margin, #B3261E)}
+.l-who a,.l-chips a{color:inherit;text-decoration:none}.l-who a:hover,.l-chips a:hover{text-decoration:underline}

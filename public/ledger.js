@@ -132,5 +132,5 @@
       .replace(/\s{2,}/g, " ").trim();
   }
 
-  return { todayIST, dayNum, addDays, fmtDate, inr, compute, statusLabel, reminder, autoTone };
+  return { todayIST, dayNum, addDays, fmtDate, inr, compute, statusLabel, reminder, autoTone, TPL };
 });
