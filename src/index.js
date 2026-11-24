@@ -15,7 +15,77 @@ app.use(express.static(require('path').join(__dirname, '..', 'public'), { maxAge
 app.get('/favicon.ico', (_req, res) => res.redirect(301, '/emart-icon.png'));
 app.use(express.json({ verify: (req, _res, buf) => { req.raw = buf; } }));
 
-app.get('/', (_req, res) => res.redirect('/shops'));
+// ---------- public landing page (shop types and counts come live from the database)
+const escH = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const HELP_PHONE = (process.env.HELP_PHONE || '9443424064').replace(/\D/g, '').slice(-10);
+const TYPE_EMOJI = { Grocery: '🛒', 'Vegetables & Fruits': '🥦', 'Dairy & Bakery': '🥛', 'Meat & Fish': '🍗', Stationery: '✏️', Medical: '💊', Pharmacy: '💊', Bakery: '🍞', Sweets: '🍬' };
+app.get('/', async (_req, res) => {
+  const botNo = (process.env.BOT_PHONE || '').replace(/\D/g, '').slice(-10);
+  const waBot = (t) => (botNo ? `https://wa.me/91${botNo}?text=${encodeURIComponent(t)}` : '/shops');
+  const waHelp = (t) => `https://wa.me/91${HELP_PHONE}?text=${encodeURIComponent(t)}`;
+  const types = await db.all(`select t.*, (select count(*)::int from shops s where s.type_id=t.id and s.paid and s.active) live from shop_types t where t.active order by t.sort, t.name`);
+  const st = await db.one(`select (select count(*)::int from shops where paid and active) shops, (select count(*)::int from items i join shops s on s.id=i.shop_id where s.paid and s.active) items,
+    (select count(*)::int from areas where active) areas, (select count(*)::int from orders where created_at > now() - interval '30 days') orders`).catch(() => ({ shops: 0, items: 0, areas: 0, orders: 0 }));
+  const areas = await db.all('select name from areas where active order by name');
+  // Small numbers look empty, so counts show only once they are worth showing
+  const stats = [[st.shops >= 10 ? st.shops : 0, 'local shops'], [st.items >= 200 ? st.items : 0, 'products'], [st.orders >= 50 ? st.orders : 0, 'orders this month'], [st.areas, st.areas === 1 ? 'area' : 'areas']].filter(([n]) => n > 0);
+  const tiles = types.map((t) => `<a class="tile" href="/shops?type=${t.id}"><span class="em">${TYPE_EMOJI[t.name] || '🏪'}</span><span class="nm">${escH(t.name)}</span>${t.live ? `<span class="lv">${t.live} shop${t.live === 1 ? '' : 's'}</span>` : ''}</a>`).join('');
+  const ben = [['📲', 'Orders on your WhatsApp', 'Customers order from your price list. You get each order with name, number and address — accept with one tap.'],
+    ['🛍', 'Your own online shop', 'Your shop page with all items and prices, ready to share on WhatsApp status and groups.'],
+    ['📍', 'Customers within 2–5 km', 'People nearby find your shop when they share their location.'],
+    ['✍️', 'Add items by WhatsApp', 'Send item names and prices in a message, or upload an Excel sheet. Change prices anytime.'],
+    ['🛵', 'Pickup or home delivery', 'Customers pick up at your shop, or our local team delivers for you.'],
+    ['🧾', 'Bills and invoices', 'A neat invoice for every order, sent to the customer on WhatsApp.'],
+    ['💳', 'UPI or cash', 'Customers pay you directly by UPI or cash. No waiting for settlements.'],
+    ['🎁', 'EDeal Premium free', '1 month of EDeal Premium to post your offers to people nearby.']];
+  const css = `*{box-sizing:border-box}body{margin:0;background:#f0fdf4;color:#14231a;font-family:Poppins,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;line-height:1.55}
+.w{max-width:1040px;margin:0 auto;padding:0 18px}.ta{font-family:"Noto Sans Tamil",Poppins,sans-serif}
+.hero{background:#166534;color:#fff;padding:26px 0 34px}.hero .w{display:grid;grid-template-columns:auto 1fr;gap:26px;align-items:center}
+.hero img{width:190px;height:auto;border-radius:20px;display:block}.hero h1{font-size:38px;line-height:1.12;margin:0 0 10px;font-weight:800}.hero h1 span{color:#fb923c}
+.hero p{font-size:17px;margin:0 0 6px;color:#dcfce7}.hero .ta{font-size:16px;font-weight:600;color:#dcfce7;margin-bottom:16px}
+.cta{display:flex;flex-wrap:wrap;gap:10px}.b{display:inline-flex;align-items:center;gap:8px;text-decoration:none;font-weight:700;font-size:16px;padding:13px 20px;border-radius:28px}
+.b.or{background:#f97316;color:#fff}.b.wh{background:#25d366;color:#fff}.b.o{background:#fff;color:#166534}.b.ol{border:2px solid #fff;color:#fff}
+.stats{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}.stats div{background:rgba(255,255,255,.14);border-radius:14px;padding:8px 14px;font-size:14px}.stats b{font-size:20px;display:block;line-height:1.1}
+section{padding:30px 0 6px}h2{font-size:26px;margin:0 0 4px;font-weight:800}.sub{color:#4b5f52;margin:0 0 16px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px}
+.tile{display:flex;flex-direction:column;gap:2px;text-decoration:none;color:#14231a;background:#fff;border:1.5px solid #bbf7d0;border-radius:16px;padding:16px;min-height:44px}.tile:hover{border-color:#f97316}
+.tile .em{font-size:30px}.tile .nm{font-weight:700;font-size:16px;line-height:1.25}.tile .lv{font-size:12px;font-weight:700;color:#c2410c}
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.step{background:#fff;border-radius:16px;padding:16px;box-shadow:0 0 0 1.5px #bbf7d0}.step b{display:inline-flex;width:34px;height:34px;border-radius:50%;background:#f97316;color:#fff;align-items:center;justify-content:center;margin-bottom:8px}
+.biz{background:#14532d;color:#fff;margin-top:26px;padding:34px 0}.biz h2{color:#fff}.biz .sub{color:#bbf7d0}.ben{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:18px 0}
+.ben div{background:rgba(255,255,255,.08);border-radius:16px;padding:14px}.ben .e{font-size:26px}.ben b{display:block;margin:4px 0 2px}.ben p{margin:0;font-size:14px;color:#bbf7d0;line-height:1.5}
+.ben div.hl{background:#f97316;color:#fff}.ben div.hl p{color:#ffedd5}.tag{display:inline-block;background:#fb923c;color:#fff;font-weight:800;border-radius:10px;padding:2px 10px}
+.adm{background:#fff7ed;border-radius:18px;padding:20px;margin-top:18px;color:#431407;display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between}.adm b{font-size:18px}.adm p{margin:2px 0 0;color:#7c2d12;font-size:14px}
+.help{display:flex;flex-wrap:wrap;gap:14px;align-items:center;margin-top:16px;font-size:15px}.help a{color:#fb923c;font-weight:700}
+.areas{font-size:14px;color:#4b5f52}footer{padding:22px 0 30px;font-size:14px;color:#4b5f52}footer a{color:#166534}
+@media(max-width:720px){.hero .w{grid-template-columns:1fr}.hero img{width:130px}.hero h1{font-size:30px}.steps{grid-template-columns:1fr}.ben{grid-template-columns:1fr 1fr}.tiles{grid-template-columns:repeat(2,1fr)}}`;
+  res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escH(cfg.BRAND)} – Order from local shops on WhatsApp</title><link rel="icon" href="/emart-icon.png"><meta property="og:image" content="/emart-whatsapp-dp.png">
+<meta name="description" content="Groceries, vegetables, dairy and more from shops near you. Order on WhatsApp, pickup or home delivery, pay by UPI or cash.">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&family=Noto+Sans+Tamil:wght@600&display=swap" rel="stylesheet"><style>${css}</style></head><body>
+<div class="hero"><div class="w"><img src="/emart-logo.png" alt="${escH(cfg.BRAND)} – Local shops on WhatsApp">
+<div><h1>Order from shops <span>near you</span> – on WhatsApp</h1>
+<p>Groceries, vegetables, fruits, milk, meat and more from local shops within 2–5 km. Pickup or home delivery. Pay by UPI or cash. No app, no login.</p>
+<div class="ta">உங்கள் அருகிலுள்ள கடைகளில் WhatsApp-இல் ஆர்டர் செய்யுங்கள்</div>
+<div class="cta"><a class="b or" href="/shops">🛒 See shops near you</a><a class="b wh" href="${waBot('Hi')}">💬 Order on WhatsApp</a><a class="b ol" href="#business">🏪 Sell on ${escH(cfg.BRAND)}</a></div>
+${stats.length ? `<div class="stats">${stats.map(([n, l]) => `<div><b>${n}</b>${l}</div>`).join('')}</div>` : ''}</div></div></div>
+
+<section><div class="w"><h2>Shop by category</h2><p class="sub">Tap a category to see shops near you.</p><div class="tiles">${tiles}</div>
+${areas.length ? `<p class="areas">📍 Now in: ${areas.map((a) => escH(a.name)).join(', ')}</p>` : ''}</div></section>
+
+<section><div class="w"><h2>How it works</h2><p class="sub">Free for customers.</p><div class="steps">
+<div class="step"><b>1</b><div><strong>Say Hi</strong> on WhatsApp and share your location.</div></div>
+<div class="step"><b>2</b><div><strong>Pick a shop</strong> and add items from its price list.</div></div>
+<div class="step"><b>3</b><div><strong>Pickup or home delivery</strong> — pay by UPI or cash, get the bill on WhatsApp.</div></div></div></div></section>
+
+<div class="biz" id="business"><div class="w"><h2>Own a shop? Sell on WhatsApp</h2>
+<p class="sub">Grocery stores, vegetable & fruit shops, dairy & bakery, meat & fish, stationery: take orders from every customer within 5 km. <span class="tag">No app needed</span></p>
+<div class="ben">${ben.map(([e, t, d], i) => `<div${i < 2 ? ' class="hl"' : ''}><span class="e">${e}</span><b>${t}</b><p>${d}</p></div>`).join('')}</div>
+<div class="cta"><a class="b or" href="${waHelp(`Hi, I want to list my shop on ${cfg.BRAND}`)}">🏪 List my shop on WhatsApp</a><a class="b o" href="tel:+91${HELP_PHONE}">📞 Call us</a></div>
+<div class="adm"><div><b>🙌 Become a ${escH(cfg.BRAND)} zone admin</b><p>Bring shops in your 2–5 km area online and earn commission every month. Free to join.</p></div><a class="b or" href="${waBot('ADMIN')}">Apply on WhatsApp</a></div>
+<div class="help">📞 Help &amp; enquiries: <a href="tel:+91${HELP_PHONE}">${HELP_PHONE.replace(/(\d{5})(\d{5})/, '$1 $2')}</a> · <a href="${waHelp('Hi')}">WhatsApp us</a></div></div></div>
+
+<footer><div class="w">${escH(cfg.BRAND)} · Local shops on WhatsApp · <a href="/shops">All shops</a> · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a> · <a href="/delete-data">Delete your data</a> · info@vasulbook.com</div></footer></body></html>`);
+});
 app.get('/health', (_req, res) => res.json({ ok: true }));
 
 const page = (title, body) => `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title} – ${cfg.BRAND}</title><link rel="icon" href="/emart-icon.png">
