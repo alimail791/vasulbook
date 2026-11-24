@@ -600,6 +600,8 @@ if (!PROD) {
 require("./src/seo")(app, { baseUrl: (req) => appUrl(req).replace(/\/+$/, "") });
 require("./src/legal")(app, { baseUrl: (req) => appUrl(req).replace(/\/+$/, "") });
 require("./src/guides")(app, { baseUrl: (req) => appUrl(req).replace(/\/+$/, "") });
+const indexNow = require("./src/indexnow");
+indexNow.mount(app);
 require("./src/traffic")(app, { limit, secret: SECRET, PROD });
 require("./src/botapi")(app, { wrap, bad });
 require("./src/pay")(app, { auth, wrap, bad, baseUrl: (req) => appUrl(req).replace(/\/+$/, "") });
@@ -630,6 +632,7 @@ app.use((err, req, res, next) => { // eslint-disable-line no-unused-vars
   jobs.start();
   app.listen(PORT, () => {
     console.log(`VasulBook running on port ${PORT} (database: ${require("./src/db").mode})`);
+    if (PROD) setTimeout(() => indexNow.ping((process.env.APP_URL || "").replace(/\/+$/, "")), 15000);
     if (!PROD) {
       const nets = require("os").networkInterfaces();
       const lan = Object.values(nets).flat().filter((n) => n && n.family === "IPv4" && !n.internal).map((n) => `http://${n.address}:${PORT}`);

@@ -379,6 +379,7 @@ function shell({ title, desc, url, base, jsonld, body }) {
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(desc)}">
 <meta name="robots" content="index,follow,max-image-preview:large">
+${process.env.GOOGLE_SITE_VERIFICATION ? `<meta name="google-site-verification" content="${esc(process.env.GOOGLE_SITE_VERIFICATION)}">` : ""}
 <link rel="canonical" href="${url}">
 <meta property="og:type" content="article">
 <meta property="og:site_name" content="VasulBook">
