@@ -208,6 +208,9 @@ const MIGRATIONS = [
      expires_at TIMESTAMPTZ NOT NULL,
      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
    )`,
+  // Raise network (ClassCoach etc.): students synced from a partner app keep the partner's id here.
+  `ALTER TABLE customers ADD COLUMN IF NOT EXISTS external_ref TEXT`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS customers_external_ref_idx ON customers(user_id, external_ref) WHERE external_ref IS NOT NULL`,
 ];
 
 async function migrate() {

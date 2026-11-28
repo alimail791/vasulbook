@@ -604,6 +604,7 @@ const indexNow = require("./src/indexnow");
 indexNow.mount(app);
 require("./src/traffic")(app, { limit, secret: SECRET, PROD });
 require("./src/botapi")(app, { wrap, bad });
+require("./src/partnerapi")(app, { wrap, bad, setSession, secret: SECRET, appUrl, newReferralCode }); // ClassCoach / TestMandi link
 require("./src/pay")(app, { auth, wrap, bad, baseUrl: (req) => appUrl(req).replace(/\/+$/, "") });
 app.get("/admin", (req, res) => { res.setHeader("Cache-Control", "no-cache"); res.setHeader("X-Robots-Tag", "noindex, nofollow"); res.sendFile(path.join(__dirname, "public", "admin.html")); });
 app.get(["/app", "/app/*"], (req, res) => { res.setHeader("Cache-Control", "no-cache"); res.setHeader("X-Robots-Tag", "noindex"); res.sendFile(path.join(__dirname, "public", "index.html")); });
