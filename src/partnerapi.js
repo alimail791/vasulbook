@@ -167,7 +167,9 @@ module.exports = function mountPartnerApi(app, { wrap, bad, setSession, secret, 
     const u = await needUser(req, res); if (!u) return;
     const next = /^\/app(\/[\w\-/]*)?$/.test(String(req.body.next || "")) ? req.body.next : "/app";
     const t = jwt.sign({ sso: u.id, next, src: req.partner }, secret, { expiresIn: "2m", jwtid: crypto.randomBytes(12).toString("hex") });
-    res.json({ url: `${appUrl(req).replace(/\/+$/, "")}/sso?t=${encodeURIComponent(t)}` });
+    // Built from the host the partner called (www.vasulbook.com), not APP_URL: the bare domain is a
+    // GoDaddy redirect that may not keep the path.
+    res.json({ url: `${req.protocol}://${req.get("host")}/sso?t=${encodeURIComponent(t)}` });
   }));
 
   app.get("/sso", wrap(async (req, res) => {
